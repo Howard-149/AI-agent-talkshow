@@ -1,0 +1,16 @@
+default_locale: en
+
+locales:
+  en:
+    llm:
+      model: google/gemma-4-E4B-it
+      base_url: http://127.0.0.1:8000/v1
+      api_key: EMPTY
+      max_tokens: 512
+      reply_language: English
+      include_heard_summary: true
+    tts:
+      engine: piper
+      # Override on cluster via PIPER_MODEL_PATH env
+      model_path: /data/hf_cache/piper/en_US-lessac-medium.onnx
+      sample_rate: 22050

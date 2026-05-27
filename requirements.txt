@@ -1,0 +1,10 @@
+# Phase 0 — install inside conda env `talkshow` on Babel GPU node
+livekit-agents>=1.2.0
+livekit-plugins-silero>=1.0.0
+livekit-plugins-turn-detector>=1.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+httpx>=0.27.0
+numpy>=1.26.0
+
+# TTS (cluster): pip install piper-tts  OR  use `piper` CLI on PATH
