@@ -1,46 +1,40 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
 
 from livekit.agents import AgentSession, TurnHandlingOptions
 from livekit.plugins import silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from agent.adapters import GemmaAudioSTT, PiperTTS, StoredReplyLLM, TurnStore
-from agent.adapters.gemma_mm_client import GemmaMMClient
-from agent.config import AppConfig, load_persona_instructions
+from agent.adapters import GemmaAudioSTT, PiperTTS, StoredReplyLLM
+from agent.data import TalkShowData
+from agent.runtime import TalkShowRuntime
 
 
-@dataclass
-class TalkShowRuntime:
-    turn_store: TurnStore
-    gemma_client: GemmaMMClient
-    config: AppConfig
+def build_turn_handling() -> TurnHandlingOptions:
+    """Default: MultilingualModel (needs deploy/download-livekit-agent-models.sh). TALKSHOW_TURN_DETECTOR=vad to skip."""
+    mode = os.environ.get("TALKSHOW_TURN_DETECTOR", "multilingual").lower()
+    if mode in ("vad", "0", "false", "none", "off"):
+        return TurnHandlingOptions()
+    return TurnHandlingOptions(turn_detection=MultilingualModel())
 
 
-def build_runtime(config: AppConfig | None = None) -> TalkShowRuntime:
-    from agent.config import load_config
-
-    app_cfg = config or load_config()
-    locale = app_cfg.locale()
-    turn_store = TurnStore()
-    persona = load_persona_instructions("host")
-    gemma_client = GemmaMMClient(locale.llm, system_prompt=persona)
-    return TalkShowRuntime(turn_store=turn_store, gemma_client=gemma_client, config=app_cfg)
-
-
-def build_agent_session(runtime: TalkShowRuntime) -> AgentSession:
+def build_agent_session(runtime: TalkShowRuntime, userdata: TalkShowData) -> AgentSession:
     locale = runtime.config.locale()
-    stt = GemmaAudioSTT(client=runtime.gemma_client, turn_store=runtime.turn_store)
+    stt = GemmaAudioSTT(
+        client=runtime.gemma_client,
+        turn_store=runtime.turn_store,
+        talkshow_data=userdata,
+    )
     llm = StoredReplyLLM(runtime.turn_store)
+    # Session default TTS = host voice; each Agent can override with its own PiperTTS
     tts = PiperTTS(locale.tts)
 
-    return AgentSession(
+    return AgentSession[TalkShowData](
         vad=silero.VAD.load(),
         stt=stt,
         llm=llm,
         tts=tts,
-        turn_handling=TurnHandlingOptions(
-            turn_detection=MultilingualModel(),
-        ),
+        turn_handling=build_turn_handling(),
+        userdata=userdata,
     )

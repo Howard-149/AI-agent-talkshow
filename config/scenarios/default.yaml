@@ -1,0 +1,13 @@
+id: default
+description: Panel round — human speaks, then Lessac (host), Ryan (commentator), Amy (guest)
+
+meet:
+  default_room: talkshow-dev
+
+turn_control:
+  # panel_round_robin — you speak once → host answers → Ryan → Amy → wait for you again
+  # rotate_after_user — (old) each of your sentences answered by next AI in rotation
+  # manual_only — only [handoff:role] tags
+  mode: panel_round_robin
+  order: [human, host, commentator, guest]
+  listen_role: host

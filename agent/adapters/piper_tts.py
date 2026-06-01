@@ -8,7 +8,6 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from livekit import rtc
 from livekit.agents import tts
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 from agent.config import LocaleTTSConfig
@@ -25,6 +24,7 @@ class PiperTTS(tts.TTS):
         )
         self._model_path = Path(cfg.model_path)
         self._piper_bin = shutil.which("piper")
+        logger.info("PiperTTS init model_path=%s", self._model_path)
 
     @property
     def model(self) -> str:
@@ -44,35 +44,67 @@ class PiperTTS(tts.TTS):
 
 
 class _PiperChunkedStream(tts.ChunkedStream):
-    async def _run(self) -> None:
+    async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         tts_impl: PiperTTS = self._tts  # type: ignore[assignment]
         text = self._input_text.strip()
         if not text:
             return
 
-        wav_bytes = await asyncio.to_thread(_synthesize_wav, tts_impl, text)
-        frame = _wav_to_frame(wav_bytes, tts_impl.sample_rate)
-
-        await self._event_ch.send(
-            tts.SynthesizedAudio(
-                frame=frame,
-                request_id=str(uuid.uuid4()),
-                is_final=True,
-            )
+        pcm_bytes, sample_rate, num_channels = await asyncio.to_thread(
+            _synthesize_pcm, tts_impl, text
         )
 
+        output_emitter.initialize(
+            request_id=str(uuid.uuid4()),
+            sample_rate=sample_rate,
+            num_channels=num_channels,
+            mime_type="audio/pcm",
+            stream=False,
+        )
+        output_emitter.push(pcm_bytes)
+        output_emitter.flush()
 
-def _synthesize_wav(pipert: PiperTTS, text: str) -> bytes:
+
+def _piper_config_path(model_path: Path) -> Path:
+    """Piper 1.x expects `<name>.onnx.json` beside the ONNX file."""
+    legacy = model_path.with_suffix(".json")  # rhasspy: en_US-foo-medium.json
+    modern = Path(f"{model_path}.json")  # piper-tts: en_US-foo-medium.onnx.json
+    if modern.is_file():
+        return modern
+    if legacy.is_file():
+        return legacy
+    return modern
+
+
+def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
     if not pipert._model_path.is_file():
         raise FileNotFoundError(f"Piper model not found: {pipert._model_path}")
+
+    config_path = _piper_config_path(pipert._model_path)
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"Piper config missing for {pipert._model_path.name}: "
+            f"expected {config_path}. "
+            f"Re-run: bash deploy/download-piper-voices.sh --dest $(dirname {pipert._model_path}) ryan amy lessac"
+        )
 
     # Prefer Python piper-tts if installed
     try:
         from piper import PiperVoice  # type: ignore[import-untyped]
 
-        voice = PiperVoice.load(str(pipert._model_path))
+        logger.debug(
+            "PiperVoice.load model=%s config=%s",
+            pipert._model_path.name,
+            config_path.name,
+        )
+        voice = PiperVoice.load(
+            str(pipert._model_path),
+            config_path=str(config_path),
+        )
         chunks = list(voice.synthesize(text))
-        return b"".join(c.audio_int16_bytes for c in chunks)
+        pcm = b"".join(c.audio_int16_bytes for c in chunks)
+        rate = voice.config.sample_rate
+        return pcm, rate, 1
     except ImportError:
         pass
 
@@ -95,10 +127,10 @@ def _synthesize_wav(pipert: PiperTTS, text: str) -> bytes:
             check=True,
             capture_output=True,
         )
-        return out.read_bytes()
+        return _read_wav_pcm(out.read_bytes(), pipert.sample_rate)
 
 
-def _wav_to_frame(wav_bytes: bytes, sample_rate: int) -> rtc.AudioFrame:
+def _read_wav_pcm(wav_bytes: bytes, expected_rate: int) -> tuple[bytes, int, int]:
     import wave
     from io import BytesIO
 
@@ -107,13 +139,7 @@ def _wav_to_frame(wav_bytes: bytes, sample_rate: int) -> rtc.AudioFrame:
         rate = wf.getframerate()
         frames = wf.readframes(wf.getnframes())
 
-    if rate != sample_rate:
-        logger.warning("Piper wav rate %s != configured %s", rate, sample_rate)
+    if rate != expected_rate:
+        logger.warning("Piper wav rate %s != configured %s", rate, expected_rate)
 
-    samples = len(frames) // 2 // channels
-    return rtc.AudioFrame(
-        data=frames,
-        sample_rate=rate,
-        num_channels=channels,
-        samples_per_channel=samples,
-    )
+    return frames, rate, channels

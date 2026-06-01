@@ -70,8 +70,11 @@ class _StoredReplyStream(llm.LLMStream):
         if turn:
             text = turn.reply
         elif not _has_user_message(self.chat_ctx):
+            from agent.config import load_persona_name
+
+            host = load_persona_name("host")
             text = (
-                "Hey there! I'm Alex, your host. "
+                f"Hey there! I'm {host}, your host. "
                 "What would you like to talk about today?"
             )
         else:

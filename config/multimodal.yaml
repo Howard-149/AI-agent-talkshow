@@ -11,6 +11,6 @@ locales:
       include_heard_summary: true
     tts:
       engine: piper
-      # Override on cluster via PIPER_MODEL_PATH env
-      model_path: /data/hf_cache/piper/en_US-lessac-medium.onnx
+      # Default; override via PIPER_MODEL_PATH in .env (${USER} expanded at load)
+      model_path: /data/user_data/${USER}/piper/en_US-lessac-medium.onnx
       sample_rate: 22050

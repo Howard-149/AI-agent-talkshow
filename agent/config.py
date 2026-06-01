@@ -9,6 +9,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _expand_path(path: str) -> str:
+    return path.replace("${USER}", os.environ.get("USER", ""))
+
+
 @dataclass(frozen=True)
 class LocaleLLMConfig:
     model: str
@@ -44,10 +48,105 @@ class AppConfig:
         return self.locales[key]
 
 
-def load_persona_instructions(persona_id: str = "host") -> str:
+def load_persona_yaml(persona_id: str) -> dict:
     path = REPO_ROOT / "config" / "personas" / f"{persona_id}.yaml"
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return str(data["instructions"]).strip()
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def load_persona_name(persona_id: str) -> str:
+    """Display / in-character name (aligned with Piper voice per role)."""
+    return str(load_persona_yaml(persona_id).get("name", persona_id.title()))
+
+
+def load_persona_instructions(
+    persona_id: str = "host", *, panel_mode: bool = False
+) -> str:
+    base = str(load_persona_yaml(persona_id)["instructions"]).strip()
+    if not panel_mode:
+        return base
+    from agent.show_context import panel_host_gemma_addon
+
+    if persona_id == "host":
+        return f"{base}\n\n{panel_host_gemma_addon()}".strip()
+    return base
+
+
+@dataclass(frozen=True)
+class TurnControlConfig:
+    mode: str  # manual_only | rotate_after_user | panel_round_robin
+    order: tuple[str, ...]
+    listen_role: str  # who hears the human (Gemma audio-in) in panel mode
+
+
+@dataclass(frozen=True)
+class ScenarioConfig:
+    id: str
+    default_room: str
+    turn_control: TurnControlConfig
+
+
+def load_scenario(path: Path | None = None) -> ScenarioConfig:
+    scenario_path = path or Path(
+        os.environ.get(
+            "SCENARIO_PATH",
+            REPO_ROOT / "config" / "scenarios" / "default.yaml",
+        )
+    )
+    raw = yaml.safe_load(scenario_path.read_text(encoding="utf-8"))
+    tc = raw.get("turn_control", {})
+    meet = raw.get("meet", {})
+    order = tuple(tc.get("order", ["host", "guest", "commentator"]))
+    return ScenarioConfig(
+        id=str(raw.get("id", "default")),
+        default_room=str(meet.get("default_room", "talkshow-dev")),
+        turn_control=TurnControlConfig(
+            mode=str(tc.get("mode", "manual_only")),
+            order=order,
+            listen_role=str(tc.get("listen_role", "host")),
+        ),
+    )
+
+
+def load_persona_tts(persona_id: str, app_cfg: AppConfig) -> LocaleTTSConfig:
+    """Per-role Piper: .env PIPER_MODEL_PATH_<ROLE> → persona yaml tts → PIPER_MODEL_PATH (host)."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    data = load_persona_yaml(persona_id)
+    base = app_cfg.locale()
+    role_key = persona_id.upper()
+
+    if persona_id == "host":
+        env_path = os.environ.get("PIPER_MODEL_PATH", "").strip()
+    else:
+        env_path = os.environ.get(f"PIPER_MODEL_PATH_{role_key}", "").strip()
+
+    if env_path:
+        cfg = LocaleTTSConfig(
+            engine=base.tts.engine,
+            model_path=_expand_path(env_path),
+            sample_rate=base.tts.sample_rate,
+        )
+        logger.info("Piper %s ← %s", persona_id, cfg.model_path)
+        return cfg
+
+    tts_block = data.get("tts")
+    if tts_block:
+        cfg = LocaleTTSConfig(
+            engine=tts_block.get("engine", base.tts.engine),
+            model_path=_expand_path(tts_block.get("model_path", base.tts.model_path)),
+            sample_rate=int(tts_block.get("sample_rate", base.tts.sample_rate)),
+        )
+        logger.info("Piper %s ← %s (persona yaml)", persona_id, cfg.model_path)
+        return cfg
+
+    logger.warning(
+        "Piper %s: no PIPER_MODEL_PATH_%s / persona tts — using default %s",
+        persona_id,
+        role_key,
+        base.tts.model_path,
+    )
+    return base.tts
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -71,7 +170,9 @@ def load_config(path: Path | None = None) -> AppConfig:
             ),
             tts=LocaleTTSConfig(
                 engine=tts.get("engine", "piper"),
-                model_path=os.environ.get("PIPER_MODEL_PATH", tts["model_path"]),
+                model_path=_expand_path(
+                    os.environ.get("PIPER_MODEL_PATH", tts["model_path"])
+                ),
                 sample_rate=int(tts.get("sample_rate", 22050)),
             ),
         )
