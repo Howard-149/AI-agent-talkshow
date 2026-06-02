@@ -13,6 +13,10 @@ logs/
 *.swp
 
 # Local-only (not pushed to git; not rsync'd to cluster)
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 docs/
 scripts/
+talkshow-web/.next/
+talkshow-web/node_modules/

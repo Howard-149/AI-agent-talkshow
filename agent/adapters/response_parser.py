@@ -53,7 +53,23 @@ def parse_heard_reply(text: str) -> ParsedTurn:
         # Model ignored format — treat full output as reply for MVP robustness
         reply = text
     if not heard:
-        heard = "(audio understood; no transcript line)"
+        heard = ""
 
     reply, handoff_to = _strip_handoff_tags(reply)
     return ParsedTurn(heard=heard, reply=reply, handoff_to=handoff_to)
+
+
+def is_noise_heard(heard: str) -> bool:
+    """True when STT should not start a user turn (silence, placeholder, noise)."""
+    text = heard.strip()
+    if len(text) < 2:
+        return True
+    lower = text.lower()
+    noise_markers = (
+        "(audio understood",
+        "[silence]",
+        "[no speech]",
+        "no speech detected",
+        "inaudible",
+    )
+    return any(m in lower for m in noise_markers)

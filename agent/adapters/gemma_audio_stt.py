@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 
 from livekit import rtc
@@ -9,9 +10,13 @@ from livekit.agents.types import APIConnectOptions, NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import AudioBuffer, is_given
 
 from agent.adapters.gemma_mm_client import GemmaMMClient
+from agent.adapters.response_parser import is_noise_heard
 from agent.adapters.turn_store import TurnStore
 
 logger = logging.getLogger(__name__)
+
+# Skip VAD blips / room noise shorter than ~0.4s mono 16kHz wav
+_MIN_WAV_BYTES = int(os.environ.get("TALKSHOW_MIN_UTTERANCE_WAV_BYTES", "12000"))
 
 
 def _buffer_to_wav(buffer: AudioBuffer) -> bytes:
@@ -20,6 +25,14 @@ def _buffer_to_wav(buffer: AudioBuffer) -> bytes:
     else:
         frame = buffer
     return frame.to_wav_bytes()
+
+
+def _empty_transcript_event(*, language: str = "en") -> stt.SpeechEvent:
+    return stt.SpeechEvent(
+        type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+        request_id=str(uuid.uuid4()),
+        alternatives=[stt.SpeechData(language=language, text="", confidence=0.0)],
+    )
 
 
 class GemmaAudioSTT(stt.STT):
@@ -64,6 +77,14 @@ class GemmaAudioSTT(stt.STT):
         wav = _buffer_to_wav(buffer)
         logger.info("GemmaAudioSTT: wav_bytes=%d", len(wav))
 
+        if len(wav) < _MIN_WAV_BYTES:
+            logger.info(
+                "GemmaAudioSTT: skip short utterance (%d < %d bytes)",
+                len(wav),
+                _MIN_WAV_BYTES,
+            )
+            return _empty_transcript_event()
+
         user_hint: str | None = None
         panel_turn = False
         if self._talkshow_data is not None:
@@ -85,6 +106,10 @@ class GemmaAudioSTT(stt.STT):
         parsed = await self._client.complete_from_wav(
             wav, user_text=user_hint, history_messages=hist
         )
+        if is_noise_heard(parsed.heard):
+            logger.info("GemmaAudioSTT: skip empty/noise heard=%r", parsed.heard[:60])
+            return _empty_transcript_event()
+
         reply = parsed.reply
         if panel_turn:
             from agent.show_context import sanitize_host_panel_reply
@@ -101,6 +126,10 @@ class GemmaAudioSTT(stt.STT):
 
             append_human(self._talkshow_data, parsed.heard)
             append_role(self._talkshow_data, "host", reply)
+            from agent.ui_events import emit_transcript
+
+            await emit_transcript("human", parsed.heard, step="human_turn")
+            self._talkshow_data.queue_transcript("host", reply, step="host_reply")
             self._talkshow_data.last_human_heard = parsed.heard
             if panel_turn:
                 self._talkshow_data.last_host_panel_tee = reply

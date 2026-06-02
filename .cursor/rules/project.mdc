@@ -1,0 +1,44 @@
+---
+description: AI-Agent-Talkshow project rules for Cursor agents and collaborators
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# AI-Agent-Talkshow — project rules
+
+## Language
+
+- **All git-tracked files must be in English** (README, ROADMAP, CONTRIBUTING, YAML comments, new code comments).
+- Do not add Chinese to files that will be pushed to GitHub.
+
+## Before coding
+
+1. Read [ROADMAP.md](../../ROADMAP.md) for priorities.
+2. Read [README.md](../../README.md) for setup and architecture.
+3. Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for workflow.
+
+## Architecture constraints
+
+- **Single LiveKit agent participant** with role handoff — do not spawn 3 separate RTC agents without explicit design approval.
+- **Shared `show_history`** — panelists share one transcript; disambiguate roles in prompts (Human guest ≠ Amy).
+- **Gemma calls:** `complete_from_wav` (human audio) and `complete_text` (panel lines); `StoredReplyLLM` does not call the model again.
+
+## Current roadmap (Phase 2+)
+
+1. Debate scenario + few-shot examples
+2. Host-moderated turn-taking (hand-raise or host picks speaker from history)
+3. Avatar expressions/motion in `talkshow-web`
+
+Implement against ROADMAP checklists; update ROADMAP when items ship.
+
+## Dev split
+
+- **Babel:** agent worker, vLLM, Piper
+- **Laptop:** `talkshow-web`, `api/tokens.py`
+- Agent sync: `./scripts/sync-to-babel.sh` (local, not in repo)
+
+## Code style
+
+- Minimal diff; match existing patterns in `agent/` and `talkshow-web/`.
+- No commits unless the user explicitly asks.

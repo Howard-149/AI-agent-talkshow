@@ -33,6 +33,9 @@ async def run_panel_round(
         name = load_persona_name(role)
         hist = data.show_history.prior_messages()
         latest_human = data.show_history.latest_human_text()
+        guest_spoken = data.show_history.role_has_spoken("guest")
+        commentator_spoken = data.show_history.role_has_spoken("commentator")
+        other_has_spoken = guest_spoken if role == "commentator" else commentator_spoken
         prompt = panel_speech_prompt(
             role=role,
             name=name,
@@ -41,7 +44,9 @@ async def run_panel_round(
         )
         speech = await data.runtime.gemma_client.complete_text(
             prompt,
-            system_prompt=panelist_system_for_text(role),
+            system_prompt=panelist_system_for_text(
+                role, other_has_spoken=other_has_spoken
+            ),
             history_messages=hist,
         )
         if not speech.strip():
@@ -51,7 +56,7 @@ async def run_panel_round(
                 "let me add my view on that."
             )
         raw = speech.strip()
-        speech = normalize_panelist_speech(role, raw)
+        speech = normalize_panelist_speech(role, raw, guest_has_spoken=guest_spoken)
         if speech != raw:
             logger.info("panel voice normalized for role=%s", role)
         append_role(data, role, speech)

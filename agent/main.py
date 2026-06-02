@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from agent.bootstrap import ensure_hf_hub_env
+from agent.bootstrap import ensure_cluster_runtime_env
 
-ensure_hf_hub_env()
+ensure_cluster_runtime_env()
 
 from livekit.agents import AgentServer, JobContext, JobProcess, cli, room_io
 from livekit.plugins import silero
@@ -57,6 +57,10 @@ async def entrypoint(ctx: JobContext) -> None:
     def _on_user_transcript(ev) -> None:  # type: ignore[no-untyped-def]
         if not ev.is_final:
             return
+        transcript = (ev.transcript or "").strip()
+        if not transcript:
+            logger.debug("ignore empty user transcript")
+            return
         if data.panel_chain_running:
             return
         if controller.is_panel_mode():
@@ -71,7 +75,7 @@ async def entrypoint(ctx: JobContext) -> None:
             data.user_turn_pending_rotation = True
         turn_log.log(
             "user_heard",
-            text=ev.transcript,
+            text=transcript,
             room=ctx.room.name,
             active_role=data.active_role,
         )
@@ -123,6 +127,29 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         await _apply_handoff(next_role, reason="rotate_after_user", silent=True)
 
+    @session.on("speech_created")
+    def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
+        pending = data.pop_pending_transcript()
+        if not pending:
+            return
+        role, text, step = pending
+        asyncio.create_task(
+            _emit_transcript_on_speech(role, text, step=step, source=ev.source)
+        )
+
+    async def _emit_transcript_on_speech(
+        role: str, text: str, *, step: str, source: str
+    ) -> None:
+        from agent.ui_events import emit_transcript
+
+        await emit_transcript(role, text, step=step)
+        logger.debug(
+            "transcript synced with speech role=%s step=%s source=%s",
+            role,
+            step,
+            source,
+        )
+
     @session.on("conversation_item_added")
     def _on_item(ev) -> None:  # type: ignore[no-untyped-def]
         item = ev.item
@@ -157,6 +184,12 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
         room_options=room_io.RoomOptions(),
     )
+
+    from agent.participant_display import publish_agent_panel_metadata
+    from agent.ui_events import emit_panel_roster
+
+    await publish_agent_panel_metadata(scenario)
+    await emit_panel_roster(scenario)
 
 
 if __name__ == "__main__":

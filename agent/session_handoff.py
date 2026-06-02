@@ -10,6 +10,7 @@ from agent.config import load_persona_tts
 from agent.data import TalkShowData
 from agent.participant_display import set_agent_display_name
 from agent.supervisor import TurnController
+from agent.ui_events import emit_role_active
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ async def switch_to_role(
         await wait_for_session_agent(session)
         tts_path = load_persona_tts(role, data.runtime.config).model_path
         logger.info("role ready role=%s piper=%s reason=%s", role, tts_path, reason)
+        await emit_role_active(role)
     finally:
         data.silent_handoff = False
 
@@ -60,6 +62,7 @@ async def speak_panel_line(
         return
 
     await switch_to_role(session, data, speak_role, reason=f"panel:{step}")
+    data.queue_transcript(speak_role, text, step=step)
     logger.info("PANEL say step=%s role=%s text=%.80r", step, speak_role, text)
     handle = session.say(text, allow_interruptions=False)
     await handle.wait_for_playout()

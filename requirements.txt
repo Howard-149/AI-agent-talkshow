@@ -1,13 +1,13 @@
 # Babel GPU node — conda env `talkshow`:
 #   pip install -r requirements.txt
 #
-# 本機筆電請用 requirements-laptop.txt
+# Laptop: use requirements-laptop.txt instead
 #
-# vLLM 必須 +cu129 wheel（勿 plain `pip install vllm`）。見 docs/CLUSTER_PROBE.md
+# vLLM needs +cu129 wheel (not plain `pip install vllm`). See docs/CLUSTER_PROBE.md if present.
 
 --extra-index-url https://download.pytorch.org/whl/cu129
 
-# LiveKit agent (pip 只裝 Python 套件；ONNX 權重另跑 deploy/download-livekit-agent-models.sh)
+# LiveKit agent (pip installs Python packages only; run deploy/download-livekit-agent-models.sh for ONNX weights)
 livekit-api>=0.8.0
 livekit-agents>=1.2.0
 livekit-plugins-silero>=1.0.0

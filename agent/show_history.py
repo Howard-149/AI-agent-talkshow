@@ -43,12 +43,24 @@ class ShowHistory:
                 return line.text
         return ""
 
+    def role_has_spoken(self, role_id: str) -> bool:
+        return any(line.role_id == role_id for line in self.lines)
+
     def prior_messages(self) -> list[dict[str, Any]]:
         """All lines so far — fed to Gemma before the current user turn."""
         msgs: list[dict[str, Any]] = []
         for line in self.lines:
             if line.role_id == "human":
-                msgs.append({"role": "user", "content": f"{HUMAN_LABEL}: {line.text}"})
+                amy = load_persona_name("guest")
+                msgs.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{HUMAN_LABEL} (real person in the room, NOT the AI panelist "
+                            f"{amy}): {line.text}"
+                        ),
+                    }
+                )
             else:
                 msgs.append(
                     {

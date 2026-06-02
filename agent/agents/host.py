@@ -33,6 +33,10 @@ class HostAgent(HandoffToolsMixin, TalkShowAgent):
         if self._data.scenario.turn_control.mode == "panel_round_robin":
             from agent.panel_prompts import PANEL_OPENING_LINE
 
+            from agent.ui_events import emit_role_active
+
+            await emit_role_active("host")
+            self._data.queue_transcript("host", PANEL_OPENING_LINE, step="opening")
             handle = self.session.say(
                 PANEL_OPENING_LINE,
                 allow_interruptions=False,

@@ -12,7 +12,7 @@ from agent.runtime import TalkShowRuntime
 
 
 def build_turn_handling() -> TurnHandlingOptions:
-    """Default: MultilingualModel (needs deploy/download-livekit-agent-models.sh). TALKSHOW_TURN_DETECTOR=vad to skip."""
+    """Default: MultilingualModel (needs deploy/download-livekit-agent-models.sh → TALKSHOW_TURN_DETECTOR_CACHE). TALKSHOW_TURN_DETECTOR=vad to skip."""
     mode = os.environ.get("TALKSHOW_TURN_DETECTOR", "multilingual").lower()
     if mode in ("vad", "0", "false", "none", "off"):
         return TurnHandlingOptions()

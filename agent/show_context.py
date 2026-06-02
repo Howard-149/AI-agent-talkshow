@@ -79,8 +79,11 @@ def panelist_card(
             up_next=[amy, f"{host} (close)", "human guest"],
             human_floor="frozen",
         ) + (
-            "\nDeliver what the human asked for in your spoken lines. "
-            "If they wanted examples, say the actual example — do not only analyze humor."
+            f"\nDeliver what the human asked for in your spoken lines. "
+            f"If they wanted examples, say the actual example — do not only analyze humor."
+            f"\nIdentity: the real person who spoke is labeled \"Human guest\" in the transcript — "
+            f"they are NOT {amy}. {amy} is an AI panelist who has NOT spoken yet this round; "
+            f"do not thank {amy} or say \"{amy}, you…\" for what the human said."
         )
     if role == "guest":
         just = (

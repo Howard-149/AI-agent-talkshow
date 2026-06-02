@@ -14,6 +14,9 @@ from agent.config import LocaleTTSConfig
 
 logger = logging.getLogger(__name__)
 
+# Reuse loaded ONNX voices across role handoffs (avoids gaps between panel lines).
+_voice_cache: dict[str, object] = {}
+
 
 class PiperTTS(tts.TTS):
     def __init__(self, cfg: LocaleTTSConfig) -> None:
@@ -76,6 +79,19 @@ def _piper_config_path(model_path: Path) -> Path:
     return modern
 
 
+def _load_voice(model_path: Path, config_path: Path):
+    from piper import PiperVoice  # type: ignore[import-untyped]
+
+    key = str(model_path.resolve())
+    cached = _voice_cache.get(key)
+    if cached is not None:
+        return cached
+    voice = PiperVoice.load(str(model_path), config_path=str(config_path))
+    _voice_cache[key] = voice
+    logger.info("PiperVoice cached model=%s", model_path.name)
+    return voice
+
+
 def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
     if not pipert._model_path.is_file():
         raise FileNotFoundError(f"Piper model not found: {pipert._model_path}")
@@ -90,17 +106,12 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
 
     # Prefer Python piper-tts if installed
     try:
-        from piper import PiperVoice  # type: ignore[import-untyped]
-
         logger.debug(
             "PiperVoice.load model=%s config=%s",
             pipert._model_path.name,
             config_path.name,
         )
-        voice = PiperVoice.load(
-            str(pipert._model_path),
-            config_path=str(config_path),
-        )
+        voice = _load_voice(pipert._model_path, config_path)
         chunks = list(voice.synthesize(text))
         pcm = b"".join(c.audio_int16_bytes for c in chunks)
         rate = voice.config.sample_rate

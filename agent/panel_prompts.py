@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agent.config import load_persona_name
+from agent.show_history import HUMAN_LABEL
 from agent.show_context import (
     host_audio_user_hint,
     host_close_card,
@@ -19,9 +20,11 @@ PANEL_OPENING_LINE = (
 def panelist_role_brief(role: str) -> str:
     name = load_persona_name(role)
     if role == "commentator":
+        amy = load_persona_name("guest")
         return (
             f"You are {name} (commentator). Your turn now — speak 2–4 sentences out loud. "
-            "Satisfy the human guest's latest request using the transcript above."
+            f'Satisfy what "{HUMAN_LABEL}" asked in the transcript — not {amy}, who has '
+            f"not spoken yet unless you see a line labeled \"{amy}:\"."
         )
     if role == "guest":
         return (
@@ -31,27 +34,58 @@ def panelist_role_brief(role: str) -> str:
     return f"You are {name}. Speak in character."
 
 
-def panelist_system_for_text(role: str) -> str:
+def _panel_identity_guard(role: str, *, other_has_spoken: bool) -> str:
+    """Disambiguate Human guest (real person) vs Amy (AI guest panelist)."""
+    amy = load_persona_name("guest")
+    host = load_persona_name("host")
+    if role == "commentator":
+        if other_has_spoken:
+            return (
+                f"\nThe real person in the room is \"{HUMAN_LABEL}\" — not {amy}. "
+                f"Only attribute words to {amy} if a transcript line is labeled \"{amy}:\"."
+            )
+        return (
+            f"\nThe real person in the room is \"{HUMAN_LABEL}\" — NOT {amy}. "
+            f"{amy} has not spoken yet; do not open with \"{amy}, you…\" or thank {amy} "
+            f"for what {HUMAN_LABEL} said. Respond to {HUMAN_LABEL}'s request; you may "
+            f"mention that {amy} will speak next, without treating her as if she already did."
+        )
+    if role == "guest":
+        ryan = load_persona_name("commentator")
+        return (
+            f"\nThe real person in the room is \"{HUMAN_LABEL}\" — not you ({amy}). "
+            f"Build on {ryan} if helpful; satisfy what {HUMAN_LABEL} asked for."
+        )
+    return f"\nYou are {host}; the human is \"{HUMAN_LABEL}\"."
+
+
+def panelist_system_for_text(role: str, *, other_has_spoken: bool = False) -> str:
     name = load_persona_name(role)
+    host = load_persona_name("host")
+    ryan = load_persona_name("commentator")
+    amy = load_persona_name("guest")
     if role == "commentator":
         role_line = "color commentator"
+        other = amy
     elif role == "guest":
-        role_line = "guest"
+        role_line = "guest panelist (AI)"
+        other = ryan
     else:
         role_line = role
-    other = load_persona_name(
-        "guest" if role == "commentator" else "commentator"
-    )
+        other = ryan
     return (
         f"You are {name}, the {role_line} on a live English talk-show panel. "
         "The messages above are the running transcript — lines labeled with your "
-        f"name are yours; lines labeled {other} or Lessac are other speakers. "
+        f"name are yours; lines labeled {other} or {host} are other AI speakers; "
+        f'lines labeled "{HUMAN_LABEL}:" are the real human — never confuse them '
+        f"with {amy} (she is a separate AI guest, not the human). "
         f"Speak in first person as {name} (use I/me/my, never \"{name} has\" or "
-        f"\"I think {name}\"). You may address {other} by name, but do not speak "
-        f"as if you are {other} commenting on {name}. "
+        f"\"I think {name}\"). You may address {other} by name only when they have "
+        f"actually spoken in the transcript. "
         "Fulfill the human guest's latest request in what you say. "
         "If they asked for examples, include the full example in your speech. "
         "Output only spoken lines. Plain English. No labels or markdown."
+        f"{_panel_identity_guard(role, other_has_spoken=other_has_spoken)}"
     )
 
 
@@ -85,6 +119,7 @@ def panel_speech_prompt(
 
 Rules:
 - You are {name} — first person only (I/me), never third person ({name} said…).
+- "{HUMAN_LABEL}" is the real person; {load_persona_name("guest")} is the AI guest — different people.
 - Read all messages above plus the latest human message.
 - Perform the request; do not only discuss whether it is hard to perform.
 - Do not ask the human questions; their floor is frozen until the host closes the round.

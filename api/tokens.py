@@ -16,8 +16,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create LiveKit access token")
     parser.add_argument("--room", default="talkshow-dev", help="Room name")
     parser.add_argument("--identity", default="human-host", help="Participant identity")
+    parser.add_argument("--name", default=None, help="Display name (defaults to identity)")
     parser.add_argument("--ttl", type=int, default=3600, help="TTL seconds")
     args = parser.parse_args()
+
+    display = args.name or args.identity
 
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -28,7 +31,7 @@ def main() -> None:
     token = (
         api.AccessToken(api_key, api_secret)
         .with_identity(args.identity)
-        .with_name(args.identity)
+        .with_name(display)
         .with_grants(
             api.VideoGrants(
                 room_join=True,

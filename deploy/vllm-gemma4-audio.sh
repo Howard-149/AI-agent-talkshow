@@ -15,6 +15,7 @@ echo "vLLM log → ${LOG_FILE}"
 echo "  tail -f ${LOG_FILE}"
 
 vllm serve "$MODEL" \
+  --safetensors-load-strategy=prefetch\
   --host "$HOST" \
   --port "$PORT" \
   --max-model-len 8192 \
