@@ -30,21 +30,11 @@ class HostAgent(HandoffToolsMixin, TalkShowAgent):
             "yes",
         ):
             return
-        if self._data.scenario.turn_control.mode == "panel_round_robin":
-            from agent.panel_prompts import PANEL_OPENING_LINE
-
-            from agent.ui_events import emit_role_active
-
-            await emit_role_active("host")
-            self._data.queue_transcript("host", PANEL_OPENING_LINE, step="opening")
-            handle = self.session.say(
-                PANEL_OPENING_LINE,
-                allow_interruptions=False,
-            )
-            await handle.wait_for_playout()
-            from agent.show_history import append_role
-
-            append_role(self._data, "host", PANEL_OPENING_LINE)
+        if self._data.scenario.turn_control.mode in (
+            "panel_round_robin",
+            "host_moderated",
+        ):
+            # Opening runs from main.entrypoint after room connect (session_opening.py)
             return
         await self.session.generate_reply(
             instructions="Greet the user briefly in English as the talk-show host and invite them to speak."

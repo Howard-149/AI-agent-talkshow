@@ -77,6 +77,8 @@ export function TalkshowOverlay() {
       applyRoster(ev.members);
     } else if (ev.type === 'role_active') {
       setActiveRole(ev.role);
+    } else if (ev.type === 'role_idle') {
+      setActiveRole(null);
     } else if (ev.type === 'transcript' && ev.final) {
       pushLine(ev.role, ev.speaker, ev.text);
     }

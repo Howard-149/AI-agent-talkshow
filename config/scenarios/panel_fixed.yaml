@@ -1,0 +1,10 @@
+id: panel_fixed
+description: Fixed panel order — human → host → Ryan → Amy → host close (legacy)
+
+meet:
+  default_room: talkshow-dev
+
+turn_control:
+  mode: panel_round_robin
+  order: [human, host, commentator, guest]
+  listen_role: host

@@ -20,6 +20,7 @@ class ParsedTurn:
     heard: str
     reply: str
     handoff_to: str | None = None
+    next_speaker: str | None = None
 
 
 def _normalize_handoff_role(raw: str) -> str | None:
@@ -42,7 +43,10 @@ def _strip_handoff_tags(reply: str) -> tuple[str, str | None]:
 
 
 def parse_heard_reply(text: str) -> ParsedTurn:
+    from agent.floor_parser import parse_next_speaker_tag, strip_next_tag
+
     text = text.strip()
+    next_speaker = parse_next_speaker_tag(text)
     heard_m = _HEARD_RE.search(text)
     reply_m = _REPLY_RE.search(text)
 
@@ -51,12 +55,33 @@ def parse_heard_reply(text: str) -> ParsedTurn:
 
     if not reply:
         # Model ignored format — treat full output as reply for MVP robustness
-        reply = text
+        reply = strip_next_tag(text)
     if not heard:
         heard = ""
 
     reply, handoff_to = _strip_handoff_tags(reply)
-    return ParsedTurn(heard=heard, reply=reply, handoff_to=handoff_to)
+    reply = strip_next_tag(reply)
+    if not next_speaker and handoff_to in ("commentator", "guest", "host"):
+        next_speaker = handoff_to
+    return ParsedTurn(
+        heard=heard, reply=reply, handoff_to=handoff_to, next_speaker=next_speaker
+    )
+
+
+def parse_host_speech(text: str) -> ParsedTurn:
+    """Parse host text-only Gemma output: optional [reply]: block + [next]: tag."""
+    text = text.strip()
+    if not text:
+        return ParsedTurn(heard="", reply="", next_speaker=None)
+    if _HEARD_RE.search(text) or _REPLY_RE.search(text):
+        return parse_heard_reply(text)
+    from agent.floor_parser import parse_next_speaker_tag, strip_next_tag
+
+    next_speaker = parse_next_speaker_tag(text)
+    spoken, handoff_to = _strip_handoff_tags(strip_next_tag(text))
+    if not next_speaker and handoff_to in ("commentator", "guest", "host"):
+        next_speaker = handoff_to
+    return ParsedTurn(heard="", reply=spoken, handoff_to=handoff_to, next_speaker=next_speaker)
 
 
 def is_noise_heard(heard: str) -> bool:

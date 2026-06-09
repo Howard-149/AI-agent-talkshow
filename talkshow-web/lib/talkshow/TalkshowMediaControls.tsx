@@ -12,6 +12,8 @@ type Props = {
   showTranscript: boolean;
   onToggleTranscript: () => void;
   transcriptCount: number;
+  handRaised: boolean;
+  onToggleHandRaise: () => void;
 };
 
 /** Meet ControlBar + talkshow extras (settings drawer, transcript). */
@@ -21,6 +23,8 @@ export function TalkshowMediaControls({
   showTranscript,
   onToggleTranscript,
   transcriptCount,
+  handRaised,
+  onToggleHandRaise,
 }: Props) {
   return (
     <>
@@ -48,11 +52,12 @@ export function TalkshowMediaControls({
         <div className={styles.extraControls}>
           <button
             type="button"
-            className="lk-button"
-            onClick={onToggleSettings}
-            aria-pressed={showSettings}
+            className={`${styles.handToggle} ${handRaised ? styles.handToggleOn : ''}`}
+            aria-pressed={handRaised}
+            onClick={onToggleHandRaise}
+            title="Raise hand for the floor"
           >
-            Settings
+            {handRaised ? '✋ Hand up' : '✋ Raise hand'}
           </button>
           <button
             type="button"
@@ -64,6 +69,14 @@ export function TalkshowMediaControls({
             {!showTranscript && transcriptCount > 0 && (
               <span className={styles.transcriptBadge}>{transcriptCount}</span>
             )}
+          </button>
+          <button
+            type="button"
+            className="lk-button"
+            onClick={onToggleSettings}
+            aria-pressed={showSettings}
+          >
+            Settings
           </button>
         </div>
       </div>

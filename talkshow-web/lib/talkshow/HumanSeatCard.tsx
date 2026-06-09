@@ -11,9 +11,10 @@ import styles from '@/styles/TalkshowStage.module.css';
 type Props = {
   human: HumanSeat;
   activeRole: PanelRole | null;
+  handRaised?: boolean;
 };
 
-export function HumanSeatCard({ human, activeRole }: Props) {
+export function HumanSeatCard({ human, activeRole, handRaised }: Props) {
   const { localParticipant, cameraTrack } = useLocalParticipant();
   const isLocalSpeaking = useIsSpeaking(localParticipant);
 
@@ -37,7 +38,13 @@ export function HumanSeatCard({ human, activeRole }: Props) {
       className={styles.card}
       data-human
       data-speaking={speaking ? 'true' : 'false'}
+      data-hand={handRaised ? 'raised' : 'false'}
     >
+      {handRaised && (
+        <span className={styles.handBadge} title="Hand raised">
+          ✋
+        </span>
+      )}
       {camTrackRef ? (
         <VideoTrack trackRef={camTrackRef} className={styles.videoAvatar} />
       ) : (

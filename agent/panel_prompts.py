@@ -84,7 +84,9 @@ def panelist_system_for_text(role: str, *, other_has_spoken: bool = False) -> st
         f"actually spoken in the transcript. "
         "Fulfill the human guest's latest request in what you say. "
         "If they asked for examples, include the full example in your speech. "
-        "Output only spoken lines. Plain English. No labels or markdown."
+        "Plain English. After your spoken lines, always output [next]: "
+        "commentator | guest | host — use commentator/guest ONLY if you pass the floor "
+        "to them by name; otherwise host."
         f"{_panel_identity_guard(role, other_has_spoken=other_has_spoken)}"
     )
 
@@ -124,6 +126,12 @@ Rules:
 - Perform the request; do not only discuss whether it is hard to perform.
 - Do not ask the human questions; their floor is frozen until the host closes the round.
 - Do NOT say you are {host_name} unless you are the host closing.
+
+Output exactly:
+[reply]: <your spoken lines>
+[next]: commentator | guest | host
+- [next:commentator|guest] ONLY if you explicitly hand off to them by name in [reply]
+- Otherwise [next:host] — the host will moderate who speaks next
 """
 
 

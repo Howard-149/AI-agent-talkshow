@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -112,9 +113,7 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
             config_path.name,
         )
         voice = _load_voice(pipert._model_path, config_path)
-        chunks = list(voice.synthesize(text))
-        pcm = b"".join(c.audio_int16_bytes for c in chunks)
-        rate = voice.config.sample_rate
+        pcm, rate = _synthesize_piper_voice(voice, text)
         return pcm, rate, 1
     except ImportError:
         pass
@@ -124,21 +123,73 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
             "Install piper-tts (`pip install piper-tts`) or put `piper` CLI on PATH"
         )
 
+    sentence_silence = _env_float("TALKSHOW_PIPER_SENTENCE_SILENCE", 0.0)
+
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.wav"
+        cmd = [
+            pipert._piper_bin,
+            "--model",
+            str(pipert._model_path),
+            "--output_file",
+            str(out),
+        ]
+        if sentence_silence >= 0:
+            cmd.extend(["--sentence-silence", str(sentence_silence)])
         subprocess.run(
-            [
-                pipert._piper_bin,
-                "--model",
-                str(pipert._model_path),
-                "--output_file",
-                str(out),
-            ],
+            cmd,
             input=text.encode("utf-8"),
             check=True,
             capture_output=True,
         )
         return _read_wav_pcm(out.read_bytes(), pipert.sample_rate)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    return float(raw)
+
+
+def _synthesize_piper_voice(voice: object, text: str) -> tuple[bytes, int]:
+    """
+    One continuous PCM buffer for the full line — avoids long gaps between sentences.
+    """
+    import numpy as np
+
+    rate = voice.config.sample_rate  # type: ignore[attr-defined]
+
+    if hasattr(voice, "phonemize") and hasattr(voice, "phoneme_ids_to_audio"):
+        from piper.config import SynthesisConfig
+
+        syn = SynthesisConfig()
+        phoneme_ids: list[int] = []
+        for phonemes in voice.phonemize(text):  # type: ignore[attr-defined]
+            if phonemes:
+                phoneme_ids.extend(voice.phonemes_to_ids(phonemes))  # type: ignore[attr-defined]
+        if phoneme_ids:
+            audio = voice.phoneme_ids_to_audio(phoneme_ids, syn_config=syn)  # type: ignore[attr-defined]
+            if isinstance(audio, tuple):
+                audio = audio[0]
+            pcm = np.clip(audio * 32767.0, -32767, 32767).astype(np.int16).tobytes()
+            return pcm, rate
+
+    sentence_silence = _env_float("TALKSHOW_PIPER_SENTENCE_SILENCE", 0.0)
+    try:
+        chunks = list(voice.synthesize(text, sentence_silence=sentence_silence))  # type: ignore[attr-defined]
+    except TypeError:
+        try:
+            from piper.config import SynthesisConfig
+
+            chunks = list(
+                voice.synthesize(text, syn_config=SynthesisConfig())  # type: ignore[attr-defined]
+            )
+        except TypeError:
+            chunks = list(voice.synthesize(text))  # type: ignore[attr-defined]
+
+    pcm = b"".join(c.audio_int16_bytes for c in chunks)
+    return pcm, rate
 
 
 def _read_wav_pcm(wav_bytes: bytes, expected_rate: int) -> tuple[bytes, int, int]:

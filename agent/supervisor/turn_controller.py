@@ -7,9 +7,11 @@ from agent.data.talkshow import TalkShowData
 
 logger = logging.getLogger(__name__)
 
+PANEL_MODES = frozenset({"panel_round_robin", "host_moderated"})
+
 
 class TurnController:
-    """Who speaks next: tool handoffs or scenario rotation after each user turn."""
+    """Who speaks next: tool handoffs, scenario rotation, or host-moderated floor."""
 
     def __init__(self, scenario: ScenarioConfig, data: TalkShowData) -> None:
         self._scenario = scenario
@@ -55,8 +57,14 @@ class TurnController:
         self.apply_persona_for_role(next_role)
         return next_role
 
+    def turn_mode(self) -> str:
+        return self._scenario.turn_control.mode
+
     def is_panel_mode(self) -> bool:
-        return self._scenario.turn_control.mode == "panel_round_robin"
+        return self.turn_mode() in PANEL_MODES
+
+    def is_host_moderated_mode(self) -> bool:
+        return self.turn_mode() == "host_moderated"
 
     def listen_role(self) -> str:
         return self._scenario.turn_control.listen_role
@@ -72,11 +80,15 @@ class TurnController:
         )
         self._data.runtime.gemma_client.set_persona(role, instructions)
 
-    def panel_followup_roles(self) -> list[str]:
-        """AI speakers after the host replies to the human (order minus human & listen_role)."""
+    def panel_speaker_roles(self) -> list[str]:
+        """AI panelists who may take the floor (excludes human and listen/host role)."""
         listen = self.listen_role()
         return [
             r
             for r in self._scenario.turn_control.order
             if r not in ("human", listen)
         ]
+
+    def panel_followup_roles(self) -> list[str]:
+        """Fixed-order panel speakers (panel_round_robin only)."""
+        return self.panel_speaker_roles()

@@ -43,21 +43,25 @@ def host_after_human_card() -> str:
         up_next=[ryan, amy, f"{host} (close)", "human guest"],
         human_floor="frozen",
     ) + (
-        f"\nYour beat: 1–2 sentences to the ROOM. End by calling on {ryan} to speak next "
-        f"(name them once). If the human asked for examples or demonstrations, say the "
-        f"panel will show them out loud — do not ask {ryan} an open question they cannot "
-        f"answer while frozen. Do not ask the human anything."
+        f"\nYour beat: 1–2 sentences to the ROOM.\n"
+        f"- If you name {ryan} or {amy} to speak next → set [next:commentator] or [next:guest]\n"
+        f"- If you leave it open for volunteers → set [next:host]"
     )
 
 
 def host_audio_user_hint() -> str:
     return (
         f"{host_after_human_card()}\n\n"
-        "Listen to the human's audio. Output [heard]: and [reply]:.\n"
-        "[reply] must acknowledge what the human asked, match what they want from the "
-        "panel (discussion vs concrete examples), then call on "
-        f"{load_persona_name('commentator')} to speak next in the same paragraph. "
-        "No [handoff:…] tags. Not a 1-on-1 interview."
+        "Listen to the human's audio. Output exactly:\n"
+        "[heard]: <transcript>\n"
+        "[reply]: <short host tee-up to the room>\n"
+        "[next]: commentator | guest | host | human | close\n\n"
+        "[next] rules:\n"
+        "- You named someone to speak next → commentator or guest\n"
+        "- Open floor, no one picked → host (panel raises hands)\n"
+        "- If [reply] calls on Ryan/Amy by name but you forget the tag, the show still "
+        "routes to them from your spoken tee-up.\n"
+        "[reply] must acknowledge what the human asked. Not a 1-on-1 interview."
     )
 
 
@@ -150,9 +154,10 @@ def _panel_tee_up_fallback(human_heard: str) -> str:
 def sanitize_host_panel_reply(reply: str, human_heard: str) -> str:
     """Strip handoff tags, fix empty/tag-only lines, reshape interview tone."""
     from agent.adapters.response_parser import _strip_handoff_tags
+    from agent.floor_parser import strip_next_tag
 
     text, _ = _strip_handoff_tags(reply)
-    text = text.strip()
+    text = strip_next_tag(text).strip()
 
     ryan = load_persona_name("commentator")
     amy = load_persona_name("guest")
@@ -173,3 +178,8 @@ def sanitize_host_panel_reply(reply: str, human_heard: str) -> str:
         text = " ".join(kept).strip()
 
     return text
+
+
+def host_used_tee_fallback(reply: str, human_heard: str) -> bool:
+    """True when sanitize substituted our Ryan-first tee-up template."""
+    return reply.strip() == _panel_tee_up_fallback(human_heard)

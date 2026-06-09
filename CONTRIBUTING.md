@@ -22,14 +22,16 @@ Local-only notes (e.g. `.cursor/soul.md`, personal `docs/`) may use any language
 
 ## Development split
 
-| Work | Where |
-|------|--------|
-| Agent, vLLM, Piper | Babel GPU node |
-| Frontend (`talkshow-web/`) | Laptop or Vercel |
-| Token helper | Laptop (`api/tokens.py`) |
-| LiveKit media | LiveKit Cloud |
+| Work | Where | Install |
+|------|--------|---------|
+| Token helper | Laptop | `pip install -r requirements-laptop.txt` |
+| Frontend (`talkshow-web/`) | Laptop or Vercel | `pnpm install` in `talkshow-web/` |
+| Agent, vLLM, Piper | Babel GPU node | conda `talkshow` **Python 3.11**, `pip install -r requirements.txt` |
+| LiveKit media | LiveKit Cloud | Keys in repo root `.env` |
 
-Agent code sync: `./scripts/sync-to-babel.sh` (local script, not in git).
+- **Laptop:** do not use `requirements.txt` unless running the full agent on a GPU machine.
+- **Babel:** set per-role Piper paths in `.env` (`PIPER_MODEL_PATH`, `PIPER_MODEL_PATH_GUEST`, `PIPER_MODEL_PATH_COMMENTATOR`). See README “Piper — one ONNX file per role”.
+- Agent on Babel: `git pull` after merge, then restart `python -m agent.main dev`. Copy `.env` to Babel separately (never commit it).
 
 ## Pull requests
 

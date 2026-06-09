@@ -119,6 +119,82 @@
   transform: translateY(-2px);
 }
 
+@keyframes handWave {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  20% {
+    transform: rotate(16deg) scale(1.1);
+  }
+  40% {
+    transform: rotate(-10deg) scale(1.05);
+  }
+  60% {
+    transform: rotate(12deg) scale(1.08);
+  }
+  80% {
+    transform: rotate(-6deg) scale(1.02);
+  }
+}
+
+@keyframes handGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(250, 204, 21, 0.45),
+      0 4px 16px rgba(250, 204, 21, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(250, 204, 21, 0.85),
+      0 8px 28px rgba(250, 204, 21, 0.32);
+  }
+}
+
+.card[data-hand='raised'] {
+  border-color: rgba(250, 204, 21, 0.75);
+  animation: handGlow 1.6s ease-in-out infinite;
+}
+
+.handBadge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  display: inline-block;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
+  animation: handWave 1.25s ease-in-out infinite;
+  transform-origin: 70% 85%;
+  z-index: 2;
+}
+
+.handToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.handToggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.handToggleOn {
+  background: rgba(250, 204, 21, 0.25);
+  border-color: rgba(250, 204, 21, 0.55);
+  color: #fef9c3;
+  animation: handGlow 1.6s ease-in-out infinite;
+}
+
 .card[data-human] {
   --role-color: #64748b;
 }
@@ -176,6 +252,59 @@
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.queueBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fef9c3;
+  background: rgba(250, 204, 21, 0.14);
+  border: none;
+  border-bottom: 1px solid rgba(250, 204, 21, 0.25);
+  cursor: pointer;
+  text-align: left;
+}
+
+.queueBar:hover {
+  background: rgba(250, 204, 21, 0.22);
+}
+
+.queueBarOpen {
+  background: rgba(250, 204, 21, 0.24);
+  border-bottom-color: rgba(250, 204, 21, 0.4);
+}
+
+.queueBarLabel {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.queueBarCount {
+  font-weight: 500;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.35);
+  color: #fffbeb;
+}
+
+.queueBarEmpty {
+  font-weight: 500;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.queueBarChevron {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
 .controlBarRow {
   display: flex;
   flex-wrap: wrap;
@@ -185,6 +314,7 @@
   width: 100%;
   padding: 0.65rem 0.75rem;
   max-width: 100%;
+  overflow-x: auto;
 }
 
 .lkBar {
@@ -192,17 +322,17 @@
   padding: 0 !important;
   max-height: none !important;
   height: auto !important;
-  flex: 1 1 420px;
-  min-width: min(100%, 280px);
+  flex: 1 1 320px;
+  min-width: min(100%, 240px);
 }
 
 .extraControls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 
 .settingsPanel {
@@ -320,4 +450,67 @@
   margin: 0;
   font-size: 0.82rem;
   line-height: 1.4;
+}
+
+.queuePanel {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0;
+  background: rgba(15, 17, 23, 0.98);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  max-height: min(28vh, 220px);
+  overflow-y: auto;
+}
+
+.queueTitle {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.queuePhase {
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+.queueList {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.75rem 2rem;
+  font-size: 0.82rem;
+}
+
+.queueItem {
+  margin-bottom: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+}
+
+.queuePos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: -1.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.35);
+  color: #e0e7ff;
+}
+
+.queueRole {
+  font-size: 0.72rem;
+  opacity: 0.55;
+}
+
+.queueMeta {
+  flex: 1 1 100%;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding-left: 0.1rem;
 }

@@ -12,6 +12,8 @@ export const UI_TOPIC = 'talkshow/ui';
 export type UiEvent =
   | { type: 'panel_roster'; scenario: string; members: PanelistDef[] }
   | { type: 'role_active'; role: PanelRole; name: string }
+  | { type: 'role_idle' }
+  | { type: 'floor_pending'; active: boolean }
   | {
       type: 'transcript';
       role: string;
@@ -19,6 +21,30 @@ export type UiEvent =
       text: string;
       final: boolean;
       step?: string;
+    }
+  | {
+      type: 'hand_raise';
+      role: PanelRole;
+      name: string;
+      raised: boolean;
+      reason?: string;
+      topic?: string;
+    }
+  | {
+      type: 'floor_grant';
+      role: PanelRole;
+      name: string;
+      reason?: string;
+    }
+  | {
+      type: 'queue_state';
+      queue: Array<{
+        role: PanelRole;
+        name: string;
+        reason?: string;
+        topic?: string;
+      }>;
+      phase?: string;
     };
 
 export type AgentParticipantMetadata = {

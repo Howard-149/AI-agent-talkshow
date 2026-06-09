@@ -25,12 +25,12 @@ Open http://localhost:3000 → **Talkshow (token)** tab → paste URL + TOKEN �
 
 Same flow as [meet.livekit.io Custom tab](https://meet.livekit.io/?tab=custom).
 
-## Agent sync
+## Agent on Babel
 
-Panel/transcript events require latest agent on Babel (`agent/ui_events.py`). Sync repo and restart:
+Panel/transcript events require the agent worker on Babel (`agent/ui_events.py`). After `git pull` on the cluster:
 
 ```bash
-python -m agent.main dev
+source .env && python -m agent.main dev
 ```
 
 ## Two humans
@@ -54,7 +54,13 @@ Meet includes `/api/connection-details` — uses root `.env` `LIVEKIT_*` and **M
 
 - `panel_roster` — on connect, from `config/scenarios/*.yaml` + `config/personas/*.yaml`
 - `role_active` — who is speaking now
-- `transcript` — final lines
+- `transcript` — final spoken lines
+- `hand_raise` — panelist wants floor (✋ on avatar)
+- `floor_grant` — host gave floor to role
+
+**Human → agent (`talkshow/control`):**
+
+- `hand_raise` — `{ type, raised, topic?, reason? }` from Raise hand button
 
 Late joiners can also read roster from agent participant **metadata** (`talkshowAgent` + `panelRoster`).
 

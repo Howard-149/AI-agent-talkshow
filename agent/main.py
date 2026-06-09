@@ -14,7 +14,6 @@ from agent.bootstrap import ensure_cluster_runtime_env
 ensure_cluster_runtime_env()
 
 from livekit.agents import AgentServer, JobContext, JobProcess, cli, room_io
-from livekit.plugins import silero
 
 from agent.agents.factory import build_agent
 from agent.config import load_config, load_scenario
@@ -23,7 +22,7 @@ from agent.hooks.logging import TurnJsonlLogger
 from agent.panel_speech import run_panel_round
 from agent.session_handoff import switch_to_role
 from agent.runtime import build_runtime
-from agent.session import build_agent_session
+from agent.session import build_agent_session, load_vad
 from agent.supervisor import TurnController
 
 logger = logging.getLogger("talkshow")
@@ -33,7 +32,7 @@ server = AgentServer()
 
 
 def prewarm(proc: JobProcess) -> None:
-    proc.userdata["vad"] = silero.VAD.load()
+    proc.userdata["vad"] = load_vad()
 
 
 server.setup_fnc = prewarm
@@ -47,11 +46,16 @@ async def entrypoint(ctx: JobContext) -> None:
     scenario = load_scenario()
     runtime = build_runtime(app_cfg)
     data = TalkShowData(scenario=scenario, runtime=runtime)
-    controller = TurnController(scenario, data)
-
-    session = build_agent_session(runtime, data)
+    data.room_name = ctx.room.name
     log_dir = Path(os.environ.get("LOG_DIR", "logs"))
     turn_log = TurnJsonlLogger(log_dir)
+    data.turn_log = turn_log
+    controller = TurnController(scenario, data)
+
+    session = build_agent_session(
+        runtime, data, prewarmed_vad=ctx.proc.userdata.get("vad")
+    )
+    data.agent_session = session
 
     @session.on("user_input_transcribed")
     def _on_user_transcript(ev) -> None:  # type: ignore[no-untyped-def]
@@ -63,14 +67,10 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         if data.panel_chain_running:
             return
+        data.touch_activity()
         if controller.is_panel_mode():
-            data.user_turn_pending_panel = True
-            listen = controller.listen_role()
-            controller.apply_listen_persona()
-            if data.active_role != listen:
-                asyncio.create_task(
-                    _apply_handoff(listen, reason="panel_human_turn", silent=True)
-                )
+            # Handoff + panel_followup_pending happen in GemmaAudioSTT (serialized)
+            pass
         else:
             data.user_turn_pending_rotation = True
         turn_log.log(
@@ -78,6 +78,7 @@ async def entrypoint(ctx: JobContext) -> None:
             text=transcript,
             room=ctx.room.name,
             active_role=data.active_role,
+            panel_followup_pending=data.panel_followup_pending,
         )
 
     async def _apply_handoff(next_role: str, *, reason: str, silent: bool) -> None:
@@ -103,19 +104,28 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
     async def _run_panel_followups() -> None:
-        """After human spoke and host replied: Lessac announces → Ryan → Amy → Lessac closes."""
+        """After human spoke and host replied: host-moderated or fixed panel round."""
         if data.panel_chain_running:
+            turn_log.log("panel_skip", reason="chain_running", room=ctx.room.name)
             return
         data.panel_chain_running = True
         try:
-            logger.info("PANEL round start — watch logs for step=bridge_* / speech_*")
+            turn_log.log(
+                "panel_start",
+                floor_next=data.floor_next_speaker or "host",
+                room=ctx.room.name,
+                active_role=data.active_role,
+            )
+            logger.info("PANEL round start next=%s", data.floor_next_speaker or "host")
             await run_panel_round(session, data, controller)
             listen = controller.listen_role()
             await _apply_handoff(listen, reason="panel_wait_human", silent=True)
+            turn_log.log("panel_done", room=ctx.room.name, active_role=data.active_role)
             logger.info("PANEL round done — waiting for human")
         finally:
             data.panel_chain_running = False
             data.user_turn_pending_panel = False
+            data.panel_followup_pending = False
 
     async def _maybe_rotate_after_reply() -> None:
         tagged = runtime.turn_store.consume_handoff_to()
@@ -127,27 +137,67 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         await _apply_handoff(next_role, reason="rotate_after_user", silent=True)
 
+    def _is_listening_state(state: object) -> bool:
+        s = str(state).lower()
+        return s == "listening" or s.endswith(".listening")
+
+    @session.on("agent_state_changed")
+    def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+        new_state = getattr(ev, "new_state", None)
+        if _is_listening_state(new_state):
+            from agent.ui_events import emit_role_idle
+
+            asyncio.create_task(emit_role_idle())
+        if not _is_listening_state(new_state):
+            return
+        if not controller.is_panel_mode():
+            return
+        if not data.panel_followup_pending or data.panel_chain_running:
+            return
+        if data.active_role != controller.listen_role():
+            turn_log.log(
+                "panel_skip",
+                reason="wrong_role",
+                active_role=data.active_role,
+                listen=controller.listen_role(),
+                room=ctx.room.name,
+            )
+            return
+        data.panel_followup_pending = False
+        data.user_turn_pending_panel = False
+        turn_log.log(
+            "panel_trigger",
+            reason="host_reply_done",
+            floor_next=data.floor_next_speaker or "host",
+            room=ctx.room.name,
+        )
+        asyncio.create_task(_run_panel_followups())
+
     @session.on("speech_created")
     def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
+        """Sync transcript + speaker highlight with TTS playout start."""
         pending = data.pop_pending_transcript()
         if not pending:
             return
         role, text, step = pending
         asyncio.create_task(
-            _emit_transcript_on_speech(role, text, step=step, source=ev.source)
+            _emit_speech_ui(role, text, step=step, source=str(ev.source))
         )
 
-    async def _emit_transcript_on_speech(
+    async def _emit_speech_ui(
         role: str, text: str, *, step: str, source: str
     ) -> None:
-        from agent.ui_events import emit_transcript
+        from agent.ui_events import emit_role_active, emit_transcript
 
-        await emit_transcript(role, text, step=step)
+        await emit_role_active(role)
+        if text.strip():
+            await emit_transcript(role, text, step=step)
         logger.debug(
-            "transcript synced with speech role=%s step=%s source=%s",
+            "speech UI synced role=%s step=%s source=%s text_len=%d",
             role,
             step,
             source,
+            len(text),
         )
 
     @session.on("conversation_item_added")
@@ -157,6 +207,7 @@ async def entrypoint(ctx: JobContext) -> None:
         text = getattr(item, "text_content", None)
         if role != "assistant" or not text:
             return
+        data.touch_activity()
         turn_log.log(
             "assistant_reply",
             text=text,
@@ -165,13 +216,6 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
         if controller.is_panel_mode():
-            if (
-                data.user_turn_pending_panel
-                and data.active_role == controller.listen_role()
-                and not data.panel_chain_running
-            ):
-                data.user_turn_pending_panel = False
-                asyncio.create_task(_run_panel_followups())
             return
 
         if not data.user_turn_pending_rotation:
@@ -179,17 +223,18 @@ async def entrypoint(ctx: JobContext) -> None:
         data.user_turn_pending_rotation = False
         asyncio.create_task(_maybe_rotate_after_reply())
 
+    async def _bootstrap() -> None:
+        from agent.bootstrap_session import bootstrap_after_connect
+
+        await bootstrap_after_connect(ctx, session, data, controller, scenario)
+
+    asyncio.create_task(_bootstrap())
+
     await session.start(
         agent=build_agent("host", data),
         room=ctx.room,
         room_options=room_io.RoomOptions(),
     )
-
-    from agent.participant_display import publish_agent_panel_metadata
-    from agent.ui_events import emit_panel_roster
-
-    await publish_agent_panel_metadata(scenario)
-    await emit_panel_roster(scenario)
 
 
 if __name__ == "__main__":

@@ -28,35 +28,39 @@ Tracked priorities for collaboration. Update this file when scope changes; link 
 
 **Goal:** Replace fixed `panel_round_robin` order with host-mediated floor control.
 
-**Options (may combine):**
+**Status:** Core shipped — `host_moderated` is default in `config/scenarios/default.yaml`.
 
-- [ ] **Hand-raise signal:** Panelists emit `raise_hand` UI/agent events; host sees queue before calling next speaker.
-- [ ] **Host picks next speaker:** After each beat, host LLM call reads `show_history` and outputs `[next:commentator]` or `[next:guest]` (or tool call).
-- [ ] **Interrupt / yield rules:** Define when a panelist can cut in vs must wait.
+- [x] **`host_moderated` mode** — parallel hand-raise polls (Ryan/Amy), FIFO queue resolve
+- [x] Data-channel events: `hand_raise`, `floor_grant`, `queue_state`, `floor_pending`
+- [x] Frontend: ✋ badge, queue bar, hand-raise button
+- [x] Strict FIFO including human; no `skip_human`
+- [x] After human turn → open floor + poll (not direct panelist grant from tee-up)
+- [x] `TALKSHOW_HAND_RAISE_GRANT_PAUSE_SEC` — 1s after poll UI before grant
+- [ ] Interrupt / yield rules
+- [ ] Logging: `handoff_reason` includes host decision text in JSONL
 
-**Tasks:**
+Legacy fixed order: `SCENARIO_PATH=config/scenarios/panel_fixed.yaml`
 
-- [ ] Extend `TurnController` with `host_moderated` mode (new `turn_control.mode`).
-- [ ] Add data-channel events: `hand_raise`, `floor_grant`, `floor_revoke`.
-- [ ] Frontend: optional hand-raise UI for human; visual queue on virtual panel.
-- [ ] Logging: `handoff_reason` includes host decision text.
-
-**Acceptance:** Order adapts to conversation (e.g. Amy responds when Ryan made a claim she should rebut); no silent assumption of fixed Ryan → Amy every round unless host chooses it.
+**Architecture:** Single LiveKit agent worker + `asyncio.gather` for parallel Gemma polls — **not** separate Python processes per panelist.
 
 ---
 
 ### 3. Avatar expressions and motion in UI
 
-**Goal:** Visual feedback beyond static initials — expressions and simple motion tied to `role_active` and speech.
+**Goal:** Visual feedback beyond static initials — **VRM head/bust** avatars tied to floor and speech lifecycle.
+
+**Decision:** Head-only VRM (not full body). Client-side rendering in `talkshow-web`; still single RTC agent. See local plan `.cursor/avatar-plan.md`.
 
 **Tasks:**
 
-- [ ] Define agent → UI event schema: `avatar_state` (emotion, gesture, speaking intensity).
-- [ ] Map TTS/speech lifecycle to states (idle, speaking, listening, react).
-- [ ] Frontend: avatar component (2D sprites, Lottie, or lightweight 3D — TBD).
-- [ ] Optional Phase 3 tie-in: sentiment tag from Gemma → drives expression.
+- [ ] Define agent → UI event schema: `avatar_state` (idle, listening, thinking, speaking, react; optional emotion/intensity).
+- [ ] Agent hooks: poll start → thinking; floor_pending → listening; role_active → speaking.
+- [ ] Frontend: Three.js + `@pixiv/three-vrm` head component per panel card.
+- [ ] Persona yaml + `panel_roster`: `ui.avatar.vrm` path per role.
+- [ ] Lip sync via VRM blend shapes (intensity/RMS; viseme optional later).
+- [ ] Optional: Gemma mood tag → expression preset.
 
-**Acceptance:** When Ryan speaks, Ryan avatar animates; panel feels alive in demo without extra RTC participants.
+**Acceptance:** When Ryan speaks, Ryan VRM head animates (mouth + expression); poll shows thinking state; demo feels alive without extra RTC participants.
 
 ---
 
@@ -64,7 +68,8 @@ Tracked priorities for collaboration. Update this file when scope changes; link 
 
 - Single RTC agent + role handoff + virtual panel UI
 - Gemma 4 audio-in + Piper per-role TTS
-- `talkshow/ui` data channel (`panel_roster`, `role_active`, `transcript`)
+- `talkshow/ui` data channel (`panel_roster`, `role_active`, `transcript`, hand-raise queue events)
+- Host-moderated FIFO floor control + human hand-raise
 - Scene/floor awareness (`show_context.py`, shared `show_history`)
 - Transcript sync with `speech_created`; Piper voice cache
 - Human vs Amy disambiguation in panel prompts
@@ -76,4 +81,4 @@ Tracked priorities for collaboration. Update this file when scope changes; link 
 1. Comment on the checklist item in an issue or PR.
 2. Branch naming: `feat/debate-scenario`, `feat/host-moderated-turns`, `feat/avatar-ui`.
 3. Keep **all tracked repo text in English** (README, configs comments, ROADMAP, code comments for new work).
-4. Agent changes: sync to Babel and restart worker; frontend: `talkshow-web` locally or Vercel.
+4. Agent changes: `git pull` on Babel and restart worker; frontend: `talkshow-web` locally or Vercel.

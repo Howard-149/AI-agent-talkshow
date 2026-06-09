@@ -1,4 +1,6 @@
-# Babel GPU node — conda env `talkshow`:
+# Babel GPU node — conda env `talkshow` (Python 3.11):
+#   conda create -n talkshow python=3.11 -y
+#   conda activate talkshow
 #   pip install -r requirements.txt
 #
 # Laptop: use requirements-laptop.txt instead

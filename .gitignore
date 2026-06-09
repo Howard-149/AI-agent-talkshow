@@ -12,7 +12,7 @@ logs/
 .idea/
 *.swp
 
-# Local-only (not pushed to git; not rsync'd to cluster)
+# Local-only (not in repo)
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**

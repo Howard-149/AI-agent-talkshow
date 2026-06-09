@@ -11,32 +11,37 @@ alwaysApply: true
 
 - **All git-tracked files must be in English** (README, ROADMAP, CONTRIBUTING, YAML comments, new code comments).
 - Do not add Chinese to files that will be pushed to GitHub.
+- `.cursor/session-memory.md`, `skill.md`, `soul.md`, `avatar-plan.md` are local notes (gitignored except this rules file).
 
 ## Before coding
 
-1. Read [ROADMAP.md](../../ROADMAP.md) for priorities.
-2. Read [README.md](../../README.md) for setup and architecture.
-3. Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for workflow.
+1. Read `.cursor/session-memory.md` for current sprint.
+2. Read [ROADMAP.md](../../ROADMAP.md) for priorities.
+3. For avatar/UI work: read `.cursor/avatar-plan.md`.
+4. Read [README.md](../../README.md) for setup and architecture.
 
 ## Architecture constraints
 
 - **Single LiveKit agent participant** with role handoff — do not spawn 3 separate RTC agents without explicit design approval.
 - **Shared `show_history`** — panelists share one transcript; disambiguate roles in prompts (Human guest ≠ Amy).
 - **Gemma calls:** `complete_from_wav` (human audio) and `complete_text` (panel lines); `StoredReplyLLM` does not call the model again.
+- **Floor control:** strict FIFO hand-raise queue; after human turn always open floor + poll (see `agent/floor_control.py` `after_human_turn`).
 
-## Current roadmap (Phase 2+)
+## Current roadmap status
 
-1. Debate scenario + few-shot examples
-2. Host-moderated turn-taking (hand-raise or host picks speaker from history)
-3. Avatar expressions/motion in `talkshow-web`
+| Track | Status |
+|-------|--------|
+| Host-moderated turn-taking | **Shipped** — FIFO queue, hand raise UI, grant pause; polish: interrupt/yield, JSONL |
+| Debate scenario | Not started |
+| **Avatars** | **Next** — **VRM head/bust only** in `talkshow-web` (not full body); client-side Three.js + `talkshow/ui` events |
 
-Implement against ROADMAP checklists; update ROADMAP when items ship.
+Implement against ROADMAP checklists; update ROADMAP when git-tracked scope ships.
 
 ## Dev split
 
-- **Babel:** agent worker, vLLM, Piper
+- **Babel:** agent worker, vLLM, Piper — `sync-to-babel.sh` (excludes `talkshow-web/`)
 - **Laptop:** `talkshow-web`, `api/tokens.py`
-- Agent sync: `./scripts/sync-to-babel.sh` (local, not in repo)
+- Agent on Babel: sync/pull + restart worker (`.env` copied separately, not in git)
 
 ## Code style
 
