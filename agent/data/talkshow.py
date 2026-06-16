@@ -35,10 +35,12 @@ class TalkShowData:
     last_host_panel_tee: str = ""
     floor_next_speaker: str = ""  # Gemma [next]: — direct grant or host=pending
     hand_raise_queue: HandRaiseQueue = field(default_factory=HandRaiseQueue)
+    # Poll tie-break order among AI panelists (rotates after multi-yes polls).
+    panel_priority: list[str] = field(default_factory=list)
     last_activity_ts: float = 0.0
     show_history: ShowHistory = field(default_factory=ShowHistory)
-    # (role, text, step) — popped on speech_created; transcript + role_active sync with TTS
-    pending_transcripts: deque[tuple[str, str, str]] = field(
+    # (role, text, step) — popped when agent enters "speaking" (audio playout)
+    pending_speech_ui: deque[tuple[str, str, str]] = field(
         default_factory=deque
     )
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS
@@ -46,6 +48,7 @@ class TalkShowData:
     turn_log: TurnJsonlLogger | None = field(default=None, repr=False)
     room_name: str = ""
     human_turn_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    shutdown_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     @property
     def human_hand_raised(self) -> bool:
@@ -61,14 +64,14 @@ class TalkShowData:
         entry = self.hand_raise_queue.get("human")
         return entry.topic if entry else ""
 
-    def queue_transcript(self, role: str, text: str, *, step: str = "") -> None:
+    def queue_speech_ui(self, role: str, text: str, *, step: str = "") -> None:
         text = text.strip()
         if text:
-            self.pending_transcripts.append((role, text, step))
+            self.pending_speech_ui.append((role, text, step))
 
-    def pop_pending_transcript(self) -> tuple[str, str, str] | None:
-        if self.pending_transcripts:
-            return self.pending_transcripts.popleft()
+    def pop_pending_speech_ui(self) -> tuple[str, str, str] | None:
+        if self.pending_speech_ui:
+            return self.pending_speech_ui.popleft()
         return None
 
     def set_human_hand(
@@ -102,3 +105,26 @@ class TalkShowData:
         import time
 
         self.last_activity_ts = time.time()
+
+    def ensure_panel_priority(self, order: list[str], listen_role: str) -> None:
+        """Initialize poll tie-break order from scenario turn order (excludes human/host)."""
+        if self.panel_priority:
+            return
+        self.panel_priority = [
+            r for r in order if r not in ("human", listen_role)
+        ]
+
+    def rotate_panel_priority(self, winner: str) -> None:
+        """Move poll winner to tail so the next tie favors other panelists."""
+        winner = winner.strip().lower()
+        if winner not in self.panel_priority:
+            return
+        rest = [r for r in self.panel_priority if r != winner]
+        self.panel_priority = rest + [winner]
+        if self.turn_log:
+            self.turn_log.log(
+                "panel_priority_rotate",
+                winner=winner,
+                priority=list(self.panel_priority),
+                room=self.room_name,
+            )

@@ -6,6 +6,7 @@ loadEnvConfig(path.join(__dirname, '..'));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ['three', '@pixiv/three-vrm'],
   env: {
     // Browser cannot read LIVEKIT_URL; reuse root value for connect form default
     NEXT_PUBLIC_LIVEKIT_URL:

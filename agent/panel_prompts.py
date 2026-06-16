@@ -22,13 +22,13 @@ def panelist_role_brief(role: str) -> str:
     if role == "commentator":
         amy = load_persona_name("guest")
         return (
-            f"You are {name} (commentator). Your turn now — speak 2–4 sentences out loud. "
+            f"You are {name} (commentator). Your turn now — speak 1–2 short sentences out loud. "
             f'Satisfy what "{HUMAN_LABEL}" asked in the transcript — not {amy}, who has '
             f"not spoken yet unless you see a line labeled \"{amy}:\"."
         )
     if role == "guest":
         return (
-            f"You are {name} (guest). Your turn now — speak 2–4 sentences out loud. "
+            f"You are {name} (guest). Your turn now — speak 1–2 short sentences out loud. "
             "Add a second concrete contribution; do not repeat the commentator."
         )
     return f"You are {name}. Speak in character."

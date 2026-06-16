@@ -128,12 +128,36 @@ class HandRaiseQueue:
             )
         )
 
-    def apply_poll(self, raises: dict[str, HandRaiseResult]) -> None:
-        """Merge AI poll results — human entries are never removed by a poll."""
+    def apply_poll_batch(
+        self,
+        raises: dict[str, HandRaiseResult],
+        panel_priority: list[str],
+    ) -> tuple[str | None, list[str], bool]:
+        """
+        Apply AI poll: drop nos; among yes pick one by ``panel_priority``; enqueue winner only.
+        Human queue entries are never touched. Returns (winner, yes_roles, had_tie).
+        """
+        yes_roles: list[str] = []
         for role, hr in raises.items():
             if role == "human":
                 continue
             if hr.raised:
-                self.merge_poll_raise(role, reason=hr.reason, topic=hr.topic)
+                yes_roles.append(role)
             else:
                 self.remove(role)
+
+        if not yes_roles:
+            return None, [], False
+
+        yes_set = set(yes_roles)
+        winner: str | None = None
+        for role in panel_priority:
+            if role in yes_set:
+                winner = role
+                break
+        if winner is None:
+            winner = yes_roles[0]
+
+        hr = raises[winner]
+        self.merge_poll_raise(winner, reason=hr.reason, topic=hr.topic)
+        return winner, yes_roles, len(yes_roles) >= 2

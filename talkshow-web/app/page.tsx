@@ -98,10 +98,12 @@ function CustomConnectionTab(props: { label: string }) {
     const token = formData.get('token');
     if (e2ee) {
       router.push(
-        `/custom/?liveKitUrl=${serverUrl}&token=${token}#${encodePassphrase(sharedPassphrase)}`,
+        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(String(token))}#${encodePassphrase(sharedPassphrase)}`,
       );
     } else {
-      router.push(`/custom/?liveKitUrl=${serverUrl}&token=${token}`);
+      router.push(
+        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(String(token))}`,
+      );
     }
   };
   return (

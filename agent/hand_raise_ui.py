@@ -5,9 +5,46 @@ import logging
 import os
 
 from agent.data import TalkShowData
+from agent.floor_parser import HandRaiseResult
 from agent.ui_events import emit_hand_raise
 
 logger = logging.getLogger(__name__)
+
+
+async def flash_poll_raises(
+    data: TalkShowData,
+    *,
+    panel_roles: list[str],
+    poll: dict[str, HandRaiseResult],
+    flash_sec: float | None = None,
+) -> None:
+    """Briefly show all poll yes hands before tie-break enqueue clears losers."""
+    if flash_sec is None:
+        flash_sec = float(os.environ.get("TALKSHOW_HAND_RAISE_FLASH_SEC", "0.5"))
+    yes_roles = [r for r in panel_roles if poll.get(r) and poll[r].raised]
+    if not yes_roles or flash_sec <= 0:
+        return
+    for role in yes_roles:
+        hr = poll[role]
+        await emit_hand_raise(
+            role,
+            True,
+            reason=hr.reason,
+            topic=hr.topic,
+        )
+    logger.info(
+        "hand_raise poll flash roles=%s sec=%.2f",
+        yes_roles,
+        flash_sec,
+    )
+    if data.turn_log:
+        data.turn_log.log(
+            "hand_raise_poll_flash",
+            roles=yes_roles,
+            flash_sec=flash_sec,
+            room=data.room_name,
+        )
+    await asyncio.sleep(flash_sec)
 
 
 async def sync_hand_raise_ui(
@@ -91,6 +128,9 @@ async def wait_for_hand_raises(
             queue=[],
         )
     while elapsed < wait_sec:
+        if data.shutdown_event.is_set():
+            logger.info("hand_raise wait aborted — session shutting down")
+            return
         if data.hand_raise_queue.roles():
             logger.info(
                 "hand_raise wait early exit at %.1fs queue=%s",

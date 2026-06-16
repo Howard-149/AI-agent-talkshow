@@ -159,6 +159,12 @@ def _synthesize_piper_voice(voice: object, text: str) -> tuple[bytes, int]:
     import numpy as np
 
     rate = voice.config.sample_rate  # type: ignore[attr-defined]
+    sentence_silence = _env_float("TALKSHOW_PIPER_SENTENCE_SILENCE", 0.0)
+    if sentence_silence > 0:
+        logger.warning(
+            "TALKSHOW_PIPER_SENTENCE_SILENCE=%.2f adds gaps between sentences; use 0 for panel lines",
+            sentence_silence,
+        )
 
     if hasattr(voice, "phonemize") and hasattr(voice, "phoneme_ids_to_audio"):
         from piper.config import SynthesisConfig
@@ -169,15 +175,30 @@ def _synthesize_piper_voice(voice: object, text: str) -> tuple[bytes, int]:
             if phonemes:
                 phoneme_ids.extend(voice.phonemes_to_ids(phonemes))  # type: ignore[attr-defined]
         if phoneme_ids:
+            logger.info(
+                "Piper phonemize path chars=%d ids=%d",
+                len(text),
+                len(phoneme_ids),
+            )
             audio = voice.phoneme_ids_to_audio(phoneme_ids, syn_config=syn)  # type: ignore[attr-defined]
             if isinstance(audio, tuple):
                 audio = audio[0]
             pcm = np.clip(audio * 32767.0, -32767, 32767).astype(np.int16).tobytes()
             return pcm, rate
+        logger.warning(
+            "Piper phonemize returned no ids; falling back to synthesize() chunks"
+        )
 
-    sentence_silence = _env_float("TALKSHOW_PIPER_SENTENCE_SILENCE", 0.0)
+    chunk_silence = 0.0  # never add inter-sentence silence when chunking
+    logger.info(
+        "Piper chunk path chars=%d sentence_silence=%.2f",
+        len(text),
+        chunk_silence,
+    )
     try:
-        chunks = list(voice.synthesize(text, sentence_silence=sentence_silence))  # type: ignore[attr-defined]
+        chunks = list(
+            voice.synthesize(text, sentence_silence=chunk_silence)  # type: ignore[attr-defined]
+        )
     except TypeError:
         try:
             from piper.config import SynthesisConfig

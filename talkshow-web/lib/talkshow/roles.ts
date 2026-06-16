@@ -1,14 +1,28 @@
 export type PanelRole = string;
 
+export type PanelAvatarConfig = {
+  vrm: string;
+  scale?: number;
+  framing?: {
+    distMul?: number;
+    lookDown?: number;
+    lookUp?: number;
+    camLift?: number;
+    fov?: number;
+  };
+};
+
 export type PanelistDef = {
   role: PanelRole;
   name: string;
   label: string;
   color: string;
+  avatar?: PanelAvatarConfig;
 };
 
 export const UI_TOPIC = 'talkshow/ui';
 
+/** Agent → browser events on `talkshow/ui`. AI highlight + transcript gated on client audio. */
 export type UiEvent =
   | { type: 'panel_roster'; scenario: string; members: PanelistDef[] }
   | { type: 'role_active'; role: PanelRole; name: string }

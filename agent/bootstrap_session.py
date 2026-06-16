@@ -35,7 +35,9 @@ async def bootstrap_after_connect(
         register_control_channel(
             ctx.room, session=session, data=data, controller=controller
         )
-        asyncio.create_task(idle_topic_loop(session, data, controller))
+        asyncio.create_task(
+            idle_topic_loop(session, data, controller, room=ctx.room)
+        )
 
         await set_agent_display_name("host")
         await publish_agent_panel_metadata(scenario)

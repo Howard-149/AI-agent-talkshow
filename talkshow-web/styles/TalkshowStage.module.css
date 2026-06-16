@@ -1,3 +1,37 @@
+.recoveryBanner {
+  margin: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  max-width: 42rem;
+}
+
+.recoveryTitle {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.recoveryText {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #fecaca;
+  word-break: break-word;
+}
+
+.recoveryList {
+  margin: 0 0 1rem 1.1rem;
+  padding: 0;
+  font-size: 0.85rem;
+  color: #fca5a5;
+}
+
+.recoveryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .roomShell {
   display: flex;
   flex-direction: column;
@@ -210,6 +244,35 @@
   font-weight: 700;
   color: white;
   font-size: 1.5rem;
+}
+
+.avatarVrmWrap {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.avatarCanvas {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.avatarCanvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.card[data-speaking='true'] .avatarVrmWrap,
+.card[data-speaking='true'] .avatarCanvas {
+  border-color: var(--role-color, #6366f1);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--role-color, #6366f1) 45%, transparent);
 }
 
 .avatarHuman {

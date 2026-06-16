@@ -50,8 +50,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body data-lk-theme="default">
+    <html lang="en" suppressHydrationWarning>
+      <body data-lk-theme="default" suppressHydrationWarning>
         <Toaster />
         {children}
       </body>

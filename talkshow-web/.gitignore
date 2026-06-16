@@ -36,3 +36,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# VRM samples (~10 MB each) — run scripts/fetch-vrm-samples.sh
+/public/avatars/*.vrm
+/public/avatars/sources/

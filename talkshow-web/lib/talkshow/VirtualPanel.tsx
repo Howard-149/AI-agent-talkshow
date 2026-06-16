@@ -1,6 +1,7 @@
 'use client';
 
 import type { PanelistDef, PanelRole } from '@/lib/talkshow/roles';
+import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
 import styles from '@/styles/TalkshowPanel.module.css';
 
 export type HumanSeat = {
@@ -13,11 +14,18 @@ export type HumanSeat = {
 type Props = {
   panelists: PanelistDef[];
   activeRole: PanelRole | null;
+  lipSyncActive?: boolean;
   humans: HumanSeat[];
   waitingForAgent: boolean;
 };
 
-export function VirtualPanel({ panelists, activeRole, humans, waitingForAgent }: Props) {
+export function VirtualPanel({
+  panelists,
+  activeRole,
+  lipSyncActive = false,
+  humans,
+  waitingForAgent,
+}: Props) {
   return (
     <div className={styles.panelGrid}>
       {humans.map((h) => (
@@ -41,9 +49,10 @@ export function VirtualPanel({ panelists, activeRole, humans, waitingForAgent }:
           data-speaking={activeRole === p.role ? 'true' : 'false'}
           style={{ '--role-color': p.color } as React.CSSProperties}
         >
-          <div className={styles.avatar} style={{ background: p.color }}>
-            {p.name[0]}
-          </div>
+          <PanelAvatar
+            panelist={p}
+            isSpeaking={activeRole === p.role && lipSyncActive}
+          />
           <div className={styles.meta}>
             <strong>{p.name}</strong>
             <span>{p.label}</span>

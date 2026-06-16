@@ -7,7 +7,6 @@ from agent.adapters import PiperTTS
 from agent.agents.handoff import HandoffToolsMixin
 from agent.agents.talkshow_agent import TalkShowAgent
 from agent.data import TalkShowData
-from agent.participant_display import set_agent_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,6 @@ class HostAgent(HandoffToolsMixin, TalkShowAgent):
 
     async def on_enter(self) -> None:
         logger.info("HostAgent entered session")
-        await set_agent_display_name("host")
         if self._data.silent_handoff or self._data.panel_chain_running:
             return
         if os.environ.get("TALKSHOW_SKIP_GREETING", "").lower() in (

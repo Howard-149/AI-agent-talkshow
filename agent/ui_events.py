@@ -65,11 +65,17 @@ async def flush_pending_ui_events(*, max_wait_sec: float = 15.0) -> None:
             )
             logger.debug("flushed deferred ui event type=%s", event_type)
         except Exception as exc:
-            if "before connecting" in str(exc).lower():
+            msg = str(exc).lower()
+            if "before connecting" in msg:
                 _pending.appendleft((payload, event_type))
                 await asyncio.sleep(0.05)
                 if not await wait_for_local_participant(room, timeout_sec=2.0):
                     break
+            elif "room closed" in msg or "channel closed" in msg:
+                logger.debug(
+                    "flush_pending_ui_events skipped type=%s (room closed)", event_type
+                )
+                break
             else:
                 logger.warning(
                     "flush_pending_ui_events failed type=%s: %s", event_type, exc
@@ -102,6 +108,8 @@ async def publish_ui_event(event_type: str, **fields: object) -> None:
             _enqueue(payload, event_type)
             _schedule_flush()
             logger.debug("publish_ui_event deferred type=%s (%s)", event_type, exc)
+        elif "room closed" in msg or "channel closed" in msg:
+            logger.debug("publish_ui_event skipped type=%s (room closed)", event_type)
         else:
             logger.warning("publish_ui_event failed type=%s: %s", event_type, exc)
 

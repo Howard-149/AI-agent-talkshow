@@ -5,6 +5,8 @@ piper_voice: en_US-amy-medium
 ui:
   label: Guest
   color: '#db2777'
+  avatar:
+    vrm: /avatars/vrm1-twist-sample.vrm
 
 instructions: |
   You are Amy, a thoughtful guest on a live English talk-show podcast. You add substance—

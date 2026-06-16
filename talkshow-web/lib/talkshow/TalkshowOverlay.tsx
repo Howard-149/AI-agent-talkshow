@@ -1,16 +1,19 @@
 'use client';
 
 import { useDataChannel, useLocalParticipant, useRemoteParticipants } from '@livekit/components-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { TranscriptPanel, type TranscriptLine } from '@/lib/talkshow/TranscriptPanel';
+import { TranscriptPanel } from '@/lib/talkshow/TranscriptPanel';
+import {
+  findAgentParticipant,
+  usePlayoutSyncedUi,
+} from '@/lib/talkshow/usePlayoutSyncedUi';
 import { VirtualPanel, type HumanSeat } from '@/lib/talkshow/VirtualPanel';
 import {
   UI_TOPIC,
   parseAgentMetadata,
   parseUiEvent,
   rosterFromParticipants,
-  type PanelRole,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
 import styles from '@/styles/TalkshowPanel.module.css';
@@ -45,8 +48,9 @@ export function TalkshowOverlay() {
   const { localParticipant } = useLocalParticipant();
   const remotes = useRemoteParticipants();
   const [panelists, setPanelists] = useState<PanelistDef[]>([]);
-  const [activeRole, setActiveRole] = useState<PanelRole | null>(null);
-  const [lines, setLines] = useState<TranscriptLine[]>([]);
+  const agentParticipant = useMemo(() => findAgentParticipant(remotes), [remotes]);
+  const { activeRole, lipSyncActive, lines, onRoleActive, onRoleIdle, pushLine } =
+    usePlayoutSyncedUi(agentParticipant);
 
   const applyRoster = useCallback((members: PanelistDef[]) => {
     if (members.length) setPanelists(members);
@@ -57,18 +61,12 @@ export function TalkshowOverlay() {
     if (fromMeta) applyRoster(fromMeta);
   }, [remotes, applyRoster]);
 
-  const pushLine = useCallback((role: string, speaker: string, text: string) => {
-    setLines((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-${prev.length}`,
-        role,
-        speaker,
-        text,
-        ts: Date.now(),
-      },
-    ]);
-  }, []);
+  const pushLineRef = useRef(pushLine);
+  pushLineRef.current = pushLine;
+  const onRoleActiveRef = useRef(onRoleActive);
+  onRoleActiveRef.current = onRoleActive;
+  const onRoleIdleRef = useRef(onRoleIdle);
+  onRoleIdleRef.current = onRoleIdle;
 
   useDataChannel(UI_TOPIC, (msg) => {
     const ev = parseUiEvent(msg.payload);
@@ -76,11 +74,11 @@ export function TalkshowOverlay() {
     if (ev.type === 'panel_roster') {
       applyRoster(ev.members);
     } else if (ev.type === 'role_active') {
-      setActiveRole(ev.role);
+      onRoleActiveRef.current(ev.role);
     } else if (ev.type === 'role_idle') {
-      setActiveRole(null);
+      onRoleIdleRef.current();
     } else if (ev.type === 'transcript' && ev.final) {
-      pushLine(ev.role, ev.speaker, ev.text);
+      pushLineRef.current(ev.role, ev.speaker, ev.text);
     }
   });
 
@@ -108,6 +106,7 @@ export function TalkshowOverlay() {
       <VirtualPanel
         panelists={panelists}
         activeRole={activeRole}
+        lipSyncActive={lipSyncActive}
         humans={humans}
         waitingForAgent={waitingForAgent}
       />

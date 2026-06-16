@@ -25,13 +25,13 @@ alwaysApply: true
 - **Single LiveKit agent participant** with role handoff — do not spawn 3 separate RTC agents without explicit design approval.
 - **Shared `show_history`** — panelists share one transcript; disambiguate roles in prompts (Human guest ≠ Amy).
 - **Gemma calls:** `complete_from_wav` (human audio) and `complete_text` (panel lines); `StoredReplyLLM` does not call the model again.
-- **Floor control:** strict FIFO hand-raise queue; after human turn always open floor + poll (see `agent/floor_control.py` `after_human_turn`).
+- **Floor control:** strict FIFO hand-raise queue; poll batch tie-break via `panel_priority` (one AI winner per poll); skip poll/open floor when queue non-empty; after human turn always open floor + poll when queue empty (see `agent/floor_control.py` `after_human_turn`, `agent/host_floor.py`).
 
 ## Current roadmap status
 
 | Track | Status |
 |-------|--------|
-| Host-moderated turn-taking | **Shipped** — FIFO queue, hand raise UI, grant pause; polish: interrupt/yield, JSONL |
+| Host-moderated turn-taking | **Shipped** — FIFO queue, poll batch + priority tie-break, flash, skip poll when queue nonempty; polish: interrupt/yield, JSONL |
 | Debate scenario | Not started |
 | **Avatars** | **Next** — **VRM head/bust only** in `talkshow-web` (not full body); client-side Three.js + `talkshow/ui` events |
 

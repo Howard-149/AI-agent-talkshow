@@ -9,6 +9,20 @@ Fork of [livekit-examples/meet](https://github.com/livekit-examples/meet) with t
 LiveKit media still runs on **LiveKit Cloud**; token via **`api/tokens.py`**.  
 **Env:** reads **repo root `.env`** (same as agent) — no `talkshow-web/.env.local`.
 
+## VRM panel avatars (3b)
+
+One-time fetch of official sample models (~30 MB, gitignored):
+
+```bash
+bash scripts/fetch-vrm-samples.sh
+pnpm install   # or: npm install — see TLS note below if cert errors
+pnpm dev
+```
+
+**macOS Node TLS:** if `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, set `export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` in `~/.zshrc` (see `.cursor/skill.md`).
+
+Panel cards load `.vrm` from `public/avatars/` (paths in `config/personas/*/yaml` → `panel_roster`). Missing file or WebGL error → initials fallback.
+
 ## Quick start
 
 ```bash
@@ -53,8 +67,8 @@ Meet includes `/api/connection-details` — uses root `.env` `LIVEKIT_*` and **M
 **Agent contract (`talkshow/ui`):**
 
 - `panel_roster` — on connect, from `config/scenarios/*.yaml` + `config/personas/*.yaml`
-- `role_active` — who is speaking now
-- `transcript` — final spoken lines
+- `role_active` — signaled speaker; UI waits for agent audio before highlight
+- `transcript` — final lines (AI lines buffered until agent audio is active)
 - `hand_raise` — panelist wants floor (✋ on avatar)
 - `floor_grant` — host gave floor to role
 
@@ -73,6 +87,8 @@ Vercel root directory: `talkshow-web`. Set `LIVEKIT_*` in Vercel env (or use tok
 Connect form default URL comes from `LIVEKIT_URL` in root `.env` locally; on Vercel set `LIVEKIT_URL` or `NEXT_PUBLIC_LIVEKIT_URL`.
 
 ## Troubleshooting
+
+**Stuck room after closing the browser tab** — LiveKit may keep a ghost participant for ~30s. On the connect error screen use **Reset room (dev)** (calls `POST /api/room/reset?roomName=…`), or wait and mint a fresh token. Closing the tab now sends `pagehide` → `room.disconnect()` to reduce this.
 
 **`command not found: pnpm`** — install once, then retry:
 

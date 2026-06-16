@@ -31,6 +31,9 @@ Tracked priorities for collaboration. Update this file when scope changes; link 
 **Status:** Core shipped — `host_moderated` is default in `config/scenarios/default.yaml`.
 
 - [x] **`host_moderated` mode** — parallel hand-raise polls (Ryan/Amy), FIFO queue resolve
+- [x] Poll batch tie-break — `panel_priority` picks one AI winner per poll; rotates on multi-yes ties
+- [x] Poll flash — `TALKSHOW_HAND_RAISE_FLASH_SEC` shows all yes hands before winner stays up
+- [x] Skip poll + open floor when queue already non-empty (human pre-raised)
 - [x] Data-channel events: `hand_raise`, `floor_grant`, `queue_state`, `floor_pending`
 - [x] Frontend: ✋ badge, queue bar, hand-raise button
 - [x] Strict FIFO including human; no `skip_human`

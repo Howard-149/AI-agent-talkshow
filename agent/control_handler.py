@@ -13,6 +13,11 @@ from agent.data import TalkShowData
 from agent.floor_control import apply_floor_next, peek_floor_next
 from agent.hand_raise_ui import dequeue_hand_raise
 from agent.host_floor import run_host_moderation_from_queue
+from agent.session_lifecycle import (
+    room_has_humans,
+    session_is_active,
+    shutdown_session_when_alone,
+)
 from agent.supervisor import TurnController
 from agent.ui_events import emit_hand_raise, emit_queue_state
 
@@ -56,14 +61,31 @@ async def idle_topic_loop(
     session: AgentSession,
     data: TalkShowData,
     controller: TurnController,
+    *,
+    room: rtc.Room,
 ) -> None:
     """When quiet, host opens the hand-raise queue — no auto topic or direct call-outs."""
     if not controller.is_host_moderated_mode():
         return
     interval = 5
     idle_sec = int(os.environ.get("TALKSHOW_IDLE_TOPIC_SEC", "60"))
-    while True:
-        await asyncio.sleep(interval)
+    while not data.shutdown_event.is_set():
+        try:
+            await asyncio.wait_for(data.shutdown_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        if not session_is_active(session):
+            break
+        if not room_has_humans(room):
+            await shutdown_session_when_alone(
+                session,
+                data,
+                room_name=room.name,
+                reason="idle_no_humans",
+            )
+            break
         if data.panel_chain_running or data.panel_followup_pending:
             continue
         if peek_floor_next(data) == "human":
@@ -74,12 +96,18 @@ async def idle_topic_loop(
             continue
         if time.time() - data.last_activity_ts < idle_sec:
             continue
+
         apply_floor_next(data, "host")
         data.panel_chain_running = True
         try:
             await run_host_moderation_from_queue(
                 session, data, controller, trigger="idle_wait"
             )
+        except RuntimeError as exc:
+            if "isn't running" in str(exc):
+                logger.info("idle_topic_loop stopped — session no longer running")
+                break
+            raise
         finally:
             data.panel_chain_running = False
         data.touch_activity()

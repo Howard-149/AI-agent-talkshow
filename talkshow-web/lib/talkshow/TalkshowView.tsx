@@ -9,17 +9,21 @@ import {
   useRoomContext,
 } from '@livekit/components-react';
 import { ConnectionState } from 'livekit-client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HumanSeatCard } from '@/lib/talkshow/HumanSeatCard';
+import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
 import { TalkshowMediaControls } from '@/lib/talkshow/TalkshowMediaControls';
 import { publishHandRaise } from '@/lib/talkshow/control';
+import {
+  findAgentParticipant,
+  usePlayoutSyncedUi,
+} from '@/lib/talkshow/usePlayoutSyncedUi';
 import {
   UI_TOPIC,
   parseAgentMetadata,
   parseUiEvent,
   rosterFromParticipants,
-  type PanelRole,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
 import styles from '@/styles/TalkshowStage.module.css';
@@ -96,10 +100,9 @@ export function TalkshowView() {
   const connectionState = useConnectionState();
 
   const [panelists, setPanelists] = useState<PanelistDef[]>([]);
-  const [activeRole, setActiveRole] = useState<PanelRole | null>(null);
-  const [lines, setLines] = useState<
-    Array<{ id: string; speaker: string; role: string; text: string; ts: number }>
-  >([]);
+  const agentParticipant = useMemo(() => findAgentParticipant(remotes), [remotes]);
+  const { activeRole, lipSyncActive, lines, onRoleActive, onRoleIdle, pushLine } =
+    usePlayoutSyncedUi(agentParticipant);
   const [showTranscript, setShowTranscript] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [handRaised, setHandRaised] = useState<Record<string, boolean>>({});
@@ -129,18 +132,12 @@ export function TalkshowView() {
     }
   }, [connectionState, localHandUp, room]);
 
-  const pushLine = useCallback((role: string, speaker: string, text: string) => {
-    setLines((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-${prev.length}`,
-        role,
-        speaker,
-        text,
-        ts: Date.now(),
-      },
-    ]);
-  }, []);
+  const pushLineRef = useRef(pushLine);
+  pushLineRef.current = pushLine;
+  const onRoleActiveRef = useRef(onRoleActive);
+  onRoleActiveRef.current = onRoleActive;
+  const onRoleIdleRef = useRef(onRoleIdle);
+  onRoleIdleRef.current = onRoleIdle;
 
   useDataChannel(UI_TOPIC, (msg) => {
     const ev = parseUiEvent(msg.payload);
@@ -148,9 +145,9 @@ export function TalkshowView() {
     if (ev.type === 'panel_roster') {
       applyRoster(ev.members);
     } else if (ev.type === 'role_active') {
-      setActiveRole(ev.role);
+      onRoleActiveRef.current(ev.role);
     } else if (ev.type === 'role_idle') {
-      setActiveRole(null);
+      onRoleIdleRef.current();
     } else if (ev.type === 'hand_raise') {
       setHandRaised((prev) => ({ ...prev, [ev.role]: ev.raised }));
       setQueueState((prev) =>
@@ -172,11 +169,10 @@ export function TalkshowView() {
       });
       setQueueState((prev) => prev.filter((item) => item.role !== ev.role));
       setFloorPending(false);
-      // activeRole updates on role_active when TTS actually starts
     } else if (ev.type === 'floor_pending') {
       setFloorPending(!!ev.active);
     } else if (ev.type === 'transcript' && ev.final) {
-      pushLine(ev.role, ev.speaker, ev.text);
+      pushLineRef.current(ev.role, ev.speaker, ev.text);
     }
   });
 
@@ -259,9 +255,10 @@ export function TalkshowView() {
                   ✋
                 </span>
               )}
-              <div className={styles.avatar} style={{ background: p.color }}>
-                {p.name[0]}
-              </div>
+              <PanelAvatar
+                panelist={p}
+                isSpeaking={activeRole === p.role && lipSyncActive}
+              />
               <div className={styles.meta}>
                 <strong>{p.name}</strong>
                 <span>{p.label}</span>

@@ -48,8 +48,8 @@ async def switch_to_role(
 def queue_speech_ui(
     data: TalkShowData, role: str, text: str, *, step: str = ""
 ) -> None:
-    """Queue UI update — emitted on speech_created when TTS is ready to play."""
-    data.queue_transcript(role, text, step=step)
+    """Queue UI — emitted when agent state becomes speaking (playout)."""
+    data.queue_speech_ui(role, text, step=step)
 
 
 async def speak_panel_line(
@@ -62,16 +62,25 @@ async def speak_panel_line(
 ) -> None:
     """TTS-only line: bypass StoredReplyLLM so panel text is never stolen or replaced."""
     from agent.floor_parser import strip_next_tag
-    from agent.ui_events import emit_role_active, emit_transcript
+    from agent.session_lifecycle import session_is_active
 
     text = strip_next_tag(text.strip())
     if not text:
         return
 
+    if not session_is_active(session) or data.shutdown_event.is_set():
+        logger.info("speak_panel_line skipped — session inactive step=%s", step)
+        return
+
     if speak_role != data.active_role:
         await switch_to_role(session, data, speak_role, reason=f"panel:{step}")
-    await emit_role_active(speak_role)
-    await emit_transcript(speak_role, text, step=step)
+    queue_speech_ui(data, speak_role, text, step=step)
     logger.info("PANEL say step=%s role=%s text=%.80r", step, speak_role, text)
-    handle = session.say(text, allow_interruptions=False)
-    await handle.wait_for_playout()
+    try:
+        handle = session.say(text, allow_interruptions=False)
+        await handle.wait_for_playout()
+    except RuntimeError as exc:
+        if "isn't running" in str(exc):
+            logger.info("speak_panel_line aborted — session stopped step=%s", step)
+            return
+        raise

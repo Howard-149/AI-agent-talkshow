@@ -92,9 +92,45 @@ def is_noise_heard(heard: str) -> bool:
     lower = text.lower()
     noise_markers = (
         "(audio understood",
+        "(no audio",
+        "(silence",
         "[silence]",
         "[no speech]",
+        "[inaudible]",
         "no speech detected",
+        "no audible speech",
         "inaudible",
+        "silence.",
+        "silence)",
+        "...",
+        "…",
+        "n/a",
+        "none",
+        "unknown",
+        "unable to transcribe",
+        "could not hear",
+        "couldn't hear",
+        "did not hear",
+        "didn't hear",
+        "no input",
+        "empty audio",
     )
-    return any(m in lower for m in noise_markers)
+    if any(m in lower for m in noise_markers):
+        return True
+    # Gemma sometimes invents a short greeting from noise
+    if len(text) <= 24 and lower in {
+        "hello",
+        "hi",
+        "hey",
+        "thank you",
+        "thanks",
+        "ok",
+        "okay",
+        "yes",
+        "no",
+        "hmm",
+        "um",
+        "uh",
+    }:
+        return True
+    return False

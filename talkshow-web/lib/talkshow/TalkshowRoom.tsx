@@ -14,6 +14,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { DebugMode } from '@/lib/Debug';
+import { ConnectionRecovery } from '@/lib/talkshow/ConnectionRecovery';
+import { roomNameFromAccessToken } from '@/lib/talkshow/roomNameFromToken';
 import { TalkshowView } from '@/lib/talkshow/TalkshowView';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import styles from '@/styles/TalkshowStage.module.css';
@@ -39,8 +41,11 @@ export function TalkshowRoom(props: {
   const e2eeEnabled = !!(passphrase && worker);
 
   const [e2eeSetupComplete, setE2eeSetupComplete] = useState(!e2eeEnabled);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const connectedRef = useRef(false);
+  const skipDisconnectRedirectRef = useRef(false);
   const router = useRouter();
+  const roomName = useMemo(() => roomNameFromAccessToken(props.token), [props.token]);
 
   const roomOptions = useMemo((): RoomOptions => {
     const choices = props.userChoices;
@@ -95,31 +100,66 @@ export function TalkshowRoom(props: {
   }, [e2eeEnabled, passphrase, keyProvider, room]);
 
   useEffect(() => {
-    const onLeave = () => router.push('/');
+    const disconnectOnHide = () => {
+      if (!connectedRef.current) return;
+      skipDisconnectRedirectRef.current = true;
+      room.disconnect();
+    };
+    window.addEventListener('pagehide', disconnectOnHide);
+    return () => window.removeEventListener('pagehide', disconnectOnHide);
+  }, [room]);
+
+  useEffect(() => {
+    const onLeave = () => {
+      // Unmount/refresh/tab close calls room.disconnect() — stay on /custom.
+      if (skipDisconnectRedirectRef.current) {
+        skipDisconnectRedirectRef.current = false;
+        return;
+      }
+      router.push('/');
+    };
     room.on(RoomEvent.Disconnected, onLeave);
     return () => {
       room.off(RoomEvent.Disconnected, onLeave);
     };
   }, [room, router]);
 
+  const connectToRoom = useMemo(() => {
+    return async () => {
+      setConnectError(null);
+      if (connectedRef.current) {
+        skipDisconnectRedirectRef.current = true;
+        await room.disconnect();
+        connectedRef.current = false;
+      }
+      const choices = props.userChoices;
+      await room.connect(props.liveKitUrl, props.token, connectOptions);
+      connectedRef.current = true;
+      await room.localParticipant.setCameraEnabled(choices?.videoEnabled ?? false);
+      await room.localParticipant.setMicrophoneEnabled(choices?.audioEnabled ?? false);
+    };
+  }, [
+    room,
+    props.liveKitUrl,
+    props.token,
+    connectOptions,
+    props.userChoices,
+  ]);
+
   useEffect(() => {
     if (!e2eeSetupComplete) return;
 
     let cancelled = false;
-    const choices = props.userChoices;
 
     (async () => {
       try {
-        if (!connectedRef.current) {
-          await room.connect(props.liveKitUrl, props.token, connectOptions);
-          connectedRef.current = true;
-        }
-        if (cancelled) return;
-        await room.localParticipant.setCameraEnabled(choices?.videoEnabled ?? false);
-        await room.localParticipant.setMicrophoneEnabled(choices?.audioEnabled ?? false);
+        await connectToRoom();
       } catch (error) {
+        if (cancelled) return;
+        const msg = error instanceof Error ? error.message : String(error);
         console.error('TalkshowRoom connect failed', error);
         connectedRef.current = false;
+        setConnectError(msg);
       }
     })();
 
@@ -127,22 +167,30 @@ export function TalkshowRoom(props: {
       cancelled = true;
       if (connectedRef.current) {
         connectedRef.current = false;
+        skipDisconnectRedirectRef.current = true;
         void room.disconnect();
       }
     };
-  }, [
-    room,
-    props.liveKitUrl,
-    props.token,
-    connectOptions,
-    e2eeSetupComplete,
-    props.userChoices,
-  ]);
+  }, [room, e2eeSetupComplete, connectToRoom]);
 
   return (
     <RoomContext.Provider value={room}>
       <div className={styles.roomShell}>
-        <TalkshowView />
+        {connectError ? (
+          <ConnectionRecovery
+            roomName={roomName}
+            message={connectError}
+            onRetry={() => {
+              void connectToRoom().catch((error) => {
+                const msg = error instanceof Error ? error.message : String(error);
+                setConnectError(msg);
+              });
+            }}
+            onLeave={() => router.push('/')}
+          />
+        ) : (
+          <TalkshowView />
+        )}
         <StartMediaButton label="Click to enable playback" />
         <DebugMode logLevel={LogLevel.debug} />
       </div>

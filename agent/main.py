@@ -23,6 +23,7 @@ from agent.panel_speech import run_panel_round
 from agent.session_handoff import switch_to_role
 from agent.runtime import build_runtime
 from agent.session import build_agent_session, load_vad
+from agent.session_lifecycle import register_session_lifecycle
 from agent.supervisor import TurnController
 
 logger = logging.getLogger("talkshow")
@@ -51,6 +52,10 @@ async def entrypoint(ctx: JobContext) -> None:
     turn_log = TurnJsonlLogger(log_dir)
     data.turn_log = turn_log
     controller = TurnController(scenario, data)
+    data.ensure_panel_priority(
+        scenario.turn_control.order,
+        scenario.turn_control.listen_role,
+    )
 
     session = build_agent_session(
         runtime, data, prewarmed_vad=ctx.proc.userdata.get("vad")
@@ -141,13 +146,34 @@ async def entrypoint(ctx: JobContext) -> None:
         s = str(state).lower()
         return s == "listening" or s.endswith(".listening")
 
-    @session.on("agent_state_changed")
-    def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
-        new_state = getattr(ev, "new_state", None)
-        if _is_listening_state(new_state):
+    def _is_speaking_state(state: object) -> bool:
+        s = str(state).lower()
+        return s == "speaking" or s.endswith(".speaking")
+
+    register_session_lifecycle(session, data, ctx.room, job_ctx=ctx)
+
+    @session.on("speech_created")
+    def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
+        """Emit role_idle after playout — not on listening (that fires too early)."""
+        if not data.pending_speech_ui:
+            return
+        handle = ev.speech_handle
+
+        def _on_playout_done(_h) -> None:  # type: ignore[no-untyped-def]
             from agent.ui_events import emit_role_idle
 
             asyncio.create_task(emit_role_idle())
+
+        handle.add_done_callback(_on_playout_done)
+
+    @session.on("agent_state_changed")
+    def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+        new_state = getattr(ev, "new_state", None)
+        if _is_speaking_state(new_state):
+            pending = data.pop_pending_speech_ui()
+            if pending:
+                role, text, step = pending
+                asyncio.create_task(_emit_speech_ui(role, text, step=step))
         if not _is_listening_state(new_state):
             return
         if not controller.is_panel_mode():
@@ -173,32 +199,12 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         asyncio.create_task(_run_panel_followups())
 
-    @session.on("speech_created")
-    def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
-        """Sync transcript + speaker highlight with TTS playout start."""
-        pending = data.pop_pending_transcript()
-        if not pending:
-            return
-        role, text, step = pending
-        asyncio.create_task(
-            _emit_speech_ui(role, text, step=step, source=str(ev.source))
-        )
-
-    async def _emit_speech_ui(
-        role: str, text: str, *, step: str, source: str
-    ) -> None:
+    async def _emit_speech_ui(role: str, text: str, *, step: str) -> None:
         from agent.ui_events import emit_role_active, emit_transcript
 
         await emit_role_active(role)
         if text.strip():
             await emit_transcript(role, text, step=step)
-        logger.debug(
-            "speech UI synced role=%s step=%s source=%s text_len=%d",
-            role,
-            step,
-            source,
-            len(text),
-        )
 
     @session.on("conversation_item_added")
     def _on_item(ev) -> None:  # type: ignore[no-untyped-def]
@@ -234,6 +240,7 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=build_agent("host", data),
         room=ctx.room,
         room_options=room_io.RoomOptions(),
+        room_input_options=room_io.RoomInputOptions(close_on_disconnect=True),
     )
 
 

@@ -23,10 +23,12 @@ from agent.floor_parser import (
 )
 from agent.hand_raise_ui import (
     dequeue_hand_raise,
+    flash_poll_raises,
     sync_hand_raise_ui,
     wait_for_hand_raises,
 )
 from agent.panel_speech import PANEL_HOST_CLOSE, speak_one_panelist
+from agent.session_lifecycle import should_stop_session_work
 from agent.show_history import append_role
 from agent.session_handoff import speak_panel_line
 from agent.supervisor import TurnController
@@ -111,23 +113,48 @@ async def _run_hand_raise_round(
 ) -> tuple[str | None, str]:
     """
     Pick next speaker: FIFO queue (human UI + AI poll).
-    Wait 10s only when queue is empty; always poll panelists before resolving.
+    Poll only when queue is empty; wait 10s only when still empty after poll.
     """
+    if should_stop_session_work(data, session):
+        return None, ""
     await emit_floor_pending(active=True)
     try:
-        poll = await poll_panel_hand_raises(data, panel_roles)
-        data.hand_raise_queue.apply_poll(poll)
-        await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
-        if data.turn_log:
-            data.turn_log.log(
-                "hand_raise_poll",
-                results={
-                    role: {"raised": hr.raised, "topic": hr.topic[:40]}
-                    for role, hr in poll.items()
-                },
-                room=data.room_name,
-                queue=data.hand_raise_queue.roles(),
+        if not data.hand_raise_queue.roles():
+            poll = await poll_panel_hand_raises(data, panel_roles)
+            await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
+            winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
+                poll,
+                data.panel_priority,
             )
+            if had_tie and winner:
+                data.rotate_panel_priority(winner)
+            await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
+            if data.turn_log:
+                data.turn_log.log(
+                    "hand_raise_poll",
+                    results={
+                        role: {"raised": hr.raised, "topic": hr.topic[:40]}
+                        for role, hr in poll.items()
+                    },
+                    winner=winner,
+                    yes_roles=yes_roles,
+                    had_tie=had_tie,
+                    panel_priority=list(data.panel_priority),
+                    room=data.room_name,
+                    queue=data.hand_raise_queue.roles(),
+                )
+        else:
+            logger.info(
+                "hand_raise poll skip queue=%s",
+                data.hand_raise_queue.roles(),
+            )
+            if data.turn_log:
+                data.turn_log.log(
+                    "hand_raise_poll_skip",
+                    reason="queue_nonempty",
+                    room=data.room_name,
+                    queue=data.hand_raise_queue.roles(),
+                )
 
         if not data.hand_raise_queue.roles():
             await wait_for_hand_raises(data, panel_roles=panel_roles)
@@ -148,6 +175,8 @@ async def _run_hand_raise_round(
         if data.hand_raise_queue.roles():
             pause = float(os.environ.get("TALKSHOW_HAND_RAISE_GRANT_PAUSE_SEC", "1"))
             if pause > 0:
+                if should_stop_session_work(data, session):
+                    return None, ""
                 logger.info(
                     "hand raise grant pause sec=%.2f queue=%s",
                     pause,
@@ -161,6 +190,8 @@ async def _run_hand_raise_round(
                         queue=data.hand_raise_queue.roles(),
                     )
                 await asyncio.sleep(pause)
+                if should_stop_session_work(data, session):
+                    return None, ""
             return await resolve_next_speaker(
                 data,
                 panel_roles=panel_roles,
@@ -419,14 +450,31 @@ async def run_host_moderation_from_queue(
     Whenever the host must pick the next speaker: poll into queue, resolve, grant.
     Returns granted role id, or None when the beat ends with host still pending.
     """
+    if should_stop_session_work(data, session):
+        return None
     max_depth = int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8"))
     if depth >= max_depth:
         logger.warning("host moderation max depth=%d trigger=%s", max_depth, trigger)
         return None
     panel_roles = controller.panel_speaker_roles()
     spoken = set(spoken_roles or ())
-    if not skip_open_floor:
+    queue_before = data.hand_raise_queue.roles()
+    if not skip_open_floor and not queue_before:
         await host_speak_open_floor(session, data, controller, trigger=trigger)
+    elif queue_before:
+        logger.info(
+            "open floor skip queue=%s trigger=%s",
+            queue_before,
+            trigger,
+        )
+        if data.turn_log:
+            data.turn_log.log(
+                "open_floor_skip",
+                reason="queue_nonempty",
+                trigger=trigger,
+                room=data.room_name,
+                queue=queue_before,
+            )
     next_role, grant_reason = await _run_hand_raise_round(
         session,
         data,

@@ -15,7 +15,41 @@ from agent.adapters.turn_store import TurnStore
 
 logger = logging.getLogger(__name__)
 
-_MIN_WAV_BYTES = int(os.environ.get("TALKSHOW_MIN_UTTERANCE_WAV_BYTES", "12000"))
+_MIN_WAV_BYTES = int(os.environ.get("TALKSHOW_MIN_UTTERANCE_WAV_BYTES", "16000"))
+_MIN_RMS = float(os.environ.get("TALKSHOW_MIN_UTTERANCE_RMS", "180"))
+
+
+def _wav_rms(wav_bytes: bytes) -> float:
+    """Peak-ish RMS of PCM in a wav container — rejects near-silent VAD blips."""
+    import wave
+    from io import BytesIO
+
+    import numpy as np
+
+    try:
+        with wave.open(BytesIO(wav_bytes), "rb") as wf:
+            frames = wf.readframes(wf.getnframes())
+    except wave.Error:
+        return 0.0
+    if not frames:
+        return 0.0
+    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+    if samples.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(samples * samples)))
+
+
+def _human_has_floor(data: object) -> bool:
+    """Panel mode: only run Gemma on human audio when the floor was granted."""
+    from agent.floor_control import peek_floor_next
+    from agent.supervisor import TurnController
+
+    if peek_floor_next(data) == "human":  # type: ignore[arg-type]
+        return True
+    ctrl = TurnController(data.scenario, data)  # type: ignore[arg-type]
+    if not ctrl.is_panel_mode():
+        return True
+    return False
 
 
 def _buffer_to_wav(buffer: AudioBuffer) -> bytes:
@@ -84,7 +118,33 @@ class GemmaAudioSTT(stt.STT):
             )
             return _empty_transcript_event()
 
+        rms = _wav_rms(wav)
+        if rms < _MIN_RMS:
+            logger.info(
+                "GemmaAudioSTT: skip quiet utterance rms=%.1f < %.1f",
+                rms,
+                _MIN_RMS,
+            )
+            return _empty_transcript_event()
+
         data = self._talkshow_data
+        if data is not None and not _human_has_floor(data):
+            logger.info(
+                "GemmaAudioSTT: skip — human has no floor (floor_next=%s chain=%s hand=%s)",
+                getattr(data, "floor_next_speaker", ""),
+                getattr(data, "panel_chain_running", False),
+                getattr(data, "human_hand_raised", False),
+            )
+            if data.turn_log is not None:
+                data.turn_log.log(
+                    "gemma_stt_skip",
+                    reason="no_human_floor",
+                    room=data.room_name,
+                    floor_next=getattr(data, "floor_next_speaker", ""),
+                    panel_chain=getattr(data, "panel_chain_running", False),
+                )
+            return _empty_transcript_event()
+
         if data is None:
             parsed = await self._client.complete_from_wav(wav)
             self._turn_store.set_turn(parsed.heard, parsed.reply, handoff_to=parsed.handoff_to)
@@ -105,9 +165,7 @@ class GemmaAudioSTT(stt.STT):
         assert data is not None
 
         ctrl = TurnController(data.scenario, data)
-        panel_turn = ctrl.is_panel_mode() and (
-            not data.panel_chain_running or data.human_hand_raised
-        )
+        panel_turn = ctrl.is_panel_mode() and _human_has_floor(data)
 
         if panel_turn:
             ctrl.apply_listen_persona()
@@ -188,7 +246,7 @@ class GemmaAudioSTT(stt.STT):
         await emit_transcript("human", parsed.heard, step="human_turn")
         if data.human_hand_raised:
             await emit_floor_grant("human", reason="human_spoke_hand_up")
-        data.queue_transcript("host", reply, step="host_reply")
+        data.queue_speech_ui("host", reply, step="host_reply")
         data.last_human_heard = parsed.heard
         if panel_turn:
             data.last_host_panel_tee = reply

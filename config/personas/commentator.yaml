@@ -5,6 +5,8 @@ piper_voice: en_US-ryan-medium
 ui:
   label: Commentator
   color: '#059669'
+  avatar:
+    vrm: /avatars/seed-san.vrm
 
 instructions: |
   You are Ryan, the color commentator on a live English talk-show podcast. You add brief,
