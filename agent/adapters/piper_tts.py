@@ -6,8 +6,13 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent.hooks.logging import TurnJsonlLogger
 
 from livekit.agents import tts
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
@@ -20,7 +25,13 @@ _voice_cache: dict[str, object] = {}
 
 
 class PiperTTS(tts.TTS):
-    def __init__(self, cfg: LocaleTTSConfig) -> None:
+    def __init__(
+        self,
+        cfg: LocaleTTSConfig,
+        *,
+        turn_log: TurnJsonlLogger | None = None,
+        room_name: str = "",
+    ) -> None:
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),
             sample_rate=cfg.sample_rate,
@@ -28,6 +39,8 @@ class PiperTTS(tts.TTS):
         )
         self._model_path = Path(cfg.model_path)
         self._piper_bin = shutil.which("piper")
+        self._turn_log = turn_log
+        self._room_name = room_name
         logger.info("PiperTTS init model_path=%s", self._model_path)
 
     @property
@@ -54,9 +67,19 @@ class _PiperChunkedStream(tts.ChunkedStream):
         if not text:
             return
 
+        t0 = time.monotonic()
         pcm_bytes, sample_rate, num_channels = await asyncio.to_thread(
             _synthesize_pcm, tts_impl, text
         )
+        tts_latency_s = time.monotonic() - t0
+
+        if tts_impl._turn_log is not None:
+            tts_impl._turn_log.log(
+                "tts_synthesize",
+                tts_latency_s=round(tts_latency_s, 3),
+                chars=len(text),
+                room=tts_impl._room_name,
+            )
 
         output_emitter.initialize(
             request_id=str(uuid.uuid4()),
