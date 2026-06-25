@@ -212,14 +212,19 @@ def build_metric_order(df: pd.DataFrame) -> list[str]:
 
 def plot_swarm(df: pd.DataFrame, out: str | None = None) -> None:
     metric_order = build_metric_order(df)
+    multi = df["source"].nunique() > 1
+
     fig, ax = plt.subplots(figsize=(10, max(5, len(metric_order) * 0.9)))
+
+    palette = sns.color_palette("tab10", n_colors=df["source"].nunique())
 
     sns.swarmplot(
         data=df,
         y="metric",
         x="value",
         order=metric_order,
-        hue="source" if df["source"].nunique() > 1 else None,
+        hue="source" if multi else None,
+        palette=palette if multi else None,
         size=8,
         ax=ax,
     )
@@ -228,6 +233,10 @@ def plot_swarm(df: pd.DataFrame, out: str | None = None) -> None:
     ax.set_ylabel("")
     ax.set_title("Talkshow Turn Latency Breakdown")
     ax.grid(axis="x", alpha=0.3)
+
+    if multi:
+        ax.legend(title="Session", bbox_to_anchor=(1.02, 1), loc="upper left")
+
     plt.tight_layout()
 
     if out:
