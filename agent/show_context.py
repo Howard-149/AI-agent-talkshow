@@ -3,6 +3,23 @@ from __future__ import annotations
 import re
 
 from agent.config import load_persona_name
+from agent.data import TalkShowData
+from agent.panel_context import (
+    format_name_list,
+    human_disambiguation_note,
+    name_to_panel_role,
+    next_tag_options,
+    panel_opening_line,
+    panel_role_name_map,
+    panel_speaker_names,
+    panel_speaker_roles,
+    role_label,
+    session_welcome_line,
+    other_panelist_names,
+    unspoken_panelist_names,
+    any_other_panelist_spoken,
+)
+from agent.show_history import HUMAN_LABEL
 
 
 def scene_card(
@@ -10,11 +27,10 @@ def scene_card(
     you: str,
     you_role: str,
     just_spoke: str,
-    up_next: list[str],
+    up_next: str,
     human_floor: str,
 ) -> str:
     """Shared 'who has the floor' block for every Gemma call in a panel round."""
-    next_line = " → ".join(up_next) if up_next else "(end of round)"
     frozen = (
         "OPEN — the human may respond."
         if human_floor == "open"
@@ -24,44 +40,47 @@ def scene_card(
 SCENE (live panel — keep dialogue natural):
 - You are {you} ({you_role}).
 - Who just spoke: {just_spoke}
-- Who speaks NEXT (in order): {next_line}
+- Floor control: {up_next}
 - Human guest floor: {frozen}
-- Speak as if everyone is in the same room: address whoever actually speaks next.
+- Speak as if everyone is in the same room; address whoever last spoke in the transcript.
 - If the human is FROZEN, talking TO them (especially questions) is unnatural — they cannot answer yet.
 - If the human is OPEN, you may invite them back.
 """.strip()
 
 
-def host_after_human_card() -> str:
+def host_after_human_card(scenario) -> str:
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+    panel = format_name_list(panel_speaker_names(scenario))
     return scene_card(
         you=host,
         you_role="host / moderator",
         just_spoke="the human guest",
-        up_next=[ryan, amy, f"{host} (close)", "human guest"],
+        up_next="host moderates — panelists may raise hands; you grant the floor",
         human_floor="frozen",
     ) + (
         f"\nYour beat: 1–2 sentences to the ROOM.\n"
-        f"- If you name {ryan} or {amy} to speak next → set [next:commentator] or [next:guest]\n"
-        f"- If you leave it open for volunteers → set [next:host]"
+        f"- Name a panelist ({panel}) to speak next → matching [next:<role>]\n"
+        f"- Open floor for volunteers → [next:host]"
     )
 
 
 def host_audio_user_hint() -> str:
+    from agent.config import load_scenario
+
+    scenario = load_scenario()
+    panel_roles = panel_speaker_roles(scenario)
+    tags = next_tag_options(panel_roles, include_host=True) + " | human | close"
     return (
-        f"{host_after_human_card()}\n\n"
+        f"{host_after_human_card(scenario)}\n\n"
         "Listen to the human's audio. Output exactly:\n"
         "[heard]: <transcript>\n"
         "[reply]: <short host tee-up to the room>\n"
-        "[next]: commentator | guest | host | human | close\n\n"
+        f"[next]: {tags}\n\n"
         "[next] rules:\n"
-        "- You named someone to speak next → commentator or guest\n"
+        "- You named a panelist to speak next → their role id\n"
         "- Open floor, no one picked → host (panel raises hands)\n"
-        "- If [reply] calls on Ryan/Amy by name but you forget the tag, the show still "
-        "routes to them from your spoken tee-up.\n"
-        "[reply] must acknowledge what the human asked. Not a 1-on-1 interview."
+        "- If [reply] names someone but you forget the tag, the show may still route from your tee-up\n"
+        "[reply] must acknowledge what the human raised. Not a 1-on-1 interview."
     )
 
 
@@ -69,89 +88,73 @@ def panelist_card(
     *,
     role: str,
     name: str,
+    scenario,
     prior_lines: list[tuple[str, str]] | None = None,
 ) -> str:
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+    panel_roles = panel_speaker_roles(scenario)
+    label = role_label(role)
 
-    if role == "commentator":
-        return scene_card(
-            you=name,
-            you_role="commentator",
-            just_spoke=f"{host} (moderator)",
-            up_next=[amy, f"{host} (close)", "human guest"],
-            human_floor="frozen",
-        ) + (
-            f"\nDeliver what the human asked for in your spoken lines. "
-            f"If they wanted examples, say the actual example — do not only analyze humor."
-            f"\nIdentity: the real person who spoke is labeled \"Human guest\" in the transcript — "
-            f"they are NOT {amy}. {amy} is an AI panelist who has NOT spoken yet this round; "
-            f"do not thank {amy} or say \"{amy}, you…\" for what the human said."
-        )
-    if role == "guest":
-        just = (
-            f"{ryan} (commentator)"
-            if prior_lines
-            else "the panel (see conversation above)"
-        )
-        return scene_card(
-            you=name,
-            you_role="guest",
-            just_spoke=just,
-            up_next=[f"{host} (close)", "human guest"],
-            human_floor="frozen",
-        ) + (
-            "\nDeliver what the human asked for; build on the commentator if needed. "
-            "If they wanted examples, your lines must include a full concrete example."
-        )
+    if prior_lines:
+        last = prior_lines[-1]
+        just_spoke = f"{last[1]} ({last[0]})"
+    else:
+        just_spoke = "the host or an earlier speaker (see transcript)"
+
+    others = [n for n in other_panelist_names(role, panel_roles)]
+    others_text = format_name_list(others) if others else "other panelists"
+
     return scene_card(
         you=name,
-        you_role=role,
-        just_spoke="the panel",
-        up_next=["human guest"],
-        human_floor="open",
+        you_role=label,
+        just_spoke=just_spoke,
+        up_next="host moderates who speaks next after you",
+        human_floor="frozen",
+    ) + (
+        f"\nJoin the discussion on the topic in the transcript — respond to {just_spoke}, "
+        f"{others_text}, or the host as fits the thread.\n"
+        f"{human_disambiguation_note(scenario)}"
     )
 
 
-def host_close_card() -> str:
+def host_close_card(scenario) -> str:
     host = load_persona_name("host")
-    amy = load_persona_name("guest")
     return scene_card(
         you=host,
         you_role="host / moderator",
-        just_spoke=f"{amy} (guest)",
-        up_next=["human guest"],
+        just_spoke="the panel (see transcript for who spoke last)",
+        up_next="return floor to the human guest",
         human_floor="open",
     ) + "\nYour beat: 1–2 sentences; return the floor to the human."
 
 
 def panel_host_gemma_addon() -> str:
+    from agent.config import load_scenario
+
+    scenario = load_scenario()
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+    panel = format_name_list(panel_speaker_names(scenario))
     return f"""
 PANEL SHOW — floor awareness (not a rule list; keep the scene coherent):
 
 You are {host}, moderator. This is a recorded panel, not a private chat with the human.
 
-Each human turn triggers a fixed sequence: human → you (short) → {ryan} → {amy} → you (close) → human.
-Until {ryan} and {amy} finish, the human is an audience member, not your dialogue partner.
+After the human speaks, you tee up the room; panelists ({panel}) join via hand-raise queue
+and your grants — order is NOT fixed. Until you return the floor, the human is listening.
 
-{host_after_human_card()}
+{host_after_human_card(scenario)}
 """.strip()
 
 
-def _panel_tee_up_fallback(human_heard: str) -> str:
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+def _panel_tee_up_fallback(human_heard: str, scenario) -> str:
+    panel = format_name_list(panel_speaker_names(scenario))
     topic = (human_heard or "that").strip()[:120]
     if topic.startswith("("):
         topic = "today's topic"
-    return f"On {topic} — let's hear from {ryan}, then {amy}."
+    return f"On {topic} — let's hear from {panel}."
 
 
-def sanitize_host_panel_reply(reply: str, human_heard: str) -> str:
+def sanitize_host_panel_reply(reply: str, human_heard: str, scenario) -> str:
     """Strip handoff tags, fix empty/tag-only lines, reshape interview tone."""
     from agent.adapters.response_parser import _strip_handoff_tags
     from agent.floor_parser import strip_next_tag
@@ -159,16 +162,18 @@ def sanitize_host_panel_reply(reply: str, human_heard: str) -> str:
     text, _ = _strip_handoff_tags(reply)
     text = strip_next_tag(text).strip()
 
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
-    fallback = _panel_tee_up_fallback(human_heard)
+    fallback = _panel_tee_up_fallback(human_heard, scenario)
+    panel_names = {load_persona_name(r).lower() for r in panel_speaker_roles(scenario)}
 
     if not text or len(text) < 12 or text.lower().startswith("[handoff"):
         return fallback
 
-    # Reply is only praising a panelist — wrong beat (human just spoke)
-    if re.match(rf"^{re.escape(ryan)}\b", text, re.I) and amy.lower() not in text.lower():
-        return fallback
+    # Reply opens by praising a single panelist only — wrong beat (human just spoke)
+    first_word = text.split()[0].lower().rstrip(",.") if text.split() else ""
+    if first_word in panel_names and "?" not in text:
+        mentions_panel = sum(1 for n in panel_names if n in text.lower())
+        if mentions_panel == 1:
+            return fallback
 
     if "?" in text:
         parts = re.split(r"(?<=[.!?])\s+", text)
@@ -180,6 +185,6 @@ def sanitize_host_panel_reply(reply: str, human_heard: str) -> str:
     return text
 
 
-def host_used_tee_fallback(reply: str, human_heard: str) -> bool:
-    """True when sanitize substituted our Ryan-first tee-up template."""
-    return reply.strip() == _panel_tee_up_fallback(human_heard)
+def host_used_tee_fallback(reply: str, human_heard: str, scenario) -> bool:
+    """True when sanitize substituted the generic tee-up template."""
+    return reply.strip() == _panel_tee_up_fallback(human_heard, scenario)

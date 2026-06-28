@@ -3,16 +3,28 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from functools import lru_cache
+
 _HEARD_RE = re.compile(r"\[heard\]\s*:\s*(.*?)(?=\[reply\]\s*:|$)", re.IGNORECASE | re.DOTALL)
 _REPLY_RE = re.compile(r"\[reply\]\s*:\s*(.*)\Z", re.IGNORECASE | re.DOTALL)
 _HANDOFF_TAG_RE = re.compile(r"\[handoff:([^\]]+)\]", re.IGNORECASE)
-_VALID_HANDOFF = frozenset({"host", "guest", "commentator"})
-# Model sometimes uses display names instead of role ids
-_HANDOFF_ALIASES: dict[str, str] = {
-    "lessac": "host",
-    "ryan": "commentator",
-    "amy": "guest",
-}
+
+
+@lru_cache(maxsize=1)
+def _handoff_role_lookup() -> tuple[frozenset[str], dict[str, str]]:
+    from agent.panel_context import floor_valid_next_roles, role_name_aliases
+
+    valid = floor_valid_next_roles()
+    aliases = role_name_aliases(include_host=True)
+    return valid, aliases
+
+
+def _normalize_handoff_role(raw: str) -> str | None:
+    key = raw.strip().lower()
+    valid, aliases = _handoff_role_lookup()
+    if key in valid:
+        return key
+    return aliases.get(key)
 
 
 @dataclass(frozen=True)
@@ -23,11 +35,11 @@ class ParsedTurn:
     next_speaker: str | None = None
 
 
-def _normalize_handoff_role(raw: str) -> str | None:
-    key = raw.strip().lower()
-    if key in _VALID_HANDOFF:
-        return key
-    return _HANDOFF_ALIASES.get(key)
+def _handoff_as_next(handoff_to: str | None) -> bool:
+    if not handoff_to:
+        return False
+    valid, _ = _handoff_role_lookup()
+    return handoff_to in valid
 
 
 def _strip_handoff_tags(reply: str) -> tuple[str, str | None]:
@@ -61,7 +73,7 @@ def parse_heard_reply(text: str) -> ParsedTurn:
 
     reply, handoff_to = _strip_handoff_tags(reply)
     reply = strip_next_tag(reply)
-    if not next_speaker and handoff_to in ("commentator", "guest", "host"):
+    if not next_speaker and _handoff_as_next(handoff_to):
         next_speaker = handoff_to
     return ParsedTurn(
         heard=heard, reply=reply, handoff_to=handoff_to, next_speaker=next_speaker
@@ -79,7 +91,7 @@ def parse_host_speech(text: str) -> ParsedTurn:
 
     next_speaker = parse_next_speaker_tag(text)
     spoken, handoff_to = _strip_handoff_tags(strip_next_tag(text))
-    if not next_speaker and handoff_to in ("commentator", "guest", "host"):
+    if not next_speaker and _handoff_as_next(handoff_to):
         next_speaker = handoff_to
     return ParsedTurn(heard="", reply=spoken, handoff_to=handoff_to, next_speaker=next_speaker)
 

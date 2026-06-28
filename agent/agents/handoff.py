@@ -11,6 +11,7 @@ from agent.supervisor import TurnController
 logger = logging.getLogger(__name__)
 
 
+
 class HandoffToolsMixin:
     """function_tool handoffs between Host / Guest / Commentator."""
 
@@ -31,15 +32,15 @@ class HandoffToolsMixin:
 
     @function_tool
     async def handoff_to_host(self, context: RunContext[TalkShowData]) -> Agent:
-        """Return control to the host (Lessac). Use when the segment should be led by the host again."""
+        """Return control to the host. Use when the segment should be led by the host again."""
         return self._handoff(context, "host", f"tool:{self._role}_to_host")
 
     @function_tool
     async def handoff_to_guest(self, context: RunContext[TalkShowData]) -> Agent:
-        """Hand off to guest Amy for a substantive answer or story."""
+        """Hand off to the guest panelist for a substantive answer or story."""
         return self._handoff(context, "guest", f"tool:{self._role}_to_guest")
 
     @function_tool
     async def handoff_to_commentator(self, context: RunContext[TalkShowData]) -> Agent:
-        """Hand off to commentator Ryan for a brief aside or reaction."""
+        """Hand off to the commentator for a brief aside or reaction."""
         return self._handoff(context, "commentator", f"tool:{self._role}_to_commentator")

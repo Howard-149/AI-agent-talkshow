@@ -71,6 +71,21 @@ def load_persona_instructions(
     return base
 
 
+def load_persona_personality(persona_id: str) -> str:
+    """In-character personality for panel turns (speaking + hand-raise polls)."""
+    data = load_persona_yaml(persona_id)
+    raw = data.get("personality") or data.get("panel_voice")  # panel_voice: legacy alias
+    if raw:
+        return str(raw).strip()
+    return ""
+
+
+@dataclass(frozen=True)
+class DialogueConfig:
+    library: str | None = None
+    pick: str = "all"  # all | rotate | random
+
+
 @dataclass(frozen=True)
 class TurnControlConfig:
     mode: str  # manual_only | rotate_after_user | panel_round_robin | host_moderated
@@ -83,6 +98,7 @@ class ScenarioConfig:
     id: str
     default_room: str
     turn_control: TurnControlConfig
+    dialogue: DialogueConfig | None = None
 
 
 def load_scenario(path: Path | None = None) -> ScenarioConfig:
@@ -96,6 +112,17 @@ def load_scenario(path: Path | None = None) -> ScenarioConfig:
     tc = raw.get("turn_control", {})
     meet = raw.get("meet", {})
     order = tuple(tc.get("order", ["host", "guest", "commentator"]))
+    dialogue_raw = raw.get("dialogue")
+    dialogue: DialogueConfig | None = None
+    if isinstance(dialogue_raw, dict):
+        library = dialogue_raw.get("library")
+        pick_raw = str(dialogue_raw.get("pick", "all")).strip().lower()
+        if pick_raw == "reference":  # legacy alias
+            pick_raw = "all"
+        dialogue = DialogueConfig(
+            library=str(library).strip() if library else None,
+            pick=pick_raw,
+        )
     return ScenarioConfig(
         id=str(raw.get("id", "default")),
         default_room=str(meet.get("default_room", "talkshow-dev")),
@@ -104,6 +131,7 @@ def load_scenario(path: Path | None = None) -> ScenarioConfig:
             order=order,
             listen_role=str(tc.get("listen_role", "host")),
         ),
+        dialogue=dialogue,
     )
 
 

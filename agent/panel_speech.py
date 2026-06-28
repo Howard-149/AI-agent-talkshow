@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from livekit.agents import AgentSession
 
@@ -9,7 +10,9 @@ from agent.config import load_persona_name
 from agent.data import TalkShowData
 from agent.floor_control import apply_floor_next
 from agent.floor_parser import strip_next_tag
-from agent.panel_prompts import panel_speech_prompt, panelist_system_for_text
+from agent.panel_context import panel_speaker_roles
+from agent.panel_prompts import panel_speech_prompt, panelist_system_prompt
+from agent.dialogue_library import format_dialogue_hint
 from agent.session_handoff import speak_panel_line, switch_to_role
 from agent.panel_voice import normalize_panelist_speech
 from agent.show_history import append_role
@@ -31,31 +34,66 @@ async def speak_one_panelist(
     step: str,
 ) -> str:
     """
-    Generate and speak one panelist line (Ryan / Amy).
-    Returns consumed [next] role for floor routing (commentator|guest|host|human|close).
+    Generate and speak one panelist line.
+    Returns consumed [next] role for floor routing.
     """
+    controller = TurnController(data.scenario, data)
+    panel_roles = controller.panel_speaker_roles()
     name = load_persona_name(speak_role)
     host_name = load_persona_name("host")
     hist = data.show_history.prior_messages()
     latest_human = data.show_history.latest_human_text()
-    guest_spoken = data.show_history.role_has_spoken("guest")
-    commentator_spoken = data.show_history.role_has_spoken("commentator")
-    other_has_spoken = guest_spoken if speak_role == "commentator" else commentator_spoken
 
     if speak_role != data.active_role:
         await switch_to_role(session, data, speak_role, reason=f"panel:{step}")
+
+    dialogue_hint = ""
+    dlg = data.scenario.dialogue
+    if dlg and dlg.library:
+        dialogue_hint, data.dialogue_example_index = format_dialogue_hint(
+            dlg.library,
+            role=speak_role,
+            pick=dlg.pick,
+            index=data.dialogue_example_index,
+        )
+    else:
+        logger.info("dialogue hint role=%s skipped (no library in scenario)", speak_role)
 
     prompt = panel_speech_prompt(
         role=speak_role,
         name=name,
         host_name=host_name,
+        scenario=data.scenario,
+        panel_roles=panel_roles,
+        history=data.show_history,
         latest_human=latest_human,
     )
+    system_prompt = panelist_system_prompt(
+        speak_role,
+        scenario=data.scenario,
+        panel_roles=panel_roles,
+        history=data.show_history,
+        dialogue_hint=dialogue_hint,
+    )
+    logger.info(
+        "panel speech prompt role=%s step=%s system_chars=%d user_chars=%d hint_chars=%d pick=%s",
+        speak_role,
+        step,
+        len(system_prompt),
+        len(prompt),
+        len(dialogue_hint),
+        dlg.pick if dlg and dlg.library else "none",
+    )
+    if os.environ.get("TALKSHOW_LOG_PROMPTS", "").lower() in ("1", "true", "yes"):
+        logger.info(
+            "TALKSHOW_LOG_PROMPTS role=%s\n--- system ---\n%s\n--- user ---\n%s",
+            speak_role,
+            system_prompt,
+            prompt,
+        )
     raw = await data.runtime.gemma_client.complete_text(
         prompt,
-        system_prompt=panelist_system_for_text(
-            speak_role, other_has_spoken=other_has_spoken
-        ),
+        system_prompt=system_prompt,
         history_messages=hist,
     )
     parsed = parse_host_speech(raw)
@@ -63,17 +101,21 @@ async def speak_one_panelist(
     if not speech:
         logger.warning("empty panel speech for role=%s", speak_role)
         speech = (
-            "I want to make sure we speak to what our guest raised — "
+            "I want to make sure we speak to what the room is discussing — "
             "let me add my view on that."
         )
     normalized = normalize_panelist_speech(
-        speak_role, speech, guest_has_spoken=guest_spoken
+        speak_role,
+        speech,
+        panel_roles=panel_roles,
+        history=data.show_history,
     )
     if normalized != speech:
         logger.info("panel voice normalized for role=%s", speak_role)
         speech = normalized
 
-    if parsed.next_speaker in ("commentator", "guest", "human", "close"):
+    valid_next = set(panel_roles) | {"host", "human", "close"}
+    if parsed.next_speaker in valid_next:
         next_role = parsed.next_speaker
     else:
         next_role = "host"

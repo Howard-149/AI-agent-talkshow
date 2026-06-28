@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from agent.config import load_persona_name
 from agent.data import TalkShowData
@@ -10,16 +11,19 @@ _RAISE_RE = re.compile(r"\[raise\]\s*:\s*(yes|no)\b", re.IGNORECASE)
 _REASON_RE = re.compile(r"\[reason\]\s*:\s*(.+?)(?=\[|$)", re.IGNORECASE | re.DOTALL)
 _TOPIC_RE = re.compile(r"\[topic\]\s*:\s*(.+?)(?=\[|$)", re.IGNORECASE | re.DOTALL)
 _NEXT_RE = re.compile(
-    r"\[next\]\s*:\s*(commentator|guest|close|host|human)\b"
-    r"|\[next\s*:\s*(commentator|guest|close|host|human)\s*\]",
+    r"\[next\]\s*:\s*(\w+)\b"
+    r"|\[next\s*:\s*(\w+)\s*\]",
     re.IGNORECASE,
 )
-_VALID_NEXT = frozenset({"commentator", "guest", "close", "host", "human"})
-_NEXT_ALIASES: dict[str, str] = {
-    "ryan": "commentator",
-    "amy": "guest",
-    "lessac": "host",
-}
+
+
+@lru_cache(maxsize=1)
+def _floor_role_lookup() -> tuple[frozenset[str], dict[str, str]]:
+    from agent.panel_context import floor_valid_next_roles, role_name_aliases
+
+    valid = floor_valid_next_roles()
+    aliases = role_name_aliases(include_host=True)
+    return valid, aliases
 
 
 @dataclass(frozen=True)
@@ -32,7 +36,7 @@ class HandRaiseResult:
 
 @dataclass(frozen=True)
 class FloorDecision:
-    next_role: str  # commentator | guest | close | host | human
+    next_role: str
     reason: str = ""
 
 
@@ -51,9 +55,10 @@ def parse_hand_raise(role: str, text: str) -> HandRaiseResult:
 
 def normalize_floor_role(raw: str) -> str | None:
     key = raw.strip().lower()
-    if key in _VALID_NEXT:
+    valid, aliases = _floor_role_lookup()
+    if key in valid:
         return key
-    return _NEXT_ALIASES.get(key)
+    return aliases.get(key)
 
 
 def _normalize_next(raw: str) -> str | None:
@@ -106,9 +111,11 @@ def fallback_floor_decision(
 
 def infer_host_called_role(data: TalkShowData) -> str | None:
     """
-    When the host tee-up names Ryan/Amy, pick them for direct host calls (empty queue).
-    Returns role id: commentator | guest | None
+    When the host tee-up names a panelist, return their role id for direct host calls.
     """
+    from agent.panel_context import panel_speaker_roles, name_to_panel_role
+
+    panel_roles = panel_speaker_roles(data.scenario)
     tee = (data.last_host_panel_tee or "").strip()
     if not tee:
         for line in reversed(data.show_history.lines):
@@ -119,30 +126,32 @@ def infer_host_called_role(data: TalkShowData) -> str | None:
         return None
 
     t = tee.lower()
-    ryan_name = load_persona_name("commentator").lower()
-    amy_name = load_persona_name("guest").lower()
-    ryan = re.escape(ryan_name)
-    amy = re.escape(amy_name)
+    names_by_role = {r: load_persona_name(r).lower() for r in panel_roles}
+    escaped = {r: re.escape(n) for r, n in names_by_role.items()}
 
-    call_patterns = (
-        rf"\b(?:over to|turn to|go to|i'?ll hand|give the floor to|call on)\s+({ryan}|{amy})\b",
-        rf"\blet'?s hear(?:\s+from)?\s+({ryan}|{amy})\b",
-        rf"\b({ryan}|{amy})\s+(?:to speak|you have the floor|take it)\b",
-    )
+    call_patterns: list[str] = []
+    for role in panel_roles:
+        n = escaped[role]
+        call_patterns.extend(
+            [
+                rf"\b(?:over to|turn to|go to|i'?ll hand|give the floor to|call on)\s+({n})\b",
+                rf"\blet'?s hear(?:\s+from)?\s+({n})\b",
+                rf"\b({n})\s+(?:to speak|you have the floor|take it)\b",
+            ]
+        )
     for pat in call_patterns:
         m = re.search(pat, t, re.I)
         if m:
-            name = m.group(1).lower()
-            if name == ryan_name:
-                return "commentator"
-            if name == amy_name:
-                return "guest"
+            resolved = name_to_panel_role(m.group(1), panel_roles)
+            if resolved:
+                return resolved
 
-    ryan_pos = t.find(ryan_name)
-    amy_pos = t.find(amy_name)
-    if ryan_pos >= 0 and (amy_pos < 0 or ryan_pos <= amy_pos):
-        if re.search(rf"\b{ryan}\b", t):
-            return "commentator"
-    if amy_pos >= 0 and re.search(rf"\b{amy}\b", t):
-        return "guest"
+    positions: list[tuple[int, str]] = []
+    for role, name in names_by_role.items():
+        pos = t.find(name)
+        if pos >= 0:
+            positions.append((pos, role))
+    if positions:
+        positions.sort(key=lambda x: x[0])
+        return positions[0][1]
     return None

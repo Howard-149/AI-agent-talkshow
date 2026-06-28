@@ -8,7 +8,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agent.floor_parser import HandRaiseResult
 
-VALID_QUEUE_ROLES = frozenset({"commentator", "guest", "human"})
+
+def _queue_eligible(role: str) -> bool:
+    from agent.config import load_scenario
+    from agent.panel_context import panel_speaker_roles
+
+    key = role.strip().lower()
+    if key == "human":
+        return True
+    return key in panel_speaker_roles(load_scenario())
 
 
 @dataclass
@@ -27,7 +35,7 @@ class HandRaiseQueue:
 
     def enqueue(self, role: str, *, reason: str = "", topic: str = "") -> None:
         role = role.strip().lower()
-        if role not in VALID_QUEUE_ROLES:
+        if not _queue_eligible(role):
             return
         self.remove(role)
         self._entries.append(
@@ -113,7 +121,7 @@ class HandRaiseQueue:
     def merge_poll_raise(self, role: str, *, reason: str = "", topic: str = "") -> None:
         """Apply AI poll yes — new roles append; existing roles keep their FIFO slot."""
         role = role.strip().lower()
-        if role not in VALID_QUEUE_ROLES or role == "human":
+        if not _queue_eligible(role) or role == "human":
             return
         existing = self.get(role)
         if existing is not None:

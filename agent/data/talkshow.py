@@ -49,6 +49,7 @@ class TalkShowData:
     room_name: str = ""
     human_turn_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    dialogue_example_index: int = 0
 
     @property
     def human_hand_raised(self) -> bool:

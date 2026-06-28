@@ -1,6 +1,21 @@
 from __future__ import annotations
 
-from agent.config import load_persona_name
+from agent.config import (
+    ScenarioConfig,
+    load_persona_name,
+    load_persona_personality,
+    load_scenario,
+)
+from agent.panel_context import (
+    any_other_panelist_spoken,
+    format_name_list,
+    human_disambiguation_note,
+    next_tag_options,
+    other_panelist_names,
+    panel_opening_line,
+    role_label,
+    unspoken_panelist_names,
+)
 from agent.show_history import HUMAN_LABEL
 from agent.show_context import (
     host_audio_user_hint,
@@ -11,84 +26,121 @@ from agent.show_context import (
 
 PANEL_HOST_AUDIO_USER_HINT = host_audio_user_hint()
 
-PANEL_OPENING_LINE = (
-    "Welcome — I'm Lessac, your host. When you have a topic, take the floor; "
-    "I'll tee it up for Ryan and Amy, then back to you."
-)
 
-
-def panelist_role_brief(role: str) -> str:
+def panelist_personality_block(role: str) -> str:
+    """Personality traits from persona yaml — used for speaking and hand-raise polls."""
+    personality = load_persona_personality(role)
+    if personality:
+        return personality
     name = load_persona_name(role)
-    if role == "commentator":
-        amy = load_persona_name("guest")
-        return (
-            f"You are {name} (commentator). Your turn now — speak 1–2 short sentences out loud. "
-            f'Satisfy what "{HUMAN_LABEL}" asked in the transcript — not {amy}, who has '
-            f"not spoken yet unless you see a line labeled \"{amy}:\"."
-        )
-    if role == "guest":
-        return (
-            f"You are {name} (guest). Your turn now — speak 1–2 short sentences out loud. "
-            "Add a second concrete contribution; do not repeat the commentator."
-        )
-    return f"You are {name}. Speak in character."
+    return f"You are {name} on a live English talk-show panel."
 
 
-def _panel_identity_guard(role: str, *, other_has_spoken: bool) -> str:
-    """Disambiguate Human guest (real person) vs Amy (AI guest panelist)."""
-    amy = load_persona_name("guest")
-    host = load_persona_name("host")
-    if role == "commentator":
-        if other_has_spoken:
-            return (
-                f"\nThe real person in the room is \"{HUMAN_LABEL}\" — not {amy}. "
-                f"Only attribute words to {amy} if a transcript line is labeled \"{amy}:\"."
-            )
-        return (
-            f"\nThe real person in the room is \"{HUMAN_LABEL}\" — NOT {amy}. "
-            f"{amy} has not spoken yet; do not open with \"{amy}, you…\" or thank {amy} "
-            f"for what {HUMAN_LABEL} said. Respond to {HUMAN_LABEL}'s request; you may "
-            f"mention that {amy} will speak next, without treating her as if she already did."
-        )
-    if role == "guest":
-        ryan = load_persona_name("commentator")
-        return (
-            f"\nThe real person in the room is \"{HUMAN_LABEL}\" — not you ({amy}). "
-            f"Build on {ryan} if helpful; satisfy what {HUMAN_LABEL} asked for."
-        )
-    return f"\nYou are {host}; the human is \"{HUMAN_LABEL}\"."
-
-
-def panelist_system_for_text(role: str, *, other_has_spoken: bool = False) -> str:
-    name = load_persona_name(role)
-    host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
-    if role == "commentator":
-        role_line = "color commentator"
-        other = amy
-    elif role == "guest":
-        role_line = "guest panelist (AI)"
-        other = ryan
-    else:
-        role_line = role
-        other = ryan
+def panelist_hand_raise_system(role: str) -> str:
+    """System prompt for parallel hand-raise polls — includes personality, not just name."""
+    personality = panelist_personality_block(role)
     return (
-        f"You are {name}, the {role_line} on a live English talk-show panel. "
-        "The messages above are the running transcript — lines labeled with your "
-        f"name are yours; lines labeled {other} or {host} are other AI speakers; "
-        f'lines labeled "{HUMAN_LABEL}:" are the real human — never confuse them '
-        f"with {amy} (she is a separate AI guest, not the human). "
-        f"Speak in first person as {name} (use I/me/my, never \"{name} has\" or "
-        f"\"I think {name}\"). You may address {other} by name only when they have "
-        f"actually spoken in the transcript. "
-        "Fulfill the human guest's latest request in what you say. "
-        "If they asked for examples, include the full example in your speech. "
-        "Plain English. After your spoken lines, always output [next]: "
-        "commentator | guest | host — use commentator/guest ONLY if you pass the floor "
-        "to them by name; otherwise host."
-        f"{_panel_identity_guard(role, other_has_spoken=other_has_spoken)}"
+        f"{personality}\n\n"
+        "Hand-raise decision (stay in character):\n"
+        "- Read the transcript; decide if you want the floor next.\n"
+        "- You may speak more than once this round.\n"
+        "- If yes, you may propose a [topic] angle that fits how YOU would enter the discussion.\n"
+        "Output ONLY:\n"
+        "[raise]: yes | no\n"
+        "[topic]: optional angle (if yes)\n"
+        "[reason]: optional one short phrase (if yes)"
     )
+
+
+def panelist_role_brief(
+    role: str,
+    *,
+    scenario: ScenarioConfig,
+    history: object,
+    panel_roles: list[str],
+) -> str:
+    name = load_persona_name(role)
+    label = role_label(role)
+    others = format_name_list(other_panelist_names(role, panel_roles))
+    unspoken = unspoken_panelist_names(history, panel_roles)
+    unspoken_others = [n for n in unspoken if n != name]
+
+    if any_other_panelist_spoken(history, role, panel_roles):
+        return (
+            f"Your turn, {name}. The panel is mid-discussion — respond to the latest "
+            f"speaker or the thread under debate; add your {label.lower()} angle."
+        )
+    if unspoken_others:
+        not_yet = format_name_list(unspoken_others)
+        return (
+            f"Your turn, {name}. The host opened the topic — give your first take on "
+            f"what the room is discussing. {not_yet} may not have spoken yet; "
+            f"do not talk as if they already did."
+        )
+    return (
+        f"Your turn, {name}. Join the live discussion — you may agree with, push back on, "
+        f"or extend what {others} or the host said, or deepen the topic on the table."
+    )
+
+
+def _panel_identity_guard(
+    role: str,
+    *,
+    scenario: ScenarioConfig,
+    panel_roles: list[str],
+    history: object,
+) -> str:
+    host = load_persona_name("host")
+    unspoken_others = [
+        load_persona_name(r)
+        for r in panel_roles
+        if r != role and not history.role_has_spoken(r)  # type: ignore[union-attr]
+    ]
+
+    extra = ""
+    if unspoken_others:
+        extra = (
+            f"\nThese panelists have not spoken yet this round: "
+            f"{format_name_list(unspoken_others)} — do not attribute their views to them."
+        )
+
+    return f"\n{human_disambiguation_note(scenario)}{extra}"
+
+
+def panelist_system_prompt(
+    role: str,
+    *,
+    scenario: ScenarioConfig,
+    panel_roles: list[str],
+    history: object,
+    dialogue_hint: str = "",
+) -> str:
+    name = load_persona_name(role)
+    host = load_persona_name("host")
+    others = format_name_list(other_panelist_names(role, panel_roles))
+
+    personality = panelist_personality_block(role)
+
+    tag_opts = next_tag_options(panel_roles, include_host=True)
+    mechanics = (
+        "Panel mechanics:\n"
+        "- This is a live group discussion — human guest, host, and AI panelists on the same topic.\n"
+        "- Read the transcript for the current thread: who spoke last and what point is on the table.\n"
+        "- Add your own view on that topic. You may respond to the host, another panelist, or "
+        "the angle the human opened — not only restate what they said.\n"
+        "- Match tone to your stance: build collaboratively when you agree; push back only "
+        "when you genuinely disagree — do not turn every turn into an argument.\n"
+        f"- Lines labeled with your name are yours; {others} and {host} are other speakers.\n"
+        f"- Speak in first person as {name} (I/me/my).\n"
+        f"- Address other panelists or {host} by name when replying to their point.\n"
+        "- If the human's floor is FROZEN, do not ask them direct questions — they are listening.\n"
+        f"- Plain English. After your spoken lines, output [next]: {tag_opts} — "
+        "use a panelist role ONLY if you pass the floor to them by name; otherwise host."
+        f"{_panel_identity_guard(role, scenario=scenario, panel_roles=panel_roles, history=history)}"
+    )
+
+    hint_block = f"\n\n{dialogue_hint.strip()}" if dialogue_hint.strip() else ""
+    return f"{personality}\n\n{mechanics}{hint_block}"
 
 
 def panel_speech_prompt(
@@ -96,41 +148,47 @@ def panel_speech_prompt(
     role: str,
     name: str,
     host_name: str,
+    scenario: ScenarioConfig,
+    panel_roles: list[str],
+    history: object,
     latest_human: str,
     closing: bool = False,
 ) -> str:
+    tag_opts = next_tag_options(panel_roles, include_host=True)
     if closing:
-        scene = host_close_card()
+        scene = host_close_card(scenario)
         task = "Close this round and return the floor to the human."
     else:
-        scene = panelist_card(role=role, name=name, prior_lines=[])
-        task = panelist_role_brief(role)
+        scene = panelist_card(role=role, name=name, scenario=scenario)
+        task = panelist_role_brief(
+            role, scenario=scenario, history=history, panel_roles=panel_roles
+        )
 
-    human_block = ""
+    topic_block = ""
     if latest_human.strip():
-        human_block = (
-            f"\nHuman guest's latest message (you must satisfy THIS in your speech):\n"
-            f'"{latest_human.strip()}"\n'
+        topic_block = (
+            f"\nTopic the human guest brought into the room (context — the discussion "
+            f'may have moved since):\n"{latest_human.strip()}"\n'
         )
 
     return f"""Live talk-show panel — your speaking turn.
-{human_block}
+{topic_block}
 {scene}
 
 {task}
 
 Rules:
 - You are {name} — first person only (I/me), never third person ({name} said…).
-- "{HUMAN_LABEL}" is the real person; {load_persona_name("guest")} is the AI guest — different people.
-- Read all messages above plus the latest human message.
-- Perform the request; do not only discuss whether it is hard to perform.
-- Do not ask the human questions; their floor is frozen until the host closes the round.
+- {human_disambiguation_note(scenario)}
+- Read the full transcript; your line should fit the current discussion, not ignore what others said.
+- You may agree, disagree, or build on another panelist — this is conversation, not a solo Q&A.
+- Do not ask the human direct questions while their floor is frozen.
 - Do NOT say you are {host_name} unless you are the host closing.
 
 Output exactly:
 [reply]: <your spoken lines>
-[next]: commentator | guest | host
-- [next:commentator|guest] ONLY if you explicitly hand off to them by name in [reply]
+[next]: {tag_opts}
+- Pass [next:<role>] ONLY if you explicitly hand off to that panelist by name in [reply]
 - Otherwise [next:host] — the host will moderate who speaks next
 """
 
@@ -139,7 +197,9 @@ Output exactly:
 __all__ = [
     "panel_host_gemma_addon",
     "PANEL_HOST_AUDIO_USER_HINT",
-    "PANEL_OPENING_LINE",
+    "panel_opening_line",
     "panel_speech_prompt",
-    "panelist_system_for_text",
+    "panelist_hand_raise_system",
+    "panelist_personality_block",
+    "panelist_system_prompt",
 ]

@@ -1,0 +1,93 @@
+id: panel
+description: Panel dialogue moves — collaborative and pushback; choose by stance on the topic
+
+preamble: |
+  DIALOGUE STYLE REFERENCE ONLY — do not copy topics, A/B labels, or move names into [reply].
+  Match your tone to the discussion and your genuine view:
+  - Use collaborative moves when you agree, build on someone, or add a new angle without fighting.
+  - Use pushback moves only when you actually disagree with a specific point on the table.
+  - Most turns should sound like a natural talk show — not a debate round every time.
+  - Wait for your turn; do not interrupt the host's floor control.
+
+moves:
+  - id: build_on
+    label: Build on
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Remote work changed how teams collaborate.
+      B: Exactly — and it also shifted when people do their deepest thinking.
+
+  - id: agree_extend
+    label: Agree and extend
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: The data shows a clear trend.
+      B: I agree with that read, and I'd add that the trend looks different by region.
+
+  - id: add_angle
+    label: Add angle
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Everyone focuses on the cost side.
+      B: Another way to look at this is what we gain on flexibility, not just what we spend.
+
+  - id: invite
+    label: Invite
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: It's a complicated tradeoff.
+      B: Right — I'd love to hear how others weigh the short-term pain against the long-term upside.
+
+  - id: challenge
+    label: Challenge
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: The policy is clearly working.
+      B: If it's working, why are the latest numbers moving in the opposite direction?
+
+  - id: pushback
+    label: Pushback
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: The real issue is much broader than that.
+      B: Maybe, but that doesn't answer the question I asked.
+
+  - id: reframe
+    label: Reframe
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: We could debate history all day.
+      B: Fair enough, but let's focus on what should happen now.
+
+  - id: concede
+    label: Concede
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: Housing prices have become unaffordable.
+      B: I agree with that point, but I don't think your solution addresses the cause.
+
+  - id: moderate
+    label: Moderate
+    tone: host
+    roles: [host]
+    example: |
+      A: That's completely ridiculous.
+      B: No, you're the one being ridiculous.
+      Host: One at a time. Let's hear the full argument before responding.
+
+  - id: humor
+    label: Humor
+    tone: host
+    roles: [host]
+    example: |
+      A: You're wrong.
+      B: No, you're wrong.
+      Host: Great. We've reached the stage where everyone is equally unhappy.

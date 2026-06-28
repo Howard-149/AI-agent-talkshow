@@ -27,6 +27,7 @@ from agent.hand_raise_ui import (
     sync_hand_raise_ui,
     wait_for_hand_raises,
 )
+from agent.panel_prompts import panelist_hand_raise_system
 from agent.panel_speech import PANEL_HOST_CLOSE, speak_one_panelist
 from agent.session_lifecycle import should_stop_session_work
 from agent.show_history import append_role
@@ -45,11 +46,6 @@ HUMAN_FLOOR_LINE = (
 )
 
 OPEN_FLOOR_LINE = "Let's open the floor — who wants to weigh in?"
-
-SESSION_WELCOME_LINE = (
-    "Welcome — I'm Lessac, your host. "
-    "Raise your hand if you'd like to speak or bring a topic — I'll call on you."
-)
 
 def take_host_next_speaker(data: TalkShowData) -> str | None:
     """Legacy alias — consume floor [next] tag."""
@@ -210,15 +206,6 @@ async def _run_hand_raise_round(
         await emit_floor_pending(active=False)
 
 
-def _panelist_hand_raise_system(role: str) -> str:
-    name = load_persona_name(role)
-    return (
-        f"You are {name} on a live English talk-show panel. "
-        "Decide whether to raise your hand. You may propose a topic angle to open. "
-        "Output [raise]: yes/no, optional [topic]: and [reason]: ..."
-    )
-
-
 async def _poll_one_hand_raise(data: TalkShowData, role: str) -> HandRaiseResult:
     name = load_persona_name(role)
     hist = data.show_history.prior_messages()
@@ -236,7 +223,7 @@ or
 """
     text = await data.runtime.gemma_client.complete_text(
         prompt,
-        system_prompt=_panelist_hand_raise_system(role),
+        system_prompt=panelist_hand_raise_system(role),
         history_messages=hist,
     )
     result = parse_hand_raise(role, text)
@@ -283,8 +270,10 @@ async def _host_decide_floor(
     spoken_roles: set[str],
 ) -> str:
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+    from agent.panel_context import next_tag_options, panel_role_name_map
+
+    role_map = panel_role_name_map(panel_roles)
+    next_opts = next_tag_options(panel_roles, include_host=False) + " | human | close"
     raises = _queue_raises(data, panel_roles)
     lines = []
     for role in panel_roles:
@@ -318,11 +307,11 @@ Rules:
 - [next:human] returns floor to the human guest (they speak via mic, not TTS)
 - If multiple panelists raised, pick the best next speaker
 - If none raised, pick who should speak OR [next:close] OR [next:human] if the guest raised
-- {ryan} = commentator, {amy} = guest
+- Panelist names: {role_map}
 - Panelists may speak more than once; honor [topic] angles when choosing
 
 Output ONLY:
-[next]: commentator | guest | human | close
+[next]: {next_opts}
 [reason]: one short sentence (optional)
 """
     hist = data.show_history.prior_messages()
@@ -335,7 +324,7 @@ Output ONLY:
         history_messages=hist,
     )
     parsed = parse_floor_decision(text)
-    if parsed and parsed.next_role in ("commentator", "guest", "close", "human"):
+    if parsed and parsed.next_role in set(panel_roles) | {"close", "human"}:
         logger.info(
             "host floor decision next=%s reason=%.60r",
             parsed.next_role,
@@ -423,8 +412,10 @@ async def host_speak_session_welcome(
     controller: TurnController,
 ) -> None:
     """Opening beat — welcome only; no topic, no direct call-outs."""
+    from agent.panel_context import session_welcome_line
+
     listen = controller.listen_role()
-    line = SESSION_WELCOME_LINE
+    line = session_welcome_line(data.scenario)
     append_role(data, listen, line)
     await speak_panel_line(
         session,
@@ -485,7 +476,7 @@ async def run_host_moderation_from_queue(
     )
     if next_role == "close":
         return "close"
-    if next_role in ("commentator", "guest"):
+    if is_direct_next(next_role, data.scenario):
         await _grant_panelist_turn(
             session,
             data,
@@ -715,7 +706,7 @@ async def run_host_moderated_panel(
 ) -> None:
     """
     Floor routing via [next] tags:
-    - commentator/guest → direct grant (chain if panelists tag each other)
+    - panelist role → direct grant (chain if panelists tag each other)
     - host / unset → hand-raise pending, then host moderates
     """
     listen = controller.listen_role()
@@ -767,7 +758,7 @@ async def run_host_moderated_panel(
         if outcome == "close":
             logger.info("host_moderated: close round after %d panel turns", turn_idx)
             break
-        if outcome in ("commentator", "guest"):
+        if is_direct_next(outcome, data.scenario):
             spoken_roles.add(outcome)
         turn_idx += 1
 

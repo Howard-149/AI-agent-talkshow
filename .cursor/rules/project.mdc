@@ -11,14 +11,15 @@ alwaysApply: true
 
 - **All git-tracked files must be in English** (README, ROADMAP, CONTRIBUTING, YAML comments, new code comments).
 - Do not add Chinese to files that will be pushed to GitHub.
-- `.cursor/session-memory.md`, `skill.md`, `soul.md`, `avatar-plan.md` are local notes (gitignored except this rules file).
+- `.cursor/session-memory.md`, `skill.md`, `soul.md`, `avatar-plan.md`, `av-sync-progress.md` are local notes (gitignored except rules in `.cursor/rules/`).
 
 ## Before coding
 
 1. Read `.cursor/session-memory.md` for current sprint.
 2. Read [ROADMAP.md](../../ROADMAP.md) for priorities.
 3. For avatar/UI work: read `.cursor/avatar-plan.md`.
-4. Read [README.md](../../README.md) for setup and architecture.
+4. For transcript/lip-sync timing: read `.cursor/av-sync-progress.md`.
+5. Read [README.md](../../README.md) for setup and architecture.
 
 ## Architecture constraints
 
@@ -33,7 +34,7 @@ alwaysApply: true
 |-------|--------|
 | Host-moderated turn-taking | **Shipped** — FIFO queue, poll batch + priority tie-break, flash, skip poll when queue nonempty; polish: interrupt/yield, JSONL |
 | Debate scenario | Not started |
-| **Avatars** | **Next** — **VRM head/bust only** in `talkshow-web` (not full body); client-side Three.js + `talkshow/ui` events |
+| **Avatars** | **In progress** — VRM bust shipped; A/V sync **shipped** (see `.cursor/av-sync-progress.md`) |
 
 Implement against ROADMAP checklists; update ROADMAP when git-tracked scope ships.
 

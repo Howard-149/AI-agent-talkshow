@@ -1,0 +1,33 @@
+---
+description: A/V sync rules — transcript, highlight, lip sync vs TTS playout
+globs:
+  - agent/main.py
+  - agent/session_handoff.py
+  - agent/ui_events.py
+  - talkshow-web/lib/talkshow/usePlayoutSyncedUi.ts
+  - talkshow-web/lib/talkshow/VRMHeadAvatar.tsx
+  - talkshow-web/lib/talkshow/TalkshowView.tsx
+alwaysApply: false
+---
+
+# A/V sync (shipped 2026-06-02)
+
+Full history + failed experiments: **`.cursor/av-sync-progress.md`**.
+
+## Agent
+
+- `queue_speech_ui()` before `session.say()`; emit `role_active` + `transcript` when agent state → **`speaking`**.
+- `role_idle` on **`speech_handle` done** (playout end) — never on `listening` alone.
+- Do not emit UI on `speech_created` (too early — TTS start, not playout).
+
+## Frontend
+
+- Trust agent-timed events for transcript and card highlight.
+- Use `participant.isSpeaking` only for **VRM lip sync** (`lipSyncActive`), not to delay transcript.
+- Multi-sentence lines: progressive reveal via `splitSpeakSentences` + speaking rising edges.
+
+## Reverted — do not reintroduce without user approval
+
+- Whole-utterance `tts_node` (slow first audio).
+- `wait_for_playout()` before UI emit (UI lags full utterance).
+- Frontend-only `isSpeaking` gate on transcript.

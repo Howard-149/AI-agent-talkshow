@@ -215,7 +215,7 @@ class GemmaAudioSTT(stt.STT):
             from agent.floor_control import resolve_floor_after_host_speech
             from agent.show_context import host_used_tee_fallback, sanitize_host_panel_reply
 
-            fitted = sanitize_host_panel_reply(reply, parsed.heard)
+            fitted = sanitize_host_panel_reply(reply, parsed.heard, data.scenario)
             if fitted != reply:
                 logger.info(
                     "host reply reshaped for panel floor (was %r)",
@@ -229,7 +229,7 @@ class GemmaAudioSTT(stt.STT):
                 data,
                 spoken=reply,
                 tagged_next=parsed.next_speaker,
-                tee_fallback=host_used_tee_fallback(reply, parsed.heard),
+                tee_fallback=host_used_tee_fallback(reply, parsed.heard, data.scenario),
                 after_human_turn=True,
             )
             logger.info(

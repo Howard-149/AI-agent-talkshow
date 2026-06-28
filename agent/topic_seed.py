@@ -10,6 +10,12 @@ from agent.data import TalkShowData
 from agent.floor_control import apply_floor_next, resolve_floor_after_host_speech
 from agent.floor_parser import strip_next_tag
 from agent.hand_raise_ui import dequeue_hand_raise
+from agent.panel_context import (
+    format_name_list,
+    next_tag_options,
+    panel_role_name_map,
+    panel_speaker_names,
+)
 from agent.session_handoff import speak_panel_line
 from agent.show_history import append_role
 from agent.supervisor import TurnController
@@ -30,8 +36,9 @@ async def host_open_topic(
     """
     listen = controller.listen_role()
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
+    panel_roles = controller.panel_speaker_roles()
+    panel = format_name_list(panel_speaker_names(data.scenario))
+    tag_opts = next_tag_options(panel_roles, include_host=True) + " | human | close"
     has_human = any(line.role_id == "human" for line in data.show_history.lines)
 
     if has_human:
@@ -51,13 +58,13 @@ async def host_open_topic(
 
 Speak 2–4 sentences to the ROOM in [reply].
 Floor rules for [next] — CRITICAL:
-- Do NOT call on {ryan} or {amy} by name — never [next:commentator] or [next:guest]
-- Brief angle or follow-up question, then always [next:host] so the queue decides who speaks
+- Do NOT call on panelists ({panel}) by name — use [next:host] so the hand-raise queue decides
+- Brief angle or follow-up question, then always [next:host]
 Do not ask the human a direct question while their floor is frozen.
 
 Output exactly:
 [reply]: <spoken host line>
-[next]: commentator | guest | host | human | close
+[next]: {tag_opts}
 """
     hist = data.show_history.prior_messages()
     system = load_persona_instructions("host", panel_mode=controller.is_panel_mode())
@@ -78,7 +85,7 @@ Output exactly:
         tagged_next=parsed.next_speaker,
         tee_fallback=False,
     )
-    if resolved in ("commentator", "guest"):
+    if resolved in panel_roles:
         apply_floor_next(data, "host")
         resolved = "host"
     logger.info(
@@ -117,25 +124,24 @@ async def host_direct_call_when_no_raises(
 
     listen = controller.listen_role()
     host = load_persona_name("host")
-    ryan = load_persona_name("commentator")
-    amy = load_persona_name("guest")
     unspoken = [r for r in panel_roles if r not in spoken_roles]
     if not unspoken:
         return "close", "no_panelists_left"
 
+    role_map = panel_role_name_map(panel_roles)
     names_hint = ", ".join(load_persona_name(r) for r in unspoken)
+    tag_opts = next_tag_options(panel_roles, include_host=False)
     prompt = f"""You are {host}, talk-show host. Trigger: {trigger}.
 
 You opened the floor for hand raises but nobody raised.
 Call on ONE panelist directly — use their name in [reply] and set matching [next]:
-- {ryan} → [next:commentator]
-- {amy} → [next:guest]
+{role_map}
 Prefer someone not heard yet this round: {names_hint}.
 Speak 2–3 sentences with a question or topic angle FOR THEM.
 
 Output exactly:
 [reply]: <spoken host line naming them>
-[next]: commentator | guest
+[next]: {tag_opts}
 """
     hist = data.show_history.prior_messages()
     system = load_persona_instructions("host", panel_mode=controller.is_panel_mode())

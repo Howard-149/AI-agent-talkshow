@@ -48,16 +48,19 @@ class ShowHistory:
 
     def prior_messages(self) -> list[dict[str, Any]]:
         """All lines so far — fed to Gemma before the current user turn."""
+        from agent.config import load_scenario
+        from agent.panel_context import format_name_list, panel_speaker_names
+
+        ai_names = format_name_list(panel_speaker_names(load_scenario()))
         msgs: list[dict[str, Any]] = []
         for line in self.lines:
             if line.role_id == "human":
-                amy = load_persona_name("guest")
                 msgs.append(
                     {
                         "role": "user",
                         "content": (
-                            f"{HUMAN_LABEL} (real person in the room, NOT the AI panelist "
-                            f"{amy}): {line.text}"
+                            f"{HUMAN_LABEL} (real person in the room, NOT the AI panelists "
+                            f"{ai_names}): {line.text}"
                         ),
                     }
                 )
