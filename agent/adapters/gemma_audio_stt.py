@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 
 from livekit import rtc
@@ -194,9 +195,11 @@ class GemmaAudioSTT(stt.STT):
             )
 
         hist = data.show_history.prior_messages()
+        t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
             wav, user_text=user_hint, history_messages=hist
         )
+        model_latency_s = time.monotonic() - t0
 
         if is_noise_heard(parsed.heard):
             logger.info("GemmaAudioSTT: skip empty/noise heard=%r", parsed.heard[:60])
@@ -260,6 +263,7 @@ class GemmaAudioSTT(stt.STT):
                 "gemma_stt_done",
                 heard=parsed.heard,
                 reply=reply,
+                model_latency_s=round(model_latency_s, 3),
                 floor_next=data.floor_next_speaker,
                 tagged_next=parsed.next_speaker,
                 resolved_next=resolved_next,

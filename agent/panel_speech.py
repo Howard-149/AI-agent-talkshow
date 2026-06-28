@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from livekit.agents import AgentSession
 
@@ -91,11 +92,13 @@ async def speak_one_panelist(
             system_prompt,
             prompt,
         )
+    t0 = time.monotonic()
     raw = await data.runtime.gemma_client.complete_text(
         prompt,
         system_prompt=system_prompt,
         history_messages=hist,
     )
+    model_latency_s = time.monotonic() - t0
     parsed = parse_host_speech(raw)
     speech = strip_next_tag(parsed.reply.strip())
     if not speech:
@@ -119,6 +122,15 @@ async def speak_one_panelist(
         next_role = parsed.next_speaker
     else:
         next_role = "host"
+
+    if getattr(data, "turn_log", None) is not None:
+        data.turn_log.log(
+            "panel_model_done",
+            role=speak_role,
+            model_latency_s=round(model_latency_s, 3),
+            reply_len=len(speech),
+            room=getattr(data, "room_name", ""),
+        )
 
     append_role(data, speak_role, speech)
     await speak_panel_line(

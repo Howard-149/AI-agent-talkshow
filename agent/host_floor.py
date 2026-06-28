@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 
 from livekit.agents import AgentSession
 
@@ -116,7 +117,9 @@ async def _run_hand_raise_round(
     await emit_floor_pending(active=True)
     try:
         if not data.hand_raise_queue.roles():
+            t0 = time.monotonic()
             poll = await poll_panel_hand_raises(data, panel_roles)
+            poll_latency_s = time.monotonic() - t0
             await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
             winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
                 poll,
@@ -135,6 +138,7 @@ async def _run_hand_raise_round(
                     winner=winner,
                     yes_roles=yes_roles,
                     had_tie=had_tie,
+                    poll_latency_s=round(poll_latency_s, 3),
                     panel_priority=list(data.panel_priority),
                     room=data.room_name,
                     queue=data.hand_raise_queue.roles(),

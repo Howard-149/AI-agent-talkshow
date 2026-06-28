@@ -13,7 +13,11 @@ def build_agent(role: str, data: TalkShowData) -> Agent:
     if role not in ROLES:
         raise ValueError(f"Unknown role: {role}")
     instructions = load_persona_instructions(role)
-    tts = PiperTTS(load_persona_tts(role, data.runtime.config))
+    tts = PiperTTS(
+        load_persona_tts(role, data.runtime.config),
+        turn_log=getattr(data, "turn_log", None),
+        room_name=getattr(data, "room_name", ""),
+    )
     if role == "host":
         from agent.agents.host import HostAgent
 

@@ -77,7 +77,11 @@ def build_agent_session(
         talkshow_data=userdata,
     )
     llm = StoredReplyLLM(runtime.turn_store)
-    tts = PiperTTS(locale.tts)
+    tts = PiperTTS(
+        locale.tts,
+        turn_log=getattr(userdata, "turn_log", None),
+        room_name=getattr(userdata, "room_name", ""),
+    )
 
     return AgentSession[TalkShowData](
         vad=load_vad(prewarmed_vad),
