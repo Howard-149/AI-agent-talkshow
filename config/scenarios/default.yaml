@@ -11,7 +11,7 @@ turn_control:
   order: [human, host, commentator, guest]
   listen_role: host
 
-# Unified panel dialogue styles — pick: all injects full catalog every panel turn
+# Unified panel dialogue styles — pick: all | rotate | random | none (off)
 dialogue:
   library: panel
   pick: all

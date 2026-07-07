@@ -6,7 +6,7 @@ from agent.config import load_persona_name
 from agent.data import TalkShowData
 from agent.panel_context import (
     format_name_list,
-    human_disambiguation_note,
+    panel_room_roster,
     name_to_panel_role,
     next_tag_options,
     panel_opening_line,
@@ -112,8 +112,8 @@ def panelist_card(
         human_floor="frozen",
     ) + (
         f"\nJoin the discussion on the topic in the transcript — respond to {just_spoke}, "
-        f"{others_text}, or the host as fits the thread.\n"
-        f"{human_disambiguation_note(scenario)}"
+        f"{others_text}, or the guest's take as fits the thread.\n"
+        f"{panel_room_roster(scenario)}"
     )
 
 

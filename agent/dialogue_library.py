@@ -91,8 +91,14 @@ def format_dialogue_all(library_id: str, *, role: str) -> str:
         return "\n".join(lines)
 
     for block in (
-        _block("Collaborative (when you agree or build on the thread)", collab),
-        _block("Pushback (only when you disagree with a point on the table)", push),
+        _block(
+            "Pushback (when you disagree — examples show how to challenge clearly)",
+            push,
+        ),
+        _block(
+            "Collaborative (when you agree or build on the thread)",
+            collab,
+        ),
         _block("Other", other),
     ):
         if block:
@@ -111,7 +117,17 @@ def format_dialogue_hint(
     """
     pick=all — inject full move catalog every turn.
     pick=rotate|random — one move per turn.
+    pick=none — no dialogue hint (personality + panel mechanics only).
     """
+    if pick == "none":
+        logger.info(
+            "dialogue hint role=%s library=%s pick=%s mode=disabled",
+            role,
+            library_id,
+            pick,
+        )
+        return "", index
+
     if pick == "all":
         hint = format_dialogue_all(library_id, role=role)
         logger.info(
@@ -147,7 +163,7 @@ def format_dialogue_hint(
     if move.tone == "collaborative":
         tone_note = " (collaborative — use when you agree or extend)"
     elif move.tone == "pushback":
-        tone_note = " (pushback — use only if you disagree)"
+        tone_note = " (pushback — use boldly when you disagree; follow the example's tone)"
     parts.append(f"Optional style hint{tone_note} — [{move.label}]:\n{move.example}")
     hint = "\n\n".join(parts)
     logger.info(

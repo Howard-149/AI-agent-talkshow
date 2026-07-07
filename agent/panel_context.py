@@ -66,10 +66,21 @@ def unspoken_panelist_names(
     ]
 
 
-def human_disambiguation_note(scenario: ScenarioConfig | None = None) -> str:
+def panel_room_roster(scenario: ScenarioConfig | None = None) -> str:
+    """Who is in the room — positive cast labels for prompts."""
     sc = scenario or load_scenario()
-    ai = format_name_list(panel_speaker_names(sc))
-    return f'"{HUMAN_LABEL}" is the real person — not the AI panelists ({ai}).'
+    host = load_persona_name("host")
+    panel = format_name_list(panel_speaker_names(sc))
+    return (
+        f"Cast: {HUMAN_LABEL} (real person on the mic — brings topics and claims), "
+        f"{host} (host — summarizes and moderates), {panel} (panel, including you). "
+        f"Read transcript speaker labels before you reply; engage the person who owns the point."
+    )
+
+
+def human_disambiguation_note(scenario: ScenarioConfig | None = None) -> str:
+    """Alias for panel_room_roster (legacy name)."""
+    return panel_room_roster(scenario)
 
 
 def ai_guest_role_name() -> str:

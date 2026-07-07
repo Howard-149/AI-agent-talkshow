@@ -127,8 +127,16 @@ async def speak_one_panelist(
         data.turn_log.log(
             "panel_model_done",
             role=speak_role,
-            model_latency_s=round(model_latency_s, 3),
+            step=step,
+            reply=speech,
             reply_len=len(speech),
+            next_tag=next_role,
+            model_latency_s=round(model_latency_s, 3),
+            dialogue_library=dlg.library if dlg and dlg.library else None,
+            dialogue_pick=dlg.pick if dlg and dlg.library else None,
+            hint_chars=len(dialogue_hint),
+            system_chars=len(system_prompt),
+            user_chars=len(prompt),
             room=getattr(data, "room_name", ""),
         )
 

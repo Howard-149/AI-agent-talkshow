@@ -11,6 +11,10 @@ class TurnJsonlLogger:
         self._path = log_dir / f"session-{int(time.time())}.jsonl"
         log_dir.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def log(self, event: str, **fields: Any) -> None:
         row = {"ts": time.time(), "event": event, **fields}
         with self._path.open("a", encoding="utf-8") as f:

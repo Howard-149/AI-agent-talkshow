@@ -9,7 +9,7 @@ from agent.config import (
 from agent.panel_context import (
     any_other_panelist_spoken,
     format_name_list,
-    human_disambiguation_note,
+    panel_room_roster,
     next_tag_options,
     other_panelist_names,
     panel_opening_line,
@@ -104,7 +104,7 @@ def _panel_identity_guard(
             f"{format_name_list(unspoken_others)} — do not attribute their views to them."
         )
 
-    return f"\n{human_disambiguation_note(scenario)}{extra}"
+    return f"\n{panel_room_roster(scenario)}{extra}"
 
 
 def panelist_system_prompt(
@@ -117,22 +117,20 @@ def panelist_system_prompt(
 ) -> str:
     name = load_persona_name(role)
     host = load_persona_name("host")
-    others = format_name_list(other_panelist_names(role, panel_roles))
 
     personality = panelist_personality_block(role)
 
     tag_opts = next_tag_options(panel_roles, include_host=True)
     mechanics = (
         "Panel mechanics:\n"
-        "- This is a live group discussion — human guest, host, and AI panelists on the same topic.\n"
-        "- Read the transcript for the current thread: who spoke last and what point is on the table.\n"
-        "- Add your own view on that topic. You may respond to the host, another panelist, or "
-        "the angle the human opened — not only restate what they said.\n"
-        "- Match tone to your stance: build collaboratively when you agree; push back only "
-        "when you genuinely disagree — do not turn every turn into an argument.\n"
-        f"- Lines labeled with your name are yours; {others} and {host} are other speakers.\n"
+        f"- {panel_room_roster(scenario)}\n"
+        "- Each transcript line is tagged with its speaker — match your reply to that person or thread.\n"
+        f"- When the thread is the guest's opening take, engage {HUMAN_LABEL}'s claim (in the transcript).\n"
+        f"- When a panelist just spoke, you may name them and answer their point.\n"
+        f"- When {host} last spoke, that line is moderation or summary — the underlying claim is under "
+        f"{HUMAN_LABEL} or another panelist.\n"
+        "- Match tone to stance: build when you agree; push back clearly when you disagree.\n"
         f"- Speak in first person as {name} (I/me/my).\n"
-        f"- Address other panelists or {host} by name when replying to their point.\n"
         "- If the human's floor is FROZEN, do not ask them direct questions — they are listening.\n"
         f"- Plain English. After your spoken lines, output [next]: {tag_opts} — "
         "use a panelist role ONLY if you pass the floor to them by name; otherwise host."
@@ -167,8 +165,8 @@ def panel_speech_prompt(
     topic_block = ""
     if latest_human.strip():
         topic_block = (
-            f"\nTopic the human guest brought into the room (context — the discussion "
-            f'may have moved since):\n"{latest_human.strip()}"\n'
+            f'\n{HUMAN_LABEL} said: "{latest_human.strip()}"\n'
+            f"Engage this guest line when it is still the thread on the table.\n"
         )
 
     return f"""Live talk-show panel — your speaking turn.
@@ -179,7 +177,7 @@ def panel_speech_prompt(
 
 Rules:
 - You are {name} — first person only (I/me), never third person ({name} said…).
-- {human_disambiguation_note(scenario)}
+- {panel_room_roster(scenario)}
 - Read the full transcript; your line should fit the current discussion, not ignore what others said.
 - You may agree, disagree, or build on another panelist — this is conversation, not a solo Q&A.
 - Do not ask the human direct questions while their floor is frozen.
@@ -201,5 +199,6 @@ __all__ = [
     "panel_speech_prompt",
     "panelist_hand_raise_system",
     "panelist_personality_block",
+    panel_room_roster,
     "panelist_system_prompt",
 ]

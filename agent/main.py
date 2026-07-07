@@ -51,6 +51,16 @@ async def entrypoint(ctx: JobContext) -> None:
     log_dir = Path(os.environ.get("LOG_DIR", "logs"))
     turn_log = TurnJsonlLogger(log_dir)
     data.turn_log = turn_log
+    dlg = scenario.dialogue
+    turn_log.log(
+        "session_start",
+        room=ctx.room.name,
+        log_file=turn_log.path.name,
+        scenario_id=scenario.id,
+        turn_mode=scenario.turn_control.mode,
+        dialogue_library=dlg.library if dlg else None,
+        dialogue_pick=dlg.pick if dlg else None,
+    )
     controller = TurnController(scenario, data)
     data.ensure_panel_priority(
         scenario.turn_control.order,

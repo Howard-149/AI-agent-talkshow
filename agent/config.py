@@ -83,7 +83,7 @@ def load_persona_personality(persona_id: str) -> str:
 @dataclass(frozen=True)
 class DialogueConfig:
     library: str | None = None
-    pick: str = "all"  # all | rotate | random
+    pick: str = "all"  # all | rotate | random | none
 
 
 @dataclass(frozen=True)
@@ -117,8 +117,6 @@ def load_scenario(path: Path | None = None) -> ScenarioConfig:
     if isinstance(dialogue_raw, dict):
         library = dialogue_raw.get("library")
         pick_raw = str(dialogue_raw.get("pick", "all")).strip().lower()
-        if pick_raw == "reference":  # legacy alias
-            pick_raw = "all"
         dialogue = DialogueConfig(
             library=str(library).strip() if library else None,
             pick=pick_raw,
