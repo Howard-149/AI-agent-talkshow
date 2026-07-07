@@ -41,7 +41,11 @@ class PiperTTS(tts.TTS):
         self._piper_bin = shutil.which("piper")
         self._turn_log = turn_log
         self._room_name = room_name
-        logger.info("PiperTTS init model_path=%s", self._model_path)
+        logger.info(
+            "PiperTTS init model_path=%s cuda=%s",
+            self._model_path,
+            _piper_use_cuda(),
+        )
 
     @property
     def model(self) -> str:
@@ -103,16 +107,51 @@ def _piper_config_path(model_path: Path) -> Path:
     return modern
 
 
+def _piper_use_cuda() -> bool:
+    raw = os.environ.get("TALKSHOW_PIPER_CUDA", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _load_voice(model_path: Path, config_path: Path):
     from piper import PiperVoice  # type: ignore[import-untyped]
 
-    key = str(model_path.resolve())
+    want_cuda = _piper_use_cuda()
+    key = f"{model_path.resolve()}#cuda={int(want_cuda)}"
     cached = _voice_cache.get(key)
     if cached is not None:
         return cached
-    voice = PiperVoice.load(str(model_path), config_path=str(config_path))
-    _voice_cache[key] = voice
-    logger.info("PiperVoice cached model=%s", model_path.name)
+
+    if want_cuda:
+        try:
+            voice = PiperVoice.load(
+                str(model_path), config_path=str(config_path), use_cuda=True
+            )
+            providers = voice.session.get_providers()
+            if "CUDAExecutionProvider" in providers:
+                _voice_cache[key] = voice
+                logger.info(
+                    "PiperVoice cached model=%s providers=%s",
+                    model_path.name,
+                    providers,
+                )
+                return voice
+            logger.warning(
+                "TALKSHOW_PIPER_CUDA=1 but ORT session has providers=%s; using CPU",
+                providers,
+            )
+        except Exception as exc:
+            logger.warning("Piper CUDA load failed (%s); using CPU", exc)
+
+    voice = PiperVoice.load(
+        str(model_path), config_path=str(config_path), use_cuda=False
+    )
+    cpu_key = f"{model_path.resolve()}#cuda=0"
+    _voice_cache[cpu_key] = voice
+    logger.info(
+        "PiperVoice cached model=%s providers=%s",
+        model_path.name,
+        voice.session.get_providers(),
+    )
     return voice
 
 
@@ -157,6 +196,8 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
             "--output_file",
             str(out),
         ]
+        if _piper_use_cuda():
+            cmd.append("--cuda")
         if sentence_silence >= 0:
             cmd.extend(["--sentence-silence", str(sentence_silence)])
         subprocess.run(
