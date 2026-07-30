@@ -28,6 +28,11 @@ from agent.hand_raise_ui import (
     sync_hand_raise_ui,
     wait_for_hand_raises,
 )
+from agent.host_lines import (
+    host_human_floor_line,
+    host_intro_speaker_line,
+    host_open_floor_line,
+)
 from agent.panel_prompts import panelist_hand_raise_system
 from agent.panel_speech import PANEL_HOST_CLOSE, speak_one_panelist
 from agent.session_lifecycle import should_stop_session_work
@@ -41,12 +46,6 @@ from agent.ui_events import (
 )
 
 logger = logging.getLogger(__name__)
-
-HUMAN_FLOOR_LINE = (
-    "You have the floor — go ahead whenever you're ready."
-)
-
-OPEN_FLOOR_LINE = "Let's open the floor — who wants to weigh in?"
 
 def take_host_next_speaker(data: TalkShowData) -> str | None:
     """Legacy alias — consume floor [next] tag."""
@@ -533,7 +532,7 @@ async def host_speak_open_floor(
 ) -> None:
     """Host opens hand-raise moderation before panelists are polled."""
     listen = controller.listen_role()
-    line = OPEN_FLOOR_LINE
+    line = host_open_floor_line()
     append_role(data, listen, line)
     await speak_panel_line(
         session,
@@ -555,7 +554,7 @@ async def host_introduce_speaker(
     """Host verbally grants the floor before a panelist speaks."""
     listen = controller.listen_role()
     name = load_persona_name(role)
-    line = f"{name}, you're up."
+    line = host_intro_speaker_line(name)
     append_role(data, listen, line)
     await speak_panel_line(
         session,
@@ -654,12 +653,7 @@ async def grant_human_floor(
 ) -> None:
     """End panel beat — human speaks via mic."""
     listen = controller.listen_role()
-    line = HUMAN_FLOOR_LINE
-    if data.human_hand_topic:
-        line = (
-            f"You wanted to talk about {data.human_hand_topic} — "
-            "the floor is yours, go ahead."
-        )
+    line = host_human_floor_line(topic=data.human_hand_topic or None)
     append_role(data, listen, line)
     await speak_panel_line(
         session,

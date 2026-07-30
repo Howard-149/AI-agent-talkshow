@@ -1,7 +1,10 @@
 export type PanelRole = string;
 
 export type PanelAvatarConfig = {
-  vrm: string;
+  vrm?: string;
+  portrait?: string;
+  idle_video?: string;
+  video_transport?: 'livekit' | 'http';
   scale?: number;
   framing?: {
     distMul?: number;
@@ -27,6 +30,7 @@ export type UiEvent =
   | { type: 'panel_roster'; scenario: string; members: PanelistDef[] }
   | { type: 'role_active'; role: PanelRole; name: string }
   | { type: 'role_idle' }
+  | { type: 'avatar_clip'; role: PanelRole; url?: string; step?: string; transport?: 'livekit' | 'http' }
   | { type: 'floor_pending'; active: boolean }
   | {
       type: 'transcript';

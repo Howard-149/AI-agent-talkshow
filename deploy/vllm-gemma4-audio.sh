@@ -14,6 +14,11 @@ mkdir -p "${LOG_DIR}"
 echo "vLLM log → ${LOG_FILE}"
 echo "  tail -f ${LOG_FILE}"
 
+if [[ -n "${VLLM_CUDA_DEVICE:-}" ]]; then
+  export CUDA_VISIBLE_DEVICES="${VLLM_CUDA_DEVICE}"
+  echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} (VLLM_CUDA_DEVICE)"
+fi
+
 vllm serve "$MODEL" \
   --safetensors-load-strategy=prefetch\
   --host "$HOST" \

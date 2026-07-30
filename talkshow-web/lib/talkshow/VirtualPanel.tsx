@@ -15,16 +15,24 @@ type Props = {
   panelists: PanelistDef[];
   activeRole: PanelRole | null;
   lipSyncActive?: boolean;
+  warmingRole?: PanelRole | null;
   humans: HumanSeat[];
   waitingForAgent: boolean;
+  clipForRole?: (role: PanelRole) => string | undefined;
+  agentVideoTrackRef?: import('@livekit/components-core').TrackReference;
+  compactAvatars?: boolean;
 };
 
 export function VirtualPanel({
   panelists,
   activeRole,
   lipSyncActive = false,
+  warmingRole = null,
   humans,
   waitingForAgent,
+  clipForRole,
+  agentVideoTrackRef,
+  compactAvatars = false,
 }: Props) {
   return (
     <div className={styles.panelGrid}>
@@ -52,6 +60,11 @@ export function VirtualPanel({
           <PanelAvatar
             panelist={p}
             isSpeaking={activeRole === p.role && lipSyncActive}
+            isActive={activeRole === p.role}
+            isWarming={warmingRole === p.role}
+            speechClipUrl={clipForRole?.(p.role)}
+            agentVideoTrackRef={agentVideoTrackRef}
+            compact={compactAvatars}
           />
           <div className={styles.meta}>
             <strong>{p.name}</strong>

@@ -42,9 +42,10 @@ class PiperTTS(tts.TTS):
         self._turn_log = turn_log
         self._room_name = room_name
         logger.info(
-            "PiperTTS init model_path=%s cuda=%s",
+            "PiperTTS init model_path=%s cuda=%s device=%s",
             self._model_path,
             _piper_use_cuda(),
+            _piper_cuda_device() if _piper_use_cuda() else "cpu",
         )
 
     @property
@@ -112,40 +113,110 @@ def _piper_use_cuda() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-def _load_voice(model_path: Path, config_path: Path):
+def _piper_cuda_device() -> int:
+    """Physical CUDA device for Piper (default: same as DyStream, GPU 1)."""
+    raw = os.environ.get("TALKSHOW_PIPER_CUDA_DEVICE", "").strip()
+    if not raw:
+        raw = os.environ.get("DYSTREAM_CUDA_DEVICE", "1").strip() or "1"
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        logger.warning("Invalid TALKSHOW_PIPER_CUDA_DEVICE=%r; using 1", raw)
+        return 1
+
+
+def _invalidate_cuda_voices() -> None:
+    for key in [k for k in _voice_cache if "#cuda_dev=" in k]:
+        _voice_cache.pop(key, None)
+
+
+def _is_ort_cuda_fail(exc: BaseException) -> bool:
+    name = type(exc).__module__ + "." + type(exc).__name__
+    msg = str(exc).lower()
+    return (
+        "onnxruntime" in name.lower()
+        or "cudnn" in msg
+        or "cuda" in msg
+        or "cublas" in msg
+        or "gpu=" in msg
+    )
+
+
+def _load_voice_cuda(model_path: Path, config_path: Path, device_id: int):
+    """Load Piper ONNX on a specific CUDA device (vLLM stays on GPU 0)."""
+    import json
+
+    import onnxruntime as ort
+    from piper import PiperVoice  # type: ignore[import-untyped]
+    from piper.config import PiperConfig  # type: ignore[import-untyped]
+
+    with open(config_path, encoding="utf-8") as f:
+        config_dict = json.load(f)
+
+    providers: list = [
+        (
+            "CUDAExecutionProvider",
+            {
+                "device_id": device_id,
+                "cudnn_conv_algo_search": "HEURISTIC",
+            },
+        ),
+        "CPUExecutionProvider",
+    ]
+    session = ort.InferenceSession(
+        str(model_path),
+        sess_options=ort.SessionOptions(),
+        providers=providers,
+    )
+    return PiperVoice(
+        config=PiperConfig.from_dict(config_dict),
+        session=session,
+    )
+
+
+def _load_voice(model_path: Path, config_path: Path, *, force_cpu: bool = False):
     from piper import PiperVoice  # type: ignore[import-untyped]
 
-    want_cuda = _piper_use_cuda()
-    key = f"{model_path.resolve()}#cuda={int(want_cuda)}"
+    want_cuda = _piper_use_cuda() and not force_cpu
+    device_id = _piper_cuda_device() if want_cuda else -1
+    key = (
+        f"{model_path.resolve()}#cuda_dev={device_id}"
+        if want_cuda
+        else f"{model_path.resolve()}#cuda_dev=-1"
+    )
     cached = _voice_cache.get(key)
     if cached is not None:
         return cached
 
     if want_cuda:
         try:
-            voice = PiperVoice.load(
-                str(model_path), config_path=str(config_path), use_cuda=True
-            )
+            voice = _load_voice_cuda(model_path, config_path, device_id)
             providers = voice.session.get_providers()
             if "CUDAExecutionProvider" in providers:
                 _voice_cache[key] = voice
                 logger.info(
-                    "PiperVoice cached model=%s providers=%s",
+                    "PiperVoice cached model=%s cuda_device=%d providers=%s",
                     model_path.name,
+                    device_id,
                     providers,
                 )
                 return voice
             logger.warning(
-                "TALKSHOW_PIPER_CUDA=1 but ORT session has providers=%s; using CPU",
+                "TALKSHOW_PIPER_CUDA=1 device=%d but ORT providers=%s; using CPU",
+                device_id,
                 providers,
             )
         except Exception as exc:
-            logger.warning("Piper CUDA load failed (%s); using CPU", exc)
+            logger.warning(
+                "Piper CUDA load failed device=%d (%s); using CPU",
+                device_id,
+                exc,
+            )
 
     voice = PiperVoice.load(
         str(model_path), config_path=str(config_path), use_cuda=False
     )
-    cpu_key = f"{model_path.resolve()}#cuda=0"
+    cpu_key = f"{model_path.resolve()}#cuda_dev=-1"
     _voice_cache[cpu_key] = voice
     logger.info(
         "PiperVoice cached model=%s providers=%s",
@@ -170,13 +241,29 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
     # Prefer Python piper-tts if installed
     try:
         logger.debug(
-            "PiperVoice.load model=%s config=%s",
+            "PiperVoice.load model=%s config=%s cuda_device=%s",
             pipert._model_path.name,
             config_path.name,
+            _piper_cuda_device() if _piper_use_cuda() else "cpu",
         )
         voice = _load_voice(pipert._model_path, config_path)
-        pcm, rate = _synthesize_piper_voice(voice, text)
-        return pcm, rate, 1
+        try:
+            pcm, rate = _synthesize_piper_voice(voice, text)
+            return pcm, rate, 1
+        except Exception as exc:
+            # CUDA / cuDNN often blows up when sharing a GPU with another process.
+            if _piper_use_cuda() and _is_ort_cuda_fail(exc):
+                logger.warning(
+                    "Piper CUDA synth failed (%s); invalidating CUDA sessions → CPU",
+                    exc,
+                )
+                _invalidate_cuda_voices()
+                voice = _load_voice(
+                    pipert._model_path, config_path, force_cpu=True
+                )
+                pcm, rate = _synthesize_piper_voice(voice, text)
+                return pcm, rate, 1
+            raise
     except ImportError:
         pass
 
@@ -189,6 +276,10 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.wav"
+        # CLI piper has no --device; pin the process to Piper's CUDA GPU.
+        env = os.environ.copy()
+        if _piper_use_cuda():
+            env["CUDA_VISIBLE_DEVICES"] = str(_piper_cuda_device())
         cmd = [
             pipert._piper_bin,
             "--model",
@@ -205,6 +296,7 @@ def _synthesize_pcm(pipert: PiperTTS, text: str) -> tuple[bytes, int, int]:
             input=text.encode("utf-8"),
             check=True,
             capture_output=True,
+            env=env,
         )
         return _read_wav_pcm(out.read_bytes(), pipert.sample_rate)
 
@@ -290,3 +382,45 @@ def _read_wav_pcm(wav_bytes: bytes, expected_rate: int) -> tuple[bytes, int, int
         logger.warning("Piper wav rate %s != configured %s", rate, expected_rate)
 
     return frames, rate, channels
+
+
+def prewarm_piper_voices(app_cfg: object | None = None) -> None:
+    """Load all panel Piper ONNX voices (and run a tiny CUDA synth) at process start."""
+    from agent.config import AppConfig, load_config, load_persona_tts
+
+    cfg: AppConfig = app_cfg if isinstance(app_cfg, AppConfig) else load_config()
+    roles = ("host", "guest", "commentator")
+    t_all = time.monotonic()
+    loaded = 0
+    for role in roles:
+        tts_cfg = load_persona_tts(role, cfg)
+        model_path = Path(tts_cfg.model_path)
+        config_path = _piper_config_path(model_path)
+        if not model_path.is_file():
+            logger.warning("Piper prewarm skip role=%s missing %s", role, model_path)
+            continue
+        if not config_path.is_file():
+            logger.warning("Piper prewarm skip role=%s missing %s", role, config_path)
+            continue
+        t0 = time.monotonic()
+        try:
+            voice = _load_voice(model_path, config_path)
+            # Touch CUDA/cuDNN kernels so first real line is not the cold start.
+            _synthesize_piper_voice(voice, "Hi.")
+            loaded += 1
+            logger.info(
+                "Piper prewarm ready role=%s model=%s ms=%d",
+                role,
+                model_path.name,
+                round((time.monotonic() - t0) * 1000),
+            )
+        except Exception as exc:
+            logger.warning("Piper prewarm failed role=%s: %s", role, exc)
+    logger.info(
+        "Piper prewarm done voices=%d/%d total_ms=%d cuda=%s device=%s",
+        loaded,
+        len(roles),
+        round((time.monotonic() - t_all) * 1000),
+        _piper_use_cuda(),
+        _piper_cuda_device() if _piper_use_cuda() else "cpu",
+    )

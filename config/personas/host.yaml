@@ -6,6 +6,8 @@ ui:
   label: Host
   color: '#4f46e5'
   avatar:
+    portrait: portraits/lessac.png
+    idle_video: loops/lessac-idle.mp4
     vrm: /avatars/seed-san.vrm
 
 instructions: |

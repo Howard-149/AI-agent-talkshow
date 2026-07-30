@@ -123,10 +123,20 @@
 }
 
 .panelRow {
+  --panel-avatar-size: 128px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 1rem;
   width: min(960px, 100%);
+}
+
+.avatarSlot {
+  width: var(--panel-avatar-size);
+  height: var(--panel-avatar-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .card {
@@ -235,8 +245,8 @@
 
 .avatar,
 .avatarHuman {
-  width: 72px;
-  height: 72px;
+  width: var(--panel-avatar-size, 128px);
+  height: var(--panel-avatar-size, 128px);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -247,8 +257,8 @@
 }
 
 .avatarVrmWrap {
-  width: 128px;
-  height: 128px;
+  width: var(--panel-avatar-size, 128px);
+  height: var(--panel-avatar-size, 128px);
   border-radius: 50%;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
@@ -257,8 +267,8 @@
 }
 
 .avatarCanvas {
-  width: 128px;
-  height: 128px;
+  width: var(--panel-avatar-size, 128px);
+  height: var(--panel-avatar-size, 128px);
   border-radius: 50%;
   overflow: hidden;
 }
@@ -271,6 +281,70 @@
 
 .card[data-speaking='true'] .avatarVrmWrap,
 .card[data-speaking='true'] .avatarCanvas {
+  border-color: var(--role-color, #6366f1);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--role-color, #6366f1) 45%, transparent);
+}
+
+.avatarVideoWrap {
+  position: relative;
+  width: var(--panel-avatar-size, 128px);
+  height: var(--panel-avatar-size, 128px);
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.avatarVideoWrap .avatar {
+  width: 100%;
+  height: 100%;
+  font-size: 2rem;
+}
+
+.avatarVideoWrap :global(video),
+.avatarVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 28%;
+  /* DyStream / idle loops pad black around the bust — zoom into the face. */
+  transform: scale(1.28);
+  transform-origin: center 30%;
+  display: block;
+}
+
+.avatarPortrait {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 28%;
+  transform: scale(1.28);
+  transform-origin: center 30%;
+  transition: opacity 0.15s ease;
+}
+
+.avatarVideoWrap .avatarVideo {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.12s ease;
+}
+
+.avatarSynthLayer {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+
+.avatarSynthLayer .avatarVideo {
+  position: absolute;
+  inset: 0;
+}
+
+.card[data-speaking='true'] .avatarVideoWrap {
   border-color: var(--role-color, #6366f1);
   box-shadow: 0 0 12px color-mix(in srgb, var(--role-color, #6366f1) 45%, transparent);
 }
@@ -430,12 +504,13 @@
 }
 
 .videoAvatar {
-  width: 72px;
-  height: 72px;
+  width: var(--panel-avatar-size, 128px);
+  height: var(--panel-avatar-size, 128px);
   border-radius: 50%;
   object-fit: cover;
   transform: scaleX(-1);
   background: #1e293b;
+  flex-shrink: 0;
 }
 
 .micHint {

@@ -56,11 +56,20 @@ def _drain_on_human_leave() -> bool:
 def should_stop_session_work(
     data: TalkShowData, session: AgentSession | None = None
 ) -> bool:
-    """True after human left / session shutdown — background loops must exit."""
+    """True after human left / session shutdown — background loops must exit.
+
+    Do not treat between-utterance idle (``AgentSession._activity is None``) as
+    stopped; that incorrectly aborted the post-welcome hand-raise round.
+    """
     if data.shutdown_event.is_set():
         return True
-    if session is not None and not session_is_active(session):
-        return True
+    if session is not None:
+        running = getattr(session, "is_running", None)
+        if running is not None and not running:
+            return True
+        close_task = getattr(session, "_close_session_atask", None)
+        if close_task is not None and close_task.done():
+            return True
     return False
 
 
@@ -77,6 +86,8 @@ async def shutdown_session_when_alone(
     data.shutdown_event.set()
     data.panel_chain_running = False
     data.panel_followup_pending = False
+    data.speak_line_busy = False
+    data.panel_followup_deferred = False
     if not session_is_active(session):
         if job_ctx is not None:
             try:

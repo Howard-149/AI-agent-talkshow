@@ -72,7 +72,8 @@ def _empty_transcript_event(*, language: str = "en") -> stt.SpeechEvent:
 class GemmaAudioSTT(stt.STT):
     """
     One vLLM multimodal call per utterance (audio-in).
-    Exposes [heard] as STT transcript; stores [reply] for StoredReplyLLM.
+    Exposes [heard] as STT transcript; stores [reply] on TalkShowData.pending_host_speak
+    for speak_panel_line (TalkShowAgent.on_user_turn_completed).
     """
 
     def __init__(
@@ -249,13 +250,16 @@ class GemmaAudioSTT(stt.STT):
         await emit_transcript("human", parsed.heard, step="human_turn")
         if data.human_hand_raised:
             await emit_floor_grant("human", reason="human_spoke_hand_up")
-        data.queue_speech_ui("host", reply, step="host_reply")
+        # Spoken in TalkShowAgent.on_user_turn_completed via speak_panel_line
+        # (same Piper→DyStream path as panel lines). UI queues inside speak_panel_line.
+        data.pending_host_speak = reply
         data.last_human_heard = parsed.heard
         if panel_turn:
             data.last_host_panel_tee = reply
             data.panel_followup_pending = True
             data.user_turn_pending_panel = True
 
+        # Handoff tag only for non-panel rotation; reply is not spoken by StoredReplyLLM.
         self._turn_store.set_turn(parsed.heard, reply, handoff_to=parsed.handoff_to)
 
         if data.turn_log is not None:

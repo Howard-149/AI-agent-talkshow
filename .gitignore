@@ -18,7 +18,15 @@ eval/results/
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
+!.cursor/skills/
+!.cursor/skills/**
 docs/
 scripts/
-talkshow-web/.next/
-talkshow-web/node_modules/
+avatar/assets/portraits/*.png
+avatar/assets/loops/*
+!avatar/assets/loops/README.md
+avatar/runtime/clips/*
+!avatar/runtime/clips/.gitkeep
+
+# Local DyStream clone for reading upstream (Babel uses DYSTREAM_ROOT)
+/DyStream/

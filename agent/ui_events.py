@@ -135,6 +135,23 @@ async def emit_role_active(role: str) -> None:
     )
 
 
+async def emit_avatar_clip(
+    role: str,
+    *,
+    url: str = "",
+    step: str = "",
+    transport: str = "http",
+) -> None:
+    """Avatar clip ready — LiveKit video track or HTTP fallback URL."""
+    await publish_ui_event(
+        "avatar_clip",
+        role=role,
+        url=url.strip(),
+        step=step.strip(),
+        transport=transport.strip() or "http",
+    )
+
+
 async def emit_transcript(
     role: str,
     text: str,

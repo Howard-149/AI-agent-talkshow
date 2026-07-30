@@ -11,6 +11,8 @@ const nextConfig = {
     // Browser cannot read LIVEKIT_URL; reuse root value for connect form default
     NEXT_PUBLIC_LIVEKIT_URL:
       process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL || '',
+    NEXT_PUBLIC_DYSTREAM_ENABLED: process.env.NEXT_PUBLIC_DYSTREAM_ENABLED ?? '1',
+    NEXT_PUBLIC_VRM_ENABLED: process.env.NEXT_PUBLIC_VRM_ENABLED ?? '0',
   },
   reactStrictMode: false,
   productionBrowserSourceMaps: true,

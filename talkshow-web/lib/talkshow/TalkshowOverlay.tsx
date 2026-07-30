@@ -16,6 +16,8 @@ import {
   rosterFromParticipants,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
+import { useAgentAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
+import { useAvatarClips } from '@/lib/talkshow/useAvatarClips';
 import styles from '@/styles/TalkshowPanel.module.css';
 
 function humanSeats(
@@ -61,6 +63,10 @@ export function TalkshowOverlay() {
     if (fromMeta) applyRoster(fromMeta);
   }, [remotes, applyRoster]);
 
+  const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
+  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant);
+  const handleUiEventRef = useRef(handleUiEvent);
+  handleUiEventRef.current = handleUiEvent;
   const pushLineRef = useRef(pushLine);
   pushLineRef.current = pushLine;
   const onRoleActiveRef = useRef(onRoleActive);
@@ -80,6 +86,7 @@ export function TalkshowOverlay() {
     } else if (ev.type === 'transcript' && ev.final) {
       pushLineRef.current(ev.role, ev.speaker, ev.text);
     }
+    handleUiEventRef.current(ev);
   });
 
   const localName = localParticipant?.name || localParticipant?.identity || 'You';
@@ -109,6 +116,10 @@ export function TalkshowOverlay() {
         lipSyncActive={lipSyncActive}
         humans={humans}
         waitingForAgent={waitingForAgent}
+        clipForRole={clipForRole}
+        warmingRole={warmingRole}
+        agentVideoTrackRef={agentVideoTrackRef}
+        compactAvatars
       />
       <TranscriptPanel lines={lines} />
     </aside>

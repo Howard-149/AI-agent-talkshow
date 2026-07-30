@@ -46,7 +46,9 @@ export function HumanSeatCard({ human, activeRole, handRaised }: Props) {
         </span>
       )}
       {camTrackRef ? (
-        <VideoTrack trackRef={camTrackRef} className={styles.videoAvatar} />
+        <div className={styles.avatarSlot}>
+          <VideoTrack trackRef={camTrackRef} className={styles.videoAvatar} />
+        </div>
       ) : (
         <div className={styles.avatarHuman}>{human.isLocal ? 'You' : (human.name[0] ?? '?')}</div>
       )}

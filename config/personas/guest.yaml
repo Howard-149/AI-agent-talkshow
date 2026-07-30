@@ -6,6 +6,8 @@ ui:
   label: Guest
   color: '#db2777'
   avatar:
+    portrait: portraits/amy.png
+    idle_video: loops/amy-idle.mp4
     vrm: /avatars/vrm1-twist-sample.vrm
 
 # Personality traits for panel turns (speaking + hand-raise polls).

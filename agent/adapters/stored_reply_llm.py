@@ -21,7 +21,12 @@ def _has_user_message(ctx: llm.ChatContext) -> bool:
 
 
 class StoredReplyLLM(llm.LLM):
-    """Returns the [reply] produced by GemmaAudioSTT (single Gemma call per turn)."""
+    """Session LLM stub.
+
+    Host replies after human audio are spoken via speak_panel_line
+    (TalkShowAgent.on_user_turn_completed + StopResponse) — not this class.
+    Remains required by AgentSession; only used if generate_reply slips through.
+    """
 
     def __init__(self, turn_store: TurnStore) -> None:
         super().__init__()

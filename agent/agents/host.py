@@ -6,7 +6,9 @@ import os
 from agent.adapters import PiperTTS
 from agent.agents.handoff import HandoffToolsMixin
 from agent.agents.talkshow_agent import TalkShowAgent
+from agent.config import load_persona_name
 from agent.data import TalkShowData
+from agent.session_handoff import speak_panel_line
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,15 @@ class HostAgent(HandoffToolsMixin, TalkShowAgent):
         ):
             # Opening runs from main.entrypoint after room connect (session_opening.py)
             return
-        await self.session.generate_reply(
-            instructions="Greet the user briefly in English as the talk-show host and invite them to speak."
+        host = load_persona_name("host")
+        greeting = (
+            f"Hey there! I'm {host}, your host. "
+            "What would you like to talk about today?"
+        )
+        await speak_panel_line(
+            self.session,
+            self._data,
+            speak_role="host",
+            text=greeting,
+            step="host_greeting",
         )

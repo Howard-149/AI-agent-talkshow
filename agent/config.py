@@ -71,6 +71,35 @@ def load_persona_instructions(
     return base
 
 
+@dataclass(frozen=True)
+class PersonaAvatarConfig:
+    portrait: str | None = None
+    idle_video: str | None = None
+    dystream_enabled: bool = True
+
+
+def load_persona_avatar(persona_id: str) -> PersonaAvatarConfig:
+    """DyStream portrait + idle loop paths from persona yaml ui.avatar."""
+    data = load_persona_yaml(persona_id)
+    ui = data.get("ui") or {}
+    avatar_cfg = ui.get("avatar")
+    if not isinstance(avatar_cfg, dict):
+        return PersonaAvatarConfig()
+
+    dystream_raw = avatar_cfg.get("dystream")
+    dystream_enabled = True
+    if isinstance(dystream_raw, dict) and dystream_raw.get("enabled") is False:
+        dystream_enabled = False
+
+    portrait = avatar_cfg.get("portrait")
+    idle_video = avatar_cfg.get("idle_video")
+    return PersonaAvatarConfig(
+        portrait=str(portrait).strip() if portrait else None,
+        idle_video=str(idle_video).strip() if idle_video else None,
+        dystream_enabled=dystream_enabled,
+    )
+
+
 def load_persona_personality(persona_id: str) -> str:
     """In-character personality for panel turns (speaking + hand-raise polls)."""
     data = load_persona_yaml(persona_id)

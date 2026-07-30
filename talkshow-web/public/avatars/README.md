@@ -1,31 +1,34 @@
-# VRM avatar assets (local dev)
+# Avatar assets (laptop `talkshow-web`)
 
-Binary `.vrm` files are **not committed** (see `.gitignore`). Fetch once:
+## DyStream idle + portraits — single source
+
+**Canonical files:** repo-root [`avatar/assets/`](../../avatar/assets/) (`loops/`, `portraits/`).
+
+This folder’s `loops` and `portraits` are **symlinks** into that tree. Do not copy MP4/PNG here.
+
+```bash
+# After bake on Babel (or locally), refresh the repo assets once:
+scp babel:~/AI-agent-talkshow/avatar/assets/loops/*-idle.mp4 avatar/assets/loops/
+scp babel:~/AI-agent-talkshow/avatar/assets/portraits/*.png avatar/assets/portraits/
+# Frontend picks them up via the symlinks — no second copy under talkshow-web.
+```
+
+Browser URLs stay `/avatars/loops/...` and `/avatars/portraits/...` (Next `public/`).
+
+Speech video is LiveKit only; idle is this static loop.
+
+## VRM (optional / legacy)
+
+Binary `.vrm` files stay under this directory (gitignored). Fetch:
 
 ```bash
 cd talkshow-web
 bash scripts/fetch-vrm-samples.sh
 ```
 
-## Model files → panel roles
+| File | Role | Source |
+|------|------|--------|
+| `seed-san.vrm` | Host | [Seed-san](https://github.com/vrm-c/vrm-specification/tree/master/samples/Seed-san) |
+| `vrm1-twist-sample.vrm` | Guest | [three-vrm sample](https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm/examples/models) |
 
-Files are named after the **source model**, not Piper voice / persona names.
-
-| File | Role (persona) | Source model |
-|------|----------------|--------------|
-| `seed-san.vrm` | Host (Lessac) | [Seed-san](https://github.com/vrm-c/vrm-specification/tree/master/samples/Seed-san) |
-| `seed-san.vrm` or `vrm1-twist-spec.vrm` | Commentator (Ryan) | Same as old guest slot (Seed-san, or vrm-spec VRM1 if hashes differ) |
-| `vrm1-twist-sample.vrm` | Guest (Amy) | [VRM1_Constraint_Twist_Sample](https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm/examples/models) (pixiv / three-vrm copy) |
-
-Legacy names `lessac-head.vrm`, `ryan-head.vrm`, `amy-head.vrm` are removed by the fetch script.
-
-Original downloads are kept under `sources/` for attribution.
-
-## License
-
-Both practical samples use **[VRM Public License 1.0](https://vrm.dev/en/licenses/1.0/)**:
-
-- **Seed-san** — VirtualCast, Inc. ([sample README](https://github.com/vrm-c/vrm-specification/blob/master/samples/Seed-san/README.md))
-- **VRM1_Constraint_Twist_Sample** — pixiv Inc. ([sample README](https://github.com/vrm-c/vrm-specification/blob/master/samples/VRM1_Constraint_Twist_Sample/README.md))
-
-Use for **Avatar Use** in this talk-show demo. Replace with custom VRoid exports before public release if you need distinct branded characters.
+Originals under `sources/`. License: [VRM Public License 1.0](https://vrm.dev/en/licenses/1.0/).

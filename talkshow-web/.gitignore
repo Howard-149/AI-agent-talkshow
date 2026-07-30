@@ -40,3 +40,6 @@ yarn-error.log*
 # VRM samples (~10 MB each) — run scripts/fetch-vrm-samples.sh
 /public/avatars/*.vrm
 /public/avatars/sources/
+
+# DyStream loops/portraits live only under repo avatar/assets/;
+# public/avatars/{loops,portraits} are symlinks (do not duplicate binaries here).

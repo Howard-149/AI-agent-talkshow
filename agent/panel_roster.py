@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from agent.config import ScenarioConfig, load_persona_name, load_persona_yaml
+from agent.config import (
+    ScenarioConfig,
+    load_persona_name,
+    load_persona_yaml,
+)
+from agent.adapters.avatar_video import lk_video_enabled
 
 _ROLE_LABELS = {
     "host": "Host",
@@ -30,10 +35,16 @@ def panel_roster_entries(scenario: ScenarioConfig) -> list[dict[str, object]]:
             "color": str(ui.get("color") or _DEFAULT_COLORS.get(role, "#6366f1")),
         }
         avatar_cfg = ui.get("avatar")
-        if isinstance(avatar_cfg, dict) and avatar_cfg.get("vrm"):
-            avatar: dict[str, object] = {"vrm": str(avatar_cfg["vrm"])}
+        if isinstance(avatar_cfg, dict):
+            avatar: dict[str, object] = {}
+            lk_video = lk_video_enabled()
+            if lk_video:
+                avatar["video_transport"] = "livekit"
+            # Portraits / idle loops / VRM are served from laptop talkshow-web/public.
+            # Agent only signals LiveKit transport; no HTTP avatar URLs in roster.
             if avatar_cfg.get("scale") is not None:
                 avatar["scale"] = float(avatar_cfg["scale"])
-            entry["avatar"] = avatar
+            if avatar:
+                entry["avatar"] = avatar
         entries.append(entry)
     return entries

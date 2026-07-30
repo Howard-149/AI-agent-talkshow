@@ -29,11 +29,29 @@ from agent.supervisor import TurnController
 logger = logging.getLogger("talkshow")
 logging.basicConfig(level=logging.INFO)
 
-server = AgentServer()
+# Keep ≥1 idle job process warm (Piper+VAD) after register — not only on first job.
+# `dev` defaults to 0 idle processes otherwise.
+_idle_processes = int(os.environ.get("TALKSHOW_IDLE_PROCESSES", "1"))
+_init_timeout = float(os.environ.get("TALKSHOW_PROCESS_INIT_TIMEOUT", "180"))
+server = AgentServer(
+    num_idle_processes=max(_idle_processes, 0),
+    initialize_process_timeout=max(_init_timeout, 30.0),
+)
+logger.info(
+    "AgentServer idle_processes=%d init_timeout=%.0fs (Piper prewarm on idle spawn)",
+    max(_idle_processes, 0),
+    max(_init_timeout, 30.0),
+)
 
 
 def prewarm(proc: JobProcess) -> None:
     proc.userdata["vad"] = load_vad()
+    try:
+        from agent.adapters.piper_tts import prewarm_piper_voices
+
+        prewarm_piper_voices()
+    except Exception as exc:
+        logger.warning("Piper prewarm failed: %s", exc)
 
 
 server.setup_fnc = prewarm
@@ -51,6 +69,9 @@ async def entrypoint(ctx: JobContext) -> None:
     log_dir = Path(os.environ.get("LOG_DIR", "logs"))
     turn_log = TurnJsonlLogger(log_dir)
     data.turn_log = turn_log
+    from agent.adapters.avatar_bridge import init_avatar_bridge
+
+    init_avatar_bridge(turn_log=turn_log)
     dlg = scenario.dialogue
     turn_log.log(
         "session_start",
@@ -164,9 +185,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @session.on("speech_created")
     def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
-        """Emit role_idle after playout — not on listening (that fires too early)."""
-        if not data.pending_speech_ui:
-            return
+        """Emit role_idle after each playout so chunked lines idle between sentences."""
         handle = ev.speech_handle
 
         def _on_playout_done(_h) -> None:  # type: ignore[no-untyped-def]
@@ -190,6 +209,10 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         if not data.panel_followup_pending or data.panel_chain_running:
             return
+        # Avatar chunked lines idle between sentences — do not start panel mid-line.
+        if data.speak_line_busy:
+            data.panel_followup_deferred = True
+            return
         if data.active_role != controller.listen_role():
             turn_log.log(
                 "panel_skip",
@@ -208,6 +231,8 @@ async def entrypoint(ctx: JobContext) -> None:
             room=ctx.room.name,
         )
         asyncio.create_task(_run_panel_followups())
+
+    data.panel_followup_runner = lambda: asyncio.create_task(_run_panel_followups())
 
     async def _emit_speech_ui(role: str, text: str, *, step: str) -> None:
         from agent.ui_events import emit_role_active, emit_transcript

@@ -1,59 +1,117 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState } from 'react';
 
-import type { VrmFramingOptions } from '@/lib/talkshow/vrm/loadVrm';
+import type { TrackReference } from '@livekit/components-core';
 import type { PanelistDef } from '@/lib/talkshow/roles';
+import { localIdleUrl, localPortraitUrl } from '@/lib/talkshow/avatarAssets';
 import styles from '@/styles/TalkshowStage.module.css';
 
-const VRMHeadAvatar = dynamic(
-  () => import('@/lib/talkshow/VRMHeadAvatar').then((m) => ({ default: m.VRMHeadAvatar })),
+const AvatarPanelVideo = dynamic(
+  () => import('@/lib/talkshow/AvatarPanelVideo').then((m) => ({ default: m.AvatarPanelVideo })),
   { ssr: false },
 );
 
-const VRM_ENABLED = process.env.NEXT_PUBLIC_VRM_ENABLED !== '0';
-
-const DEFAULT_VRM_BY_ROLE: Record<string, string> = {
-  host: '/avatars/seed-san.vrm',
-  commentator: '/avatars/seed-san.vrm',
-  guest: '/avatars/vrm1-twist-sample.vrm',
-};
-
-const DEFAULT_FRAMING_BY_ROLE: Record<string, VrmFramingOptions> = {
-  host: { distMul: 1.38, fov: 32 },
-  commentator: { distMul: 1.38, fov: 32 },
-  guest: { distMul: 2.08, fov: 32 },
-};
+const AgentAvatarVideo = dynamic(
+  () => import('@/lib/talkshow/AgentAvatarVideo').then((m) => ({ default: m.AgentAvatarVideo })),
+  { ssr: false },
+);
 
 type Props = {
   panelist: PanelistDef;
   isSpeaking: boolean;
+  isActive?: boolean;
+  isWarming?: boolean;
+  speechClipUrl?: string;
+  agentVideoTrackRef?: TrackReference;
+  compact?: boolean;
 };
 
-export function PanelAvatar({ panelist, isSpeaking }: Props) {
-  const [vrmFailed, setVrmFailed] = useState(false);
-  const vrmUrl = panelist.avatar?.vrm || DEFAULT_VRM_BY_ROLE[panelist.role];
-  const framing: VrmFramingOptions = {
-    ...DEFAULT_FRAMING_BY_ROLE[panelist.role],
-    ...panelist.avatar?.framing,
-  };
+function LetterAvatar({
+  initial,
+  color,
+  compact,
+  mode,
+}: {
+  initial: string;
+  color: string;
+  compact?: boolean;
+  mode: string;
+}) {
+  return (
+    <div
+      className={styles.avatar}
+      data-avatar-mode={mode}
+      style={{
+        background: color,
+        ...(compact ? { width: 44, height: 44, fontSize: '1rem' } : {}),
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
 
-  if (!vrmUrl || vrmFailed || !VRM_ENABLED) {
+export function PanelAvatar({
+  panelist,
+  isSpeaking,
+  isActive = false,
+  isWarming = false,
+  speechClipUrl,
+  agentVideoTrackRef,
+  compact,
+}: Props) {
+  const avatar = panelist.avatar;
+  const initial = panelist.name[0] ?? '?';
+  const portraitUrl = localPortraitUrl(panelist.role) ?? avatar?.portrait;
+  const idleVideoUrl = localIdleUrl(panelist.role) ?? avatar?.idle_video;
+
+  if (idleVideoUrl || agentVideoTrackRef) {
     return (
-      <div className={styles.avatar} style={{ background: panelist.color }}>
-        {panelist.name[0]}
+      <div
+        className={styles.avatarSlot}
+        data-avatar-mode={isActive ? 'dystream-livekit' : 'dystream-idle'}
+        data-avatar-role={panelist.role}
+      >
+        <AgentAvatarVideo
+          trackRef={agentVideoTrackRef}
+          idleVideoUrl={idleVideoUrl}
+          isLive={isActive}
+          isWarming={isWarming}
+          compact={compact}
+          fallbackInitial={initial}
+          fallbackColor={panelist.color}
+        />
+      </div>
+    );
+  }
+
+  if (portraitUrl || speechClipUrl) {
+    return (
+      <div
+        className={styles.avatarSlot}
+        data-avatar-mode="dystream-idle"
+        data-avatar-role={panelist.role}
+      >
+        <AvatarPanelVideo
+          portraitUrl={portraitUrl}
+          idleVideoUrl={idleVideoUrl}
+          speechClipUrl={speechClipUrl}
+          isSpeaking={isSpeaking}
+          fallbackInitial={initial}
+          fallbackColor={panelist.color}
+          compact={compact}
+        />
       </div>
     );
   }
 
   return (
-    <VRMHeadAvatar
-      vrmUrl={vrmUrl}
-      isSpeaking={isSpeaking}
-      scale={panelist.avatar?.scale ?? 1}
-      framing={framing}
-      onLoadFailed={() => setVrmFailed(true)}
+    <LetterAvatar
+      initial={initial}
+      color={panelist.color}
+      compact={compact}
+      mode="letter"
     />
   );
 }

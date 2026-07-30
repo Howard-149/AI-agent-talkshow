@@ -16,6 +16,7 @@ from agent.panel_context import (
     panel_role_name_map,
     panel_speaker_names,
 )
+from agent.host_lines import host_direct_call_fallback_line, host_intro_speaker_line
 from agent.session_handoff import speak_panel_line
 from agent.show_history import append_role
 from agent.supervisor import TurnController
@@ -155,7 +156,7 @@ Output exactly:
     if not text or len(text) < 8:
         pick = unspoken[0]
         name = load_persona_name(pick)
-        text = f"{name}, you're up — what would you like to add?"
+        text = host_direct_call_fallback_line(name)
         resolved = pick
     else:
         resolved = resolve_floor_after_host_speech(
@@ -172,7 +173,11 @@ Output exactly:
             resolved = fb if is_direct_next(fb) else unspoken[0]
             name = load_persona_name(resolved)
             if name.lower() not in text.lower():
-                text = f"{name}, {text[0].lower()}{text[1:]}" if text else f"{name}, you're up."
+                text = (
+                    f"{name}, {text[0].lower()}{text[1:]}"
+                    if text
+                    else host_intro_speaker_line(name)
+                )
 
     apply_floor_next(data, resolved)
     logger.info(

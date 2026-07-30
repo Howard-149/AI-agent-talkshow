@@ -26,6 +26,8 @@ import {
   rosterFromParticipants,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
+import { useAgentAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
+import { useAvatarClips } from '@/lib/talkshow/useAvatarClips';
 import styles from '@/styles/TalkshowStage.module.css';
 
 export type QueueEntry = {
@@ -121,6 +123,9 @@ export function TalkshowView() {
     if (fromMeta) applyRoster(fromMeta);
   }, [remotes, applyRoster]);
 
+  const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
+  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant);
+
   const toggleHandRaise = useCallback(async () => {
     if (connectionState !== ConnectionState.Connected) return;
     const next = !localHandUp;
@@ -138,6 +143,8 @@ export function TalkshowView() {
   onRoleActiveRef.current = onRoleActive;
   const onRoleIdleRef = useRef(onRoleIdle);
   onRoleIdleRef.current = onRoleIdle;
+  const handleUiEventRef = useRef(handleUiEvent);
+  handleUiEventRef.current = handleUiEvent;
 
   useDataChannel(UI_TOPIC, (msg) => {
     const ev = parseUiEvent(msg.payload);
@@ -174,6 +181,7 @@ export function TalkshowView() {
     } else if (ev.type === 'transcript' && ev.final) {
       pushLineRef.current(ev.role, ev.speaker, ev.text);
     }
+    handleUiEventRef.current(ev);
   });
 
   const localName = localParticipant?.name || localParticipant?.identity || 'You';
@@ -258,6 +266,10 @@ export function TalkshowView() {
               <PanelAvatar
                 panelist={p}
                 isSpeaking={activeRole === p.role && lipSyncActive}
+                isActive={activeRole === p.role}
+                isWarming={warmingRole === p.role}
+                speechClipUrl={clipForRole(p.role)}
+                agentVideoTrackRef={agentVideoTrackRef}
               />
               <div className={styles.meta}>
                 <strong>{p.name}</strong>

@@ -30,6 +30,12 @@ class TalkShowData:
     user_turn_pending_rotation: bool = False
     user_turn_pending_panel: bool = False  # legacy; use panel_followup_pending
     panel_followup_pending: bool = False  # set after host tee-up TTS; triggers panel on listening
+    # True while speak_panel_line is in progress (incl. gaps between avatar chunks).
+    speak_line_busy: bool = False
+    # Listening fired mid speak_panel_line — start panel after the line finishes.
+    panel_followup_deferred: bool = False
+    # Wired in main.entrypoint — create_task(_run_panel_followups)
+    panel_followup_runner: object | None = field(default=None, repr=False)
     panel_chain_running: bool = False
     last_human_heard: str = ""
     last_host_panel_tee: str = ""
@@ -43,6 +49,8 @@ class TalkShowData:
     pending_speech_ui: deque[tuple[str, str, str]] = field(
         default_factory=deque
     )
+    # Host reply after human STT — spoken via speak_panel_line (not StoredReplyLLM+TTS).
+    pending_host_speak: str = ""
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS
     agent_session: AgentSession | None = field(default=None, repr=False)
     turn_log: TurnJsonlLogger | None = field(default=None, repr=False)
@@ -66,9 +74,9 @@ class TalkShowData:
         return entry.topic if entry else ""
 
     def queue_speech_ui(self, role: str, text: str, *, step: str = "") -> None:
-        text = text.strip()
-        if text:
-            self.pending_speech_ui.append((role, text, step))
+        # Empty text allowed: re-assert role_active between avatar chunks without
+        # duplicating transcript (emit skips blank text).
+        self.pending_speech_ui.append((role, text.strip(), step))
 
     def pop_pending_speech_ui(self) -> tuple[str, str, str] | None:
         if self.pending_speech_ui:
