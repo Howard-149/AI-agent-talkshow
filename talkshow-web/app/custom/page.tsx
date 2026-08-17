@@ -8,9 +8,10 @@ export default async function CustomRoomConnection(props: {
     token?: string;
     codec?: string;
     singlePC?: string;
+    locale?: string;
   }>;
 }) {
-  const { liveKitUrl, token, codec, singlePC } = await props.searchParams;
+  const { liveKitUrl, token, codec, singlePC, locale } = await props.searchParams;
   if (typeof liveKitUrl !== 'string') {
     return <h2>Missing LiveKit URL</h2>;
   }
@@ -21,6 +22,8 @@ export default async function CustomRoomConnection(props: {
     return <h2>Invalid codec, if defined it has to be [{videoCodecs.join(', ')}].</h2>;
   }
 
+  const viewerLocale = locale === 'zh' ? 'zh' : locale === 'en' ? 'en' : undefined;
+
   return (
     <main data-lk-theme="default" style={{ height: '100%' }}>
       <VideoConferenceClientImpl
@@ -28,6 +31,7 @@ export default async function CustomRoomConnection(props: {
         token={token}
         codec={codec}
         singlePeerConnection={singlePC === 'true'}
+        locale={viewerLocale}
       />
     </main>
   );

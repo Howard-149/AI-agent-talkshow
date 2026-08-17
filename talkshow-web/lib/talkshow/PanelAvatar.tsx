@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Picks DyStream LiveKit, HTTP clip, or letter fallback avatar rendering for one AI panelist.
+ */
 import dynamic from 'next/dynamic';
 
 import type { TrackReference } from '@livekit/components-core';

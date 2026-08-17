@@ -1,9 +1,13 @@
 'use client';
 
+/**
+ * LiveKit ControlBar plus talkshow extras: settings drawer, transcript toggle, and hand raise.
+ */
 import { ControlBar } from '@livekit/components-react';
 
 import { CameraSettings } from '@/lib/CameraSettings';
 import { MicrophoneSettings } from '@/lib/MicrophoneSettings';
+import type { TalkshowLocale } from '@/lib/talkshow/locale';
 import styles from '@/styles/TalkshowStage.module.css';
 
 type Props = {
@@ -14,6 +18,8 @@ type Props = {
   transcriptCount: number;
   handRaised: boolean;
   onToggleHandRaise: () => void;
+  viewerLocale: TalkshowLocale;
+  onLocaleChange: (locale: TalkshowLocale) => void;
 };
 
 /** Meet ControlBar + talkshow extras (settings drawer, transcript). */
@@ -25,11 +31,37 @@ export function TalkshowMediaControls({
   transcriptCount,
   handRaised,
   onToggleHandRaise,
+  viewerLocale,
+  onLocaleChange,
 }: Props) {
   return (
     <>
       {showSettings && (
         <div className={styles.settingsPanel} role="dialog" aria-label="Device settings">
+          <div className={styles.localeSettings} role="group" aria-label="Language">
+            <span className={styles.localeSettingsLabel}>Language</span>
+            <div className={styles.localeToggle}>
+              <button
+                type="button"
+                className={`${styles.localeBtn} ${viewerLocale === 'en' ? styles.localeBtnOn : ''}`}
+                aria-pressed={viewerLocale === 'en'}
+                onClick={() => onLocaleChange('en')}
+              >
+                English
+              </button>
+              <button
+                type="button"
+                className={`${styles.localeBtn} ${viewerLocale === 'zh' ? styles.localeBtnOn : ''}`}
+                aria-pressed={viewerLocale === 'zh'}
+                onClick={() => onLocaleChange('zh')}
+              >
+                中文
+              </button>
+            </div>
+            <p className={styles.localeHint}>
+              Applies to transcript and upcoming TTS. Already-spoken lines keep their language.
+            </p>
+          </div>
           <MicrophoneSettings />
           <CameraSettings />
         </div>

@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Layout of AI panelist and human guest seats on the talkshow stage.
+ */
 import type { PanelistDef, PanelRole } from '@/lib/talkshow/roles';
 import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
 import styles from '@/styles/TalkshowPanel.module.css';

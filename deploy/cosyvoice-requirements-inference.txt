@@ -1,0 +1,57 @@
+# CosyVoice TTS sidecar inference only (talkshow CosyVoice3 instruct2 / zero_shot).
+# Skips upstream packages that break or are unused: deepspeed, gradio,
+# grpc, fastapi web stack. openai-whisper IS required (mel for prompt wav tokens)
+# but do not pin ==20231117 — that sdist fails on modern pip.
+# vLLM / TensorRT: deploy/cosyvoice-requirements-accel.txt (install-cosyvoice-env.sh).
+#
+#   bash deploy/install-cosyvoice-env.sh
+#
+# Or inside an existing cosyvoice conda env:
+#   pip install -r deploy/cosyvoice-requirements-inference.txt
+#
+# Torch CUDA: Babel L40S is fine with cu121 wheels from CosyVoice upstream.
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# lightning still imports pkg_resources; setuptools>=82 drops it.
+setuptools>=69,<81
+wheel
+packaging
+
+# Core (match CosyVoice README pins where practical)
+torch==2.3.1
+torchaudio==2.3.1
+numpy==1.26.4
+HyperPyYAML==1.2.3
+transformers==4.51.3
+onnx==1.16.0
+onnxruntime-gpu==1.18.0
+librosa==0.10.2
+soundfile==0.12.1
+wetext==0.0.4
+inflect==7.3.1
+diffusers==0.29.0
+conformer==0.3.2
+networkx==3.1
+matplotlib==3.7.5
+omegaconf==2.3.0
+hydra-core==1.3.2
+protobuf==4.25
+pydantic==2.7.0
+pyworld==0.3.4
+modelscope==1.20.0
+gdown==5.1.0
+wget==3.2
+tqdm
+PyYAML
+x-transformers==2.11.24
+lightning==2.2.4
+# Matcha-TTS utils (pulled eagerly via matcha.utils.__init__)
+rich
+einops
+rootutils
+# pyarrow often pulled by modelscope; pin if install complains
+pyarrow==18.1.0
+
+# Prompt-wav speech tokenizer uses whisper.log_mel_spectrogram
+openai-whisper
+tiktoken

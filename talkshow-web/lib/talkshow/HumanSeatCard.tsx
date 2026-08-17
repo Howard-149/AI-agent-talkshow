@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Human guest seat card with local camera preview, speaking state, and hand-raise affordance.
+ */
 import { VideoTrack, useIsSpeaking, useLocalParticipant } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { useMemo } from 'react';

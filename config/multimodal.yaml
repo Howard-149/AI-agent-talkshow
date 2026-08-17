@@ -1,5 +1,11 @@
 default_locale: en
 
+# TTS note — Piper vs CosyVoice:
+# - Piper ONNX paths: locales.*.tts below + PIPER_MODEL_PATH* in .env (cluster absolute).
+# - CosyVoice3 clone prompts: NOT here — see config/personas/*.yaml → tts.cosyvoice.prompt_wav
+#   Files on disk: <repo>/cosyvoice-prompts/en_{role}.wav (shared across zh/en)
+#   Engine switch: TALKSHOW_TTS_ENGINE=cosyvoice + COSYVOICE_MODE=instruct2 in .env
+
 locales:
   en:
     llm:
@@ -13,4 +19,17 @@ locales:
       engine: piper
       # Default; override via PIPER_MODEL_PATH in .env (${USER} expanded at load)
       model_path: /data/user_data/${USER}/piper/en_US-lessac-medium.onnx
+      sample_rate: 22050
+  zh:
+    llm:
+      model: google/gemma-4-E4B-it
+      base_url: http://127.0.0.1:8000/v1
+      api_key: EMPTY
+      max_tokens: 512
+      reply_language: Chinese
+      include_heard_summary: true
+    tts:
+      engine: piper
+      # Override via PIPER_MODEL_PATH_ZH / PIPER_MODEL_PATH_ZH_HOST
+      model_path: /data/user_data/${USER}/piper/zh_CN-huayan-medium.onnx
       sample_rate: 22050

@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Main talkshow stage: panel seats, media controls, locale filter, and floor / hand-raise UI.
+ */
 import {
   RoomAudioRenderer,
   useConnectionState,
@@ -14,7 +17,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HumanSeatCard } from '@/lib/talkshow/HumanSeatCard';
 import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
 import { TalkshowMediaControls } from '@/lib/talkshow/TalkshowMediaControls';
-import { publishHandRaise } from '@/lib/talkshow/control';
+import { publishHandRaise, publishSetLocale } from '@/lib/talkshow/control';
+import {
+  pickLocalizedText,
+  writeStoredViewerLocale,
+  type TalkshowLocale,
+} from '@/lib/talkshow/locale';
 import {
   findAgentParticipant,
   usePlayoutSyncedUi,
@@ -28,6 +36,7 @@ import {
 } from '@/lib/talkshow/roles';
 import { useAgentAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
 import { useAvatarClips } from '@/lib/talkshow/useAvatarClips';
+import { useLocaleMediaFilter } from '@/lib/talkshow/useLocaleMediaFilter';
 import styles from '@/styles/TalkshowStage.module.css';
 
 export type QueueEntry = {
@@ -95,7 +104,10 @@ function humanSeats(
 }
 
 /** Virtual panel stage + LiveKit media controls (mic/camera/settings from Meet). */
-export function TalkshowView() {
+export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
+  const [viewerLocale, setViewerLocale] = useState<TalkshowLocale>(
+    props.viewerLocale ?? 'en',
+  );
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
   const remotes = useRemoteParticipants();
@@ -114,6 +126,32 @@ export function TalkshowView() {
   const [showQueueDebug, setShowQueueDebug] = useState(false);
   const localHandUp = !!handRaised.human;
 
+  useEffect(() => {
+    if (props.viewerLocale) setViewerLocale(props.viewerLocale);
+  }, [props.viewerLocale]);
+
+  useLocaleMediaFilter(viewerLocale);
+
+  useEffect(() => {
+    if (connectionState !== ConnectionState.Connected) return;
+    void publishSetLocale(room, viewerLocale).catch((err) => {
+      console.error('set_locale publish failed', err);
+    });
+  }, [connectionState, room, viewerLocale]);
+
+  const changeLocale = useCallback(
+    (next: TalkshowLocale) => {
+      if (next === viewerLocale) return;
+      setViewerLocale(next);
+      writeStoredViewerLocale(next);
+      if (connectionState !== ConnectionState.Connected) return;
+      void publishSetLocale(room, next).catch((err) => {
+        console.error('locale change failed', err);
+      });
+    },
+    [viewerLocale, connectionState, room],
+  );
+
   const applyRoster = useCallback((members: PanelistDef[]) => {
     if (members.length) setPanelists(members);
   }, []);
@@ -124,7 +162,7 @@ export function TalkshowView() {
   }, [remotes, applyRoster]);
 
   const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
-  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant);
+  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant, viewerLocale);
 
   const toggleHandRaise = useCallback(async () => {
     if (connectionState !== ConnectionState.Connected) return;
@@ -145,6 +183,8 @@ export function TalkshowView() {
   onRoleIdleRef.current = onRoleIdle;
   const handleUiEventRef = useRef(handleUiEvent);
   handleUiEventRef.current = handleUiEvent;
+  const viewerLocaleRef = useRef(viewerLocale);
+  viewerLocaleRef.current = viewerLocale;
 
   useDataChannel(UI_TOPIC, (msg) => {
     const ev = parseUiEvent(msg.payload);
@@ -179,7 +219,8 @@ export function TalkshowView() {
     } else if (ev.type === 'floor_pending') {
       setFloorPending(!!ev.active);
     } else if (ev.type === 'transcript' && ev.final) {
-      pushLineRef.current(ev.role, ev.speaker, ev.text);
+      const display = pickLocalizedText(ev.text, ev.texts, viewerLocaleRef.current);
+      pushLineRef.current(ev.role, ev.speaker, display);
     }
     handleUiEventRef.current(ev);
   });
@@ -221,6 +262,24 @@ export function TalkshowView() {
       <header className={styles.header}>
         <h1 className={styles.title}>AI Agent Talkshow</h1>
         <div className={styles.headerActions}>
+          <div className={styles.localeToggle} role="group" aria-label="Language">
+            <button
+              type="button"
+              className={`${styles.localeBtn} ${viewerLocale === 'en' ? styles.localeBtnOn : ''}`}
+              aria-pressed={viewerLocale === 'en'}
+              onClick={() => changeLocale('en')}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={`${styles.localeBtn} ${viewerLocale === 'zh' ? styles.localeBtnOn : ''}`}
+              aria-pressed={viewerLocale === 'zh'}
+              onClick={() => changeLocale('zh')}
+            >
+              中文
+            </button>
+          </div>
           <span className={styles.status}>{statusText}</span>
         </div>
       </header>
@@ -364,6 +423,8 @@ export function TalkshowView() {
           transcriptCount={lines.length}
           handRaised={localHandUp}
           onToggleHandRaise={() => void toggleHandRaise()}
+          viewerLocale={viewerLocale}
+          onLocaleChange={changeLocale}
         />
       </div>
     </div>

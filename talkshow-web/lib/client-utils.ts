@@ -1,3 +1,6 @@
+/**
+ * Shared browser helpers for passphrase encoding, room IDs, and low-power device checks.
+ */
 export function encodePassphrase(passphrase: string) {
   return encodeURIComponent(passphrase);
 }

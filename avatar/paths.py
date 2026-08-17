@@ -1,3 +1,5 @@
+"""Avatar asset/clip path helpers and DyStream root / public URL resolution."""
+
 from __future__ import annotations
 
 import os
@@ -77,15 +79,6 @@ def speech_wav_path(slot: str = SPEECH_CLIP_SLOT) -> Path:
     return avatar_clips_dir() / f"{_safe_slot(slot)}.wav"
 
 
-def speech_frames_path(slot: str = SPEECH_CLIP_SLOT) -> Path:
-    """Leftover .rgba path from removed offline-pack mode (cleanup only)."""
-    return avatar_clips_dir() / f"{_safe_slot(slot)}.rgba"
-
-
-def speech_frames_meta_path(slot: str = SPEECH_CLIP_SLOT) -> Path:
-    return avatar_clips_dir() / f"{_safe_slot(slot)}.meta.json"
-
-
 def prune_stale_speech_clips() -> None:
     """Drop leftover speech MP4/WAV/work from older runs; keep only current.* slot."""
     import shutil
@@ -124,8 +117,11 @@ def cleanup_speech_slots(slots: list[str]) -> None:
             continue
         speech_clip_path(slot).unlink(missing_ok=True)
         speech_wav_path(slot).unlink(missing_ok=True)
-        speech_frames_path(slot).unlink(missing_ok=True)
-        speech_frames_meta_path(slot).unlink(missing_ok=True)
+        # Scrub leftover offline-pack files from older builds.
+        clips = avatar_clips_dir()
+        safe = _safe_slot(slot)
+        (clips / f"{safe}.rgba").unlink(missing_ok=True)
+        (clips / f"{safe}.meta.json").unlink(missing_ok=True)
 
 
 def ensure_avatar_dirs() -> None:
@@ -167,22 +163,10 @@ def resolve_avatar_asset_path(spec: str) -> Path:
     return avatar_assets_dir() / path
 
 
-def avatar_assets_base_url() -> str:
-    return os.environ.get(
-        "AVATAR_ASSETS_BASE_URL", "http://127.0.0.1:8765/assets"
-    ).rstrip("/")
-
-
 def avatar_clips_base_url() -> str:
     return os.environ.get(
         "AVATAR_CLIPS_BASE_URL", "http://127.0.0.1:8765/clips"
     ).rstrip("/")
-
-
-def avatar_asset_public_url(relative: str) -> str:
-    """URL sent to talkshow-web via panel_roster."""
-    rel = relative.strip().lstrip("/")
-    return f"{avatar_assets_base_url()}/{rel}"
 
 
 def avatar_clip_public_url(filename: str) -> str:

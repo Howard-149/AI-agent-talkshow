@@ -41,7 +41,7 @@ Same flow as [meet.livekit.io Custom tab](https://meet.livekit.io/?tab=custom).
 
 ## Agent on Babel
 
-Panel/transcript events require the agent worker on Babel (`agent/ui_events.py`). After `git pull` on the cluster:
+Panel/transcript events require the agent worker on Babel (`agent/ui/ui_events.py`). After `git pull` on the cluster:
 
 ```bash
 source .env && python -m agent.main dev
@@ -67,7 +67,7 @@ Meet includes `/api/connection-details` — uses root `.env` `LIVEKIT_*` and **M
 **Agent contract (`talkshow/ui`):**
 
 - `panel_roster` — on connect, from `config/scenarios/*.yaml` + `config/personas/*.yaml`
-- `role_active` — signaled speaker; UI waits for agent audio before highlight
+- `role_active` — signaled speaker (`emotion` optional closed-set mood); UI waits for agent audio before highlight
 - `transcript` — final lines (AI lines buffered until agent audio is active)
 - `hand_raise` — panelist wants floor (✋ on avatar)
 - `floor_grant` — host gave floor to role

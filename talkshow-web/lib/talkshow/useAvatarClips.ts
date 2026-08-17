@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Tracks HTTP speech clips and LiveKit warm-attach role so avatar video can preroll before playout.
+ */
 import { useCallback, useState } from 'react';
 
 import type { PanelRole, UiEvent } from '@/lib/talkshow/roles';

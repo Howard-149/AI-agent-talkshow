@@ -131,8 +131,8 @@ python --version   # should print 3.11.x
 Replace `$USER` with your Babel username everywhere.
 
 ```bash
-# Piper — three voices for Lessac / Amy / Ryan
-bash deploy/download-piper-voices.sh --dest /data/user_data/$USER/piper lessac amy ryan
+# Piper — English panel + Chinese default (huayan)
+bash deploy/download-piper-voices.sh en zh
 
 # Turn-detector + Silero ONNX (agent VAD / end-of-turn)
 source .env   # after step 4, or export TALKSHOW_TURN_DETECTOR_CACHE first
@@ -157,17 +157,43 @@ LIVEKIT_API_KEY=…
 LIVEKIT_API_SECRET=…
 ```
 
-#### Piper — one ONNX file per role
+#### Piper voices
 
-| Role | Persona | `config/personas/*.yaml` | `.env` variable | Example path |
-|------|---------|---------------------------|-----------------|--------------|
-| Host | Lessac | `host.yaml` → `en_US-lessac-medium` | `PIPER_MODEL_PATH` | `/data/user_data/$USER/piper/en_US-lessac-medium.onnx` |
-| Guest | Amy | `guest.yaml` → `en_US-amy-medium` | `PIPER_MODEL_PATH_GUEST` | `/data/user_data/$USER/piper/en_US-amy-medium.onnx` |
-| Commentator | Ryan | `commentator.yaml` → `en_US-ryan-medium` | `PIPER_MODEL_PATH_COMMENTATOR` | `/data/user_data/$USER/piper/en_US-ryan-medium.onnx` |
+Catalog: [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).  
+Voice id = `{locale}-{speaker}-{quality}` (folder `en/…` or `zh/zh_CN/…`).  
+List short names: `bash deploy/download-piper-voices.sh --list`
 
-Each `.onnx` file needs a sibling config JSON, e.g. `en_US-lessac-medium.onnx.json` (the download script creates these).
+**English (always)** — one ONNX per role:
+
+| Role | Default voice | `.env` | Example path |
+|------|---------------|--------|--------------|
+| Host | `en_US-lessac-medium` | `PIPER_MODEL_PATH` | `/data/user_data/$USER/piper/en_US-lessac-medium.onnx` |
+| Guest | `en_US-amy-medium` | `PIPER_MODEL_PATH_GUEST` | `/data/user_data/$USER/piper/en_US-amy-medium.onnx` |
+| Commentator | `en_US-ryan-medium` | `PIPER_MODEL_PATH_COMMENTATOR` | `/data/user_data/$USER/piper/en_US-ryan-medium.onnx` |
+
+```bash
+bash deploy/download-piper-voices.sh en                    # lessac + amy + ryan
+bash deploy/download-piper-voices.sh en_US-kristin-medium  # pick another
+```
 
 If `PIPER_MODEL_PATH_GUEST` / `_COMMENTATOR` are unset, those roles fall back to the host voice.
+
+**Chinese (only when a zh viewer is in the room):**
+
+Chinese Piper voices use G2PW phonemization — install the optional extras once in the `talkshow` env:
+
+```bash
+pip install "piper-tts[zh]"   # or: pip install -r requirements.txt
+bash deploy/download-piper-voices.sh zh                     # zh_CN-huayan-medium
+bash deploy/download-piper-voices.sh zh_CN-xiao_ya-medium
+```
+
+| `.env` | Meaning |
+|--------|---------|
+| `PIPER_MODEL_PATH_ZH` | Shared Chinese voice for every role |
+| `PIPER_MODEL_PATH_ZH_HOST` / `_GUEST` / `_COMMENTATOR` | Optional per-role Chinese voices |
+
+Each `.onnx` needs a sibling `.onnx.json` (the download script creates both). Restart the agent worker after changing paths.
 
 #### vLLM (same GPU node as agent)
 
@@ -215,6 +241,7 @@ After **agent code** changes: `git push` from laptop → `git pull` on Babel →
 - [ ] Conda env `talkshow` with **Python 3.11**; `pip install -r requirements.txt`
 - [ ] Piper ONNX + JSON for lessac, amy, ryan under `/data/user_data/$USER/piper/`
 - [ ] `.env` `PIPER_MODEL_PATH*` points at those three files
+- [ ] (Multilingual) `bash deploy/download-piper-voices.sh zh` and `PIPER_MODEL_PATH_ZH` set
 - [ ] `download-livekit-agent-models.sh` run; `TALKSHOW_TURN_DETECTOR_CACHE` set
 - [ ] vLLM up on `:8000`, then agent `dev`
 - [ ] Log shows `ONNX/thread env ORT_NUM_THREADS=1` and no `pthread_setaffinity_np` errors
@@ -294,6 +321,8 @@ Not in git: `.env`, `.cursor/*` (except `.cursor/rules/`), `docs/`
 | `pthread_setaffinity_np failed` | `TALKSHOW_ORT_NUM_THREADS=1` in `.env` |
 | Turn detector / ONNX missing | `bash deploy/download-livekit-agent-models.sh` |
 | Wrong voice for Ryan/Amy | Check `PIPER_MODEL_PATH_GUEST` / `_COMMENTATOR` paths |
+| Chinese viewer hears English TTS | Run `bash deploy/download-piper-voices.sh zh`; set `PIPER_MODEL_PATH_ZH` |
+| `No module named 'g2pw'` (zh Piper / bake `--zh`) | `pip install "piper-tts[zh]"` in the talkshow conda env |
 | Agent never joins room | LiveKit keys match laptop; room name matches |
 | `memory usage is high` | Normal with vLLM + agent; or `TALKSHOW_TURN_DETECTOR=vad` |
 

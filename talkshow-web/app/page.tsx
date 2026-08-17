@@ -1,8 +1,9 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { encodePassphrase, generateRoomId, randomString } from '@/lib/client-utils';
+import { localeFromAccessToken } from '@/lib/talkshow/locale';
 import styles from '../styles/Home.module.css';
 
 function Tabs(props: React.PropsWithChildren<{}>) {
@@ -90,19 +91,51 @@ function CustomConnectionTab(props: { label: string }) {
 
   const [e2ee, setE2ee] = useState(false);
   const [sharedPassphrase, setSharedPassphrase] = useState(randomString(64));
+  const [locale, setLocale] = useState<'en' | 'zh'>('en');
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem('talkshow.viewerLocale');
+      if (stored === 'zh' || stored === 'en') setLocale(stored);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const onSubmit: React.FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
     const formData = new FormData(event.target as HTMLFormElement);
     const serverUrl = formData.get('serverUrl');
     const token = formData.get('token');
+    const tokenStr = String(token || '');
+    try {
+      window.localStorage.setItem('talkshow.viewerLocale', locale);
+    } catch {
+      /* ignore */
+    }
+    // Agent opening TTS reads locale from join-token metadata — must match Language.
+    const tokenLocale = localeFromAccessToken(tokenStr);
+    if (tokenLocale && tokenLocale !== locale) {
+      window.alert(
+        `Token metadata locale is "${tokenLocale}" but Language is "${locale}". ` +
+          `Re-mint with: python api/tokens.py --locale ${locale}`,
+      );
+      return;
+    }
+    if (!tokenLocale && locale !== 'en') {
+      window.alert(
+        `Token has no locale metadata. Re-mint with: python api/tokens.py --locale ${locale}`,
+      );
+      return;
+    }
+    const localeQ = `&locale=${encodeURIComponent(locale)}`;
     if (e2ee) {
       router.push(
-        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(String(token))}#${encodePassphrase(sharedPassphrase)}`,
+        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(tokenStr)}${localeQ}#${encodePassphrase(sharedPassphrase)}`,
       );
     } else {
       router.push(
-        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(String(token))}`,
+        `/custom/?liveKitUrl=${encodeURIComponent(String(serverUrl))}&token=${encodeURIComponent(tokenStr)}${localeQ}`,
       );
     }
   };
@@ -110,8 +143,12 @@ function CustomConnectionTab(props: { label: string }) {
     <form className={styles.tabContent} onSubmit={onSubmit}>
       <p style={{ marginTop: 0 }}>
         Paste <strong>LIVEKIT_URL</strong> and <strong>TOKEN</strong> from{' '}
-        <code>python api/tokens.py --room talkshow-dev --identity your-name</code> (repo root).
-        Agent worker must be running on Babel.
+        <code>
+          python api/tokens.py --room talkshow-dev --identity your-name --locale {locale}
+        </code>{' '}
+        (repo root). <strong>--locale must match Language below</strong> — the agent reads
+        locale from token metadata at join (no extra wait). Agent worker must be running on
+        Babel.
       </p>
       <input
         id="serverUrl"
@@ -129,6 +166,19 @@ function CustomConnectionTab(props: { label: string }) {
         rows={5}
         style={{ padding: '1px 2px', fontSize: 'inherit', lineHeight: 'inherit' }}
       />
+      <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center' }}>
+        <label htmlFor="locale">Language</label>
+        <select
+          id="locale"
+          value={locale}
+          onChange={(ev) => setLocale(ev.target.value === 'zh' ? 'zh' : 'en')}
+          className="lk-button"
+          style={{ minWidth: '10rem' }}
+        >
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem' }}>
           <input

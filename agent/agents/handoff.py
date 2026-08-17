@@ -1,3 +1,5 @@
+"""function_tool mixins for Host/Guest/Commentator role handoffs."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +8,7 @@ from livekit.agents import Agent, RunContext
 from livekit.agents.llm import function_tool
 
 from agent.data import TalkShowData
-from agent.supervisor import TurnController
+from agent.floor import TurnController
 
 logger = logging.getLogger(__name__)
 

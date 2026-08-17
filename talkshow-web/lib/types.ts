@@ -1,3 +1,6 @@
+/**
+ * Shared session, token, and connection-detail types for the LiveKit meet client.
+ */
 import { LocalAudioTrack, LocalVideoTrack, videoCodecs } from 'livekit-client';
 import { VideoCodec } from 'livekit-client';
 

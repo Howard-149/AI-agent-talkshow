@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Scrollable live transcript panel for talkshow dialogue lines.
+ */
 import { useEffect, useRef } from 'react';
 import styles from '@/styles/TalkshowPanel.module.css';
 

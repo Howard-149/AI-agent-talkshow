@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * LiveKit Room connection shell for the talkshow page (E2EE, reconnect, viewer locale).
+ */
 import { RoomContext, StartMediaButton } from '@livekit/components-react';
 import {
   ExternalE2EEKeyProvider,
@@ -15,6 +18,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { DebugMode } from '@/lib/Debug';
 import { ConnectionRecovery } from '@/lib/talkshow/ConnectionRecovery';
+import {
+  normalizeTalkshowLocale,
+  localeFromAccessToken,
+  readStoredViewerLocale,
+  writeStoredViewerLocale,
+  type TalkshowLocale,
+} from '@/lib/talkshow/locale';
 import { roomNameFromAccessToken } from '@/lib/talkshow/roomNameFromToken';
 import { TalkshowView } from '@/lib/talkshow/TalkshowView';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
@@ -34,11 +44,24 @@ export function TalkshowRoom(props: {
   e2eePassphrase?: string;
   singlePeerConnection?: boolean;
   userChoices?: TalkshowConnectChoices;
+  locale?: TalkshowLocale;
 }) {
   const keyProvider = useMemo(() => new ExternalE2EEKeyProvider(), []);
   const { worker, e2eePassphrase } = useSetupE2EE();
   const passphrase = props.e2eePassphrase ?? e2eePassphrase;
   const e2eeEnabled = !!(passphrase && worker);
+
+  const viewerLocale = useMemo((): TalkshowLocale => {
+    // Join-token metadata is what the agent uses for opening TTS — prefer it over UI/localStorage.
+    const fromToken = localeFromAccessToken(props.token);
+    if (fromToken) return fromToken;
+    if (props.locale) return normalizeTalkshowLocale(props.locale);
+    return readStoredViewerLocale();
+  }, [props.locale, props.token]);
+
+  useEffect(() => {
+    writeStoredViewerLocale(viewerLocale);
+  }, [viewerLocale]);
 
   const [e2eeSetupComplete, setE2eeSetupComplete] = useState(!e2eeEnabled);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -189,7 +212,7 @@ export function TalkshowRoom(props: {
             onLeave={() => router.push('/')}
           />
         ) : (
-          <TalkshowView />
+          <TalkshowView viewerLocale={viewerLocale} />
         )}
         <StartMediaButton label="Click to enable playback" />
         <DebugMode logLevel={LogLevel.debug} />

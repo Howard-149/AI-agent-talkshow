@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Talkshow disconnect recovery UI: retry connect or reset the LiveKit room via the API.
+ */
 import styles from '@/styles/TalkshowStage.module.css';
 
 type Props = {

@@ -1,7 +1,13 @@
+"""HTTP client for vLLM Gemma multimodal chat (audio-in and text complete)."""
+
 from __future__ import annotations
 
 import base64
+import io
 import logging
+import os
+import time
+import wave
 from typing import Any
 
 import httpx
@@ -12,6 +18,19 @@ from agent.config import LocaleLLMConfig
 logger = logging.getLogger(__name__)
 
 
+def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -> bytes:
+    """Minimal mono PCM16 WAV for multimodal path warm-up."""
+    n = max(1, int(duration_sec * sample_rate))
+    pcm = b"\x00\x00" * n
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
 class GemmaMMClient:
     """vLLM OpenAI-compatible chat with audio_url multimodal input."""
 
@@ -19,6 +38,7 @@ class GemmaMMClient:
         self._cfg = llm_cfg
         self._system_prompt = system_prompt
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
+        self._mm_warmed = False
 
     @property
     def active_persona_id(self) -> str:
@@ -31,6 +51,43 @@ class GemmaMMClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    async def warm_multimodal(self) -> None:
+        """Hit vLLM with a tiny audio_url chat once so first human turn is not cold.
+
+        Opt out: TALKSHOW_GEMMA_MM_WARM=0
+        """
+        raw = os.environ.get("TALKSHOW_GEMMA_MM_WARM", "1").strip().lower()
+        if raw in ("0", "false", "no", "off"):
+            logger.info("Gemma MM warm skipped (TALKSHOW_GEMMA_MM_WARM=%s)", raw)
+            return
+        if self._mm_warmed:
+            return
+        t0 = time.monotonic()
+        try:
+            await self.complete_from_wav(
+                _silent_wav_bytes(),
+                user_text=(
+                    "Warm-up only. Reply with exactly:\n"
+                    "[heard]: (silence)\n"
+                    "[reply]: OK\n"
+                    "[next]: host\n"
+                    "[emotion]: neutral"
+                ),
+                history_messages=None,
+            )
+            self._mm_warmed = True
+            logger.info(
+                "Gemma MM warm done model=%s ms=%d",
+                self._cfg.model,
+                round((time.monotonic() - t0) * 1000),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Gemma MM warm failed after %.1fs: %s",
+                time.monotonic() - t0,
+                exc,
+            )
 
     def _build_messages(
         self,
@@ -92,6 +149,13 @@ class GemmaMMClient:
             hist_n,
         )
         resp = await self._http.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            logger.error(
+                "Gemma MM HTTP %s model=%s body=%.500s",
+                resp.status_code,
+                self._cfg.model,
+                resp.text,
+            )
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
@@ -130,6 +194,13 @@ class GemmaMMClient:
             hist_n,
         )
         resp = await self._http.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            logger.error(
+                "Gemma text HTTP %s model=%s body=%.500s",
+                resp.status_code,
+                self._cfg.model,
+                resp.text,
+            )
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"]["content"]

@@ -1,3 +1,5 @@
+"""Publish DyStream RGBA/MP4 frames as LiveKit avatar video tracks."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +16,12 @@ TRACK_NAME = "talkshow-avatar"
 
 # Sentinel placed on live frame queues when the producer finishes.
 FRAME_EOS: object = object()
+
+
+def track_name_for_locale(locale: str | None) -> str:
+    from agent.locale.viewer_locales import avatar_track_name
+
+    return avatar_track_name(locale)
 
 
 def lk_video_enabled() -> bool:
@@ -63,7 +71,7 @@ def _decode_mp4_frames(path: Path, width: int, height: int) -> tuple[list[bytes]
 class AvatarVideoPublisher:
     """Publish DyStream frames on a muted LiveKit video track (audio stays Piper)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, track_name: str = TRACK_NAME) -> None:
         self._room: rtc.Room | None = None
         self._source: rtc.VideoSource | None = None
         self._width = int(os.environ.get("TALKSHOW_AVATAR_VIDEO_WIDTH", "512"))
@@ -73,6 +81,7 @@ class AvatarVideoPublisher:
         self._play_task: asyncio.Task[None] | None = None
         # Must stay monotonic across clips — resetting to 0 each line can drop early frames.
         self._ts_us = 0
+        self.track_name = track_name
 
     @property
     def enabled(self) -> bool:
@@ -90,7 +99,7 @@ class AvatarVideoPublisher:
         if lp is None:
             return
         self._source = rtc.VideoSource(self._width, self._height)
-        track = rtc.LocalVideoTrack.create_video_track(TRACK_NAME, self._source)
+        track = rtc.LocalVideoTrack.create_video_track(self.track_name, self._source)
         options = rtc.TrackPublishOptions(
             source=rtc.TrackSource.SOURCE_CAMERA,
             simulcast=False,
@@ -103,7 +112,7 @@ class AvatarVideoPublisher:
         self._published = True
         logger.info(
             "avatar video track published name=%s %dx%d",
-            TRACK_NAME,
+            self.track_name,
             self._width,
             self._height,
         )
@@ -123,29 +132,6 @@ class AvatarVideoPublisher:
         except Exception:
             frame = rgba
         self._source.capture_frame(frame, timestamp_us=self._next_ts_us(fps))
-
-    async def play_mp4(self, path: Path, *, target_duration_sec: float | None = None) -> None:
-        """Stream MP4 video frames (muted) until file ends or cancelled."""
-        if not self.enabled:
-            logger.warning("avatar play_mp4 skipped — LK video disabled")
-            return
-        if self._room is None:
-            logger.warning("avatar play_mp4 skipped — room not bound")
-            return
-        if not path.is_file():
-            logger.warning("avatar play_mp4 skipped — missing %s", path)
-            return
-        async with self._lock:
-            if self._play_task is not None and not self._play_task.done():
-                self._play_task.cancel()
-                try:
-                    await self._play_task
-                except asyncio.CancelledError:
-                    pass
-            self._play_task = asyncio.create_task(
-                self._play_mp4(path, target_duration_sec=target_duration_sec)
-            )
-        await self._play_task
 
     async def prepare_mp4(self, path: Path) -> tuple[list[bytes], float] | None:
         """Decode MP4 off the hot path so audio/video can start together."""
@@ -292,28 +278,21 @@ class AvatarVideoPublisher:
             eos,
         )
 
-    async def _play_mp4(self, path: Path, *, target_duration_sec: float | None = None) -> None:
-        prepared = await self.prepare_mp4(path)
-        if prepared is None:
-            return
-        frame_bytes, fps = prepared
-        await self.stream_frames(
-            frame_bytes,
-            fps,
-            target_duration_sec=target_duration_sec,
-        )
+
+_publishers: dict[str, AvatarVideoPublisher] = {}
 
 
-_publisher: AvatarVideoPublisher | None = None
-
-
-def get_avatar_video_publisher() -> AvatarVideoPublisher | None:
-    global _publisher
+def get_avatar_video_publisher(
+    locale: str | None = None,
+) -> AvatarVideoPublisher | None:
     if not lk_video_enabled():
         return None
-    if _publisher is None:
-        _publisher = AvatarVideoPublisher()
-    return _publisher
+    name = track_name_for_locale(locale)
+    pub = _publishers.get(name)
+    if pub is None:
+        pub = AvatarVideoPublisher(track_name=name)
+        _publishers[name] = pub
+    return pub
 
 
 def init_avatar_video_publisher(*, room: rtc.Room) -> AvatarVideoPublisher | None:

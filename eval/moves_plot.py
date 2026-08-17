@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 load_dotenv(_REPO / ".env")
 
 from agent.config import LocaleLLMConfig, load_config
-from agent.dialogue_library import DialogueMove, load_dialogue_library
+from agent.panel.dialogue_library import DialogueMove, load_dialogue_library
 
 _EVAL_DIR = Path(__file__).resolve().parent
 if str(_EVAL_DIR) not in sys.path:

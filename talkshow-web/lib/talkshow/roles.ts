@@ -1,3 +1,6 @@
+/**
+ * Panelist roster types, agent participant metadata, and `talkshow/ui` event shapes for the stage.
+ */
 export type PanelRole = string;
 
 export type PanelAvatarConfig = {
@@ -28,7 +31,13 @@ export const UI_TOPIC = 'talkshow/ui';
 /** Agent → browser events on `talkshow/ui`. AI highlight + transcript gated on client audio. */
 export type UiEvent =
   | { type: 'panel_roster'; scenario: string; members: PanelistDef[] }
-  | { type: 'role_active'; role: PanelRole; name: string }
+  | {
+      type: 'role_active';
+      role: PanelRole;
+      name: string;
+      /** Closed-set mood from agent [emotion] tag (avatar expression later). */
+      emotion?: string;
+    }
   | { type: 'role_idle' }
   | { type: 'avatar_clip'; role: PanelRole; url?: string; step?: string; transport?: 'livekit' | 'http' }
   | { type: 'floor_pending'; active: boolean }
@@ -39,6 +48,7 @@ export type UiEvent =
       text: string;
       final: boolean;
       step?: string;
+      texts?: { en?: string; zh?: string };
     }
   | {
       type: 'hand_raise';

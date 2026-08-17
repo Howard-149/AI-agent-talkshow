@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Idle loop while waiting; attaches LiveKit DyStream video on warm/live for an AI panelist seat.
+ */
 import { useEffect, useRef } from 'react';
 import { VideoTrack } from '@livekit/components-react';
 import type { TrackReference } from '@livekit/components-core';

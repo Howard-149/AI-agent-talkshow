@@ -38,6 +38,13 @@ export function PageClientImpl(props: {
     const url = new URL(CONN_DETAILS_ENDPOINT, window.location.origin);
     url.searchParams.append('roomName', props.roomName);
     url.searchParams.append('participantName', values.username);
+    // Bake locale into join token so agent opening TTS matches without set_locale latency.
+    try {
+      const stored = window.localStorage.getItem('talkshow.viewerLocale');
+      url.searchParams.append('locale', stored === 'zh' ? 'zh' : 'en');
+    } catch {
+      url.searchParams.append('locale', 'en');
+    }
     if (props.region) {
       url.searchParams.append('region', props.region);
     }

@@ -1,3 +1,6 @@
+/**
+ * Local mic device menu and Krisp noise-filter controls for the meet settings drawer.
+ */
 import React from 'react';
 import { useKrispNoiseFilter } from '@livekit/components-react/krisp';
 import { TrackToggle } from '@livekit/components-react';

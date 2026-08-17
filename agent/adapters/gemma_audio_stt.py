@@ -1,3 +1,5 @@
+"""LiveKit STT adapter: human audio → Gemma multimodal heard/reply turn."""
+
 from __future__ import annotations
 
 import logging
@@ -42,8 +44,8 @@ def _wav_rms(wav_bytes: bytes) -> float:
 
 def _human_has_floor(data: object) -> bool:
     """Panel mode: only run Gemma on human audio when the floor was granted."""
-    from agent.floor_control import peek_floor_next
-    from agent.supervisor import TurnController
+    from agent.floor.floor_control import peek_floor_next
+    from agent.floor import TurnController
 
     if peek_floor_next(data) == "human":  # type: ignore[arg-type]
         return True
@@ -161,7 +163,7 @@ class GemmaAudioSTT(stt.STT):
         *,
         language: NotGivenOr[str],
     ) -> stt.SpeechEvent:
-        from agent.supervisor import TurnController
+        from agent.floor import TurnController
 
         data = self._talkshow_data
         assert data is not None
@@ -172,7 +174,7 @@ class GemmaAudioSTT(stt.STT):
         if panel_turn:
             ctrl.apply_listen_persona()
             if data.agent_session is not None:
-                from agent.human_turn import ensure_listen_role_for_human
+                from agent.session.human_turn import ensure_listen_role_for_human
 
                 await ensure_listen_role_for_human(
                     data.agent_session,
@@ -181,9 +183,12 @@ class GemmaAudioSTT(stt.STT):
                     turn_log=data.turn_log,
                     room=data.room_name,
                 )
-            from agent.show_context import host_audio_user_hint
+            from agent.show.show_context import host_audio_user_hint
+            from agent.emotion import emotion_prompt_block
 
-            user_hint = host_audio_user_hint()
+            user_hint = (
+                f"{host_audio_user_hint()}\n\n{emotion_prompt_block(data, 'host')}"
+            )
         else:
             user_hint = None
 
@@ -215,9 +220,12 @@ class GemmaAudioSTT(stt.STT):
 
         reply = parsed.reply
         resolved_next = parsed.next_speaker
+        from agent.emotion import apply_emotion_from_parsed, get_role_emotion
+
+        emotion = apply_emotion_from_parsed(data, "host", parsed.emotion)
         if panel_turn:
-            from agent.floor_control import resolve_floor_after_host_speech
-            from agent.show_context import host_used_tee_fallback, sanitize_host_panel_reply
+            from agent.floor.floor_control import resolve_floor_after_host_speech
+            from agent.show.show_context import host_used_tee_fallback, sanitize_host_panel_reply
 
             fitted = sanitize_host_panel_reply(reply, parsed.heard, data.scenario)
             if fitted != reply:
@@ -226,9 +234,9 @@ class GemmaAudioSTT(stt.STT):
                     reply[:80],
                 )
             reply = fitted
-            from agent.floor_parser import strip_next_tag
+            from agent.floor.floor_parser import strip_speech_control_tags
 
-            reply = strip_next_tag(reply)
+            reply = strip_speech_control_tags(reply)
             resolved_next = resolve_floor_after_host_speech(
                 data,
                 spoken=reply,
@@ -237,17 +245,26 @@ class GemmaAudioSTT(stt.STT):
                 after_human_turn=True,
             )
             logger.info(
-                "human turn floor next=%s tag=%r",
+                "human turn floor next=%s tag=%r emotion=%s",
                 resolved_next,
                 parsed.next_speaker,
+                emotion,
             )
+        else:
+            from agent.floor.floor_parser import strip_speech_control_tags
 
-        from agent.show_history import append_human, append_role
-        from agent.ui_events import emit_floor_grant, emit_transcript
+            reply = strip_speech_control_tags(reply)
+
+        from agent.locale.localize import texts_for_needed_locales
+        from agent.show.show_history import append_human, append_role
+        from agent.ui.ui_events import emit_floor_grant, emit_transcript
 
         append_human(data, parsed.heard)
         append_role(data, "host", reply)
-        await emit_transcript("human", parsed.heard, step="human_turn")
+        human_texts = await texts_for_needed_locales(data, parsed.heard)
+        await emit_transcript(
+            "human", parsed.heard, step="human_turn", texts=human_texts
+        )
         if data.human_hand_raised:
             await emit_floor_grant("human", reason="human_spoke_hand_up")
         # Spoken in TalkShowAgent.on_user_turn_completed via speak_panel_line
@@ -257,7 +274,6 @@ class GemmaAudioSTT(stt.STT):
         if panel_turn:
             data.last_host_panel_tee = reply
             data.panel_followup_pending = True
-            data.user_turn_pending_panel = True
 
         # Handoff tag only for non-panel rotation; reply is not spoken by StoredReplyLLM.
         self._turn_store.set_turn(parsed.heard, reply, handoff_to=parsed.handoff_to)
@@ -271,16 +287,18 @@ class GemmaAudioSTT(stt.STT):
                 floor_next=data.floor_next_speaker,
                 tagged_next=parsed.next_speaker,
                 resolved_next=resolved_next,
+                emotion=get_role_emotion(data, "host"),
                 room=data.room_name,
                 active_role=data.active_role,
                 panel_followup_pending=data.panel_followup_pending,
             )
 
         logger.info(
-            "heard=%r reply_len=%d floor_next=%s",
+            "heard=%r reply_len=%d floor_next=%s emotion=%s",
             parsed.heard[:80],
             len(reply),
             data.floor_next_speaker,
+            get_role_emotion(data, "host"),
         )
         return self._final_event(parsed.heard, language)
 

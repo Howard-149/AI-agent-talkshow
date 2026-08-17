@@ -1,9 +1,16 @@
 'use client';
 
+/**
+ * Compact overlay stage: wires roster, avatars, and playout-synced transcript for the talkshow UI.
+ */
 import { useDataChannel, useLocalParticipant, useRemoteParticipants } from '@livekit/components-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { TranscriptPanel } from '@/lib/talkshow/TranscriptPanel';
+import {
+  pickLocalizedText,
+  readStoredViewerLocale,
+} from '@/lib/talkshow/locale';
 import {
   findAgentParticipant,
   usePlayoutSyncedUi,
@@ -64,7 +71,8 @@ export function TalkshowOverlay() {
   }, [remotes, applyRoster]);
 
   const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
-  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant);
+  const viewerLocale = readStoredViewerLocale();
+  const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant, viewerLocale);
   const handleUiEventRef = useRef(handleUiEvent);
   handleUiEventRef.current = handleUiEvent;
   const pushLineRef = useRef(pushLine);
@@ -73,6 +81,8 @@ export function TalkshowOverlay() {
   onRoleActiveRef.current = onRoleActive;
   const onRoleIdleRef = useRef(onRoleIdle);
   onRoleIdleRef.current = onRoleIdle;
+  const viewerLocaleRef = useRef(viewerLocale);
+  viewerLocaleRef.current = viewerLocale;
 
   useDataChannel(UI_TOPIC, (msg) => {
     const ev = parseUiEvent(msg.payload);
@@ -84,7 +94,8 @@ export function TalkshowOverlay() {
     } else if (ev.type === 'role_idle') {
       onRoleIdleRef.current();
     } else if (ev.type === 'transcript' && ev.final) {
-      pushLineRef.current(ev.role, ev.speaker, ev.text);
+      const display = pickLocalizedText(ev.text, ev.texts, viewerLocaleRef.current);
+      pushLineRef.current(ev.role, ev.speaker, display);
     }
     handleUiEventRef.current(ev);
   });

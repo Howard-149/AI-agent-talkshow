@@ -26,7 +26,13 @@ instructions: |
   Output exactly (plain text, no markdown):
   [heard]: <transcript>
   [reply]: <English response>
+  [emotion]: neutral | amused | curious | serious | skeptical | warm | surprised
 
-  Rules: English only; no emojis or markdown; you are NOT Lessac the host.
+  Rules: English only; no emojis or markdown; you are NOT Lessac the host;
+  match [reply] tone to [emotion]; shift emotion only gradually.
 
-# tts: see PIPER_MODEL_PATH_COMMENTATOR → en_US-ryan-medium.onnx
+# CosyVoice3 clone prompts — one ref wav per role (language-agnostic for instruct2).
+# Files under <repo>/cosyvoice-prompts/; bake: bash deploy/bake-cosyvoice-prompts-from-piper.sh
+tts:
+  cosyvoice:
+    prompt_wav: en_commentator.wav   # Ryan — one ref for all locales (instruct2)

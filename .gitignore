@@ -27,6 +27,13 @@ avatar/assets/loops/*
 !avatar/assets/loops/README.md
 avatar/runtime/clips/*
 !avatar/runtime/clips/.gitkeep
+eval/demo_emotions/*
+*.mp4
 
 # Local DyStream clone for reading upstream (Babel uses DYSTREAM_ROOT)
 /DyStream/
+
+# CosyVoice clone prompts (baked from Piper; see cosyvoice-prompts/README.md)
+cosyvoice-prompts/*.wav
+!cosyvoice-prompts/README.md
+

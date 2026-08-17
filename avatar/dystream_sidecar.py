@@ -388,9 +388,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    device = os.environ.get("DYSTREAM_CUDA_DEVICE", "1").strip() or "1"
-    os.environ["CUDA_VISIBLE_DEVICES"] = device
-    logger.info("CUDA_VISIBLE_DEVICES=%s", device)
+    # Prefer CVD already set by run-dystream-sidecar.sh; else default GPU 1.
+    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if not cvd:
+        cvd = os.environ.get("DYSTREAM_CUDA_DEVICE", "1").strip() or "1"
+        os.environ["CUDA_VISIBLE_DEVICES"] = cvd
+    logger.info("CUDA_VISIBLE_DEVICES=%s", cvd)
 
     skip_warm = os.environ.get("DYSTREAM_SIDECAR_WARM", "1").strip().lower() in (
         "0",

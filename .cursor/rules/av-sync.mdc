@@ -2,8 +2,8 @@
 description: A/V sync rules — transcript, highlight, lip sync vs TTS playout
 globs:
   - agent/main.py
-  - agent/session_handoff.py
-  - agent/ui_events.py
+  - agent/session/session_handoff.py
+  - agent/ui/ui_events.py
   - talkshow-web/lib/talkshow/usePlayoutSyncedUi.ts
   - talkshow-web/lib/talkshow/VRMHeadAvatar.tsx
   - talkshow-web/lib/talkshow/TalkshowView.tsx

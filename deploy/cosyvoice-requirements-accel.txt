@@ -1,0 +1,13 @@
+# Optional CosyVoice accel — installed by deploy/install-cosyvoice-env.sh when
+# COSYVOICE_INSTALL_ACCEL=1 (default). Can also:
+#   pip install -r deploy/cosyvoice-requirements-accel.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com
+#   python -m pip install tensorrt
+#
+# Upgrades transformers past cosyvoice-requirements-inference.txt (4.51.3 → 4.57.1).
+# Sidecar: COSYVOICE_LOAD_VLLM=1, COSYVOICE_FP16=0; keep COSYVOICE_LOAD_TRT=0 until
+# CosyVoice convert_onnx_to_trt supports TensorRT 10 (no EXPLICIT_BATCH).
+
+vllm==0.11.0
+transformers==4.57.1
+numpy==1.26.4
+tensorrt

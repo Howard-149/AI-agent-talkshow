@@ -15,7 +15,8 @@ export async function GET(request: NextRequest) {
     // Parse query parameters
     const roomName = request.nextUrl.searchParams.get('roomName');
     const participantName = request.nextUrl.searchParams.get('participantName');
-    const metadata = request.nextUrl.searchParams.get('metadata') ?? '';
+    const metadataParam = request.nextUrl.searchParams.get('metadata') ?? '';
+    const localeParam = request.nextUrl.searchParams.get('locale');
     const region = request.nextUrl.searchParams.get('region');
     if (!LIVEKIT_URL) {
       throw new Error('LIVEKIT_URL is not defined');
@@ -31,6 +32,24 @@ export async function GET(request: NextRequest) {
     }
     if (participantName === null) {
       return new NextResponse('Missing required query parameter: participantName', { status: 400 });
+    }
+
+    // Locale must be in join-token metadata so the agent can localize opening TTS
+    // immediately (no set_locale round-trip).
+    let metadata = metadataParam;
+    if (localeParam) {
+      const locale = localeParam.trim().toLowerCase().startsWith('zh') ? 'zh' : 'en';
+      try {
+        const parsed = metadata ? JSON.parse(metadata) : {};
+        const obj =
+          parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? { ...(parsed as Record<string, unknown>) }
+            : {};
+        obj.locale = locale;
+        metadata = JSON.stringify(obj);
+      } catch {
+        metadata = JSON.stringify({ locale });
+      }
     }
 
     // Generate participant token

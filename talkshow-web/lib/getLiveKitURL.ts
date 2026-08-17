@@ -1,3 +1,6 @@
+/**
+ * Builds a region-specific LiveKit Cloud WebSocket URL from project URL and region.
+ */
 export function getLiveKitURL(projectUrl: string, region: string | null): string {
   const url = new URL(projectUrl);
   if (region && url.hostname.includes('livekit.cloud')) {

@@ -3,7 +3,6 @@
 #
 # Prerequisite: GitHub code clone
 #   export DYSTREAM_ROOT=/data/user_data/$USER/dystream
-#   bash deploy/clone-dystream.sh
 #
 # Auth (required on Babel shared egress IPs):
 #   export HF_TOKEN=hf_...          # https://huggingface.co/settings/tokens (read)

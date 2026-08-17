@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Portrait, idle loop, and HTTP speech-clip video for panel seats without a LiveKit avatar track.
+ */
 import { useEffect, useRef, useState } from 'react';
 
 import styles from '@/styles/TalkshowStage.module.css';

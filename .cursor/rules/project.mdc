@@ -11,22 +11,23 @@ alwaysApply: true
 
 - **All git-tracked files must be in English** (README, ROADMAP, CONTRIBUTING, YAML comments, new code comments).
 - Do not add Chinese to files that will be pushed to GitHub.
-- `.cursor/session-memory.md`, `skill.md`, `soul.md`, `avatar-plan.md`, `av-sync-progress.md` are local notes (gitignored except rules in `.cursor/rules/`).
+- `.cursor/session-memory.md`, `skill.md`, `soul.md`, `avatar-plan.md`, `av-sync-progress.md` are local notes (gitignored except rules in `.cursor/rules/` and skills in `.cursor/skills/`).
 
 ## Before coding
 
 1. Read `.cursor/session-memory.md` for current sprint.
 2. Read [ROADMAP.md](../../ROADMAP.md) for priorities.
-3. For avatar/UI work: read `.cursor/avatar-plan.md`.
-4. For transcript/lip-sync timing: read `.cursor/av-sync-progress.md`.
-5. Read [README.md](../../README.md) for setup and architecture.
+3. Read [.cursor/skills/ai-agent-talkshow/SKILL.md](../skills/ai-agent-talkshow/SKILL.md) for durable domain knowledge (floor control, key paths, deploy).
+4. For avatar/UI work: read `.cursor/avatar-plan.md`.
+5. For transcript/lip-sync timing: read `.cursor/av-sync-progress.md`.
+6. Read [README.md](../../README.md) for setup and architecture.
 
 ## Architecture constraints
 
 - **Single LiveKit agent participant** with role handoff — do not spawn 3 separate RTC agents without explicit design approval.
 - **Shared `show_history`** — panelists share one transcript; disambiguate roles in prompts (Human guest ≠ Amy).
 - **Gemma calls:** `complete_from_wav` (human audio) and `complete_text` (panel lines); `StoredReplyLLM` does not call the model again.
-- **Floor control:** strict FIFO hand-raise queue; poll batch tie-break via `panel_priority` (one AI winner per poll); skip poll/open floor when queue non-empty; after human turn always open floor + poll when queue empty (see `agent/floor_control.py` `after_human_turn`, `agent/host_floor.py`).
+- **Floor control:** strict FIFO hand-raise queue; poll batch tie-break via `panel_priority` (one AI winner per poll); skip poll/open floor when queue non-empty; after human turn always open floor + poll when queue empty (see `agent/floor/floor_control.py` `after_human_turn`, `agent/floor/host_floor.py`).
 
 ## Current roadmap status
 
@@ -40,7 +41,7 @@ Implement against ROADMAP checklists; update ROADMAP when git-tracked scope ship
 
 ## Dev split
 
-- **Babel:** agent worker, vLLM, Piper — `sync-to-babel.sh` (excludes `talkshow-web/`)
+- **Babel:** agent worker, vLLM, Piper — `sync-to-babel.sh` (excludes `talkshow-web/`; default `--delete-after` prunes moved/renamed orphans; `DELETE_REMOTE=0` to keep)
 - **Laptop:** `talkshow-web`, `api/tokens.py`
 - Agent on Babel: sync/pull + restart worker (`.env` copied separately, not in git)
 

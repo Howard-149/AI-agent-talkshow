@@ -1,3 +1,6 @@
+/**
+ * Keyboard-driven LiveKit debug overlay and optional Datadog log forwarding for meet sessions.
+ */
 import * as React from 'react';
 import { useRoomContext } from '@livekit/components-react';
 import { setLogLevel, LogLevel, RemoteTrackPublication, setLogExtension } from 'livekit-client';

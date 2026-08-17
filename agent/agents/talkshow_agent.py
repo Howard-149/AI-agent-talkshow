@@ -1,25 +1,27 @@
+"""Base LiveKit Agent for talk-show roles with shared human-turn handling."""
+
 from __future__ import annotations
 
 import logging
 
 from livekit.agents import Agent
+from livekit.agents import tts as agents_tts
 from livekit.agents.llm import ChatContext, ChatMessage, StopResponse
 
-from agent.adapters import PiperTTS
 from agent.data import TalkShowData
 
 logger = logging.getLogger(__name__)
 
 
 class TalkShowAgent(Agent):
-    """Base voice agent with per-role Piper TTS."""
+    """Base voice agent with per-role TTS (Piper or CosyVoice)."""
 
     def __init__(
         self,
         *,
         role: str,
         instructions: str,
-        tts: PiperTTS,
+        tts: agents_tts.TTS,
         data: TalkShowData,
     ) -> None:
         self._role = role
@@ -39,7 +41,7 @@ class TalkShowAgent(Agent):
         # Drop stored reply so an accidental generate_reply cannot TTS the same line.
         self._data.runtime.turn_store.consume_turn()
 
-        from agent.session_handoff import speak_panel_line
+        from agent.session.session_handoff import speak_panel_line
 
         logger.info("host_reply via speak_panel_line chars=%d", len(reply))
         await speak_panel_line(

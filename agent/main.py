@@ -1,3 +1,5 @@
+"""LiveKit agent worker entrypoint: job process, session start, and panel rounds."""
+
 from __future__ import annotations
 
 import asyncio
@@ -18,13 +20,13 @@ from livekit.agents import AgentServer, JobContext, JobProcess, cli, room_io
 from agent.agents.factory import build_agent
 from agent.config import load_config, load_scenario
 from agent.data import TalkShowData
-from agent.hooks.logging import TurnJsonlLogger
-from agent.panel_speech import run_panel_round
-from agent.session_handoff import switch_to_role
-from agent.runtime import build_runtime
-from agent.session import build_agent_session, load_vad
-from agent.session_lifecycle import register_session_lifecycle
-from agent.supervisor import TurnController
+from agent.telemetry.turn_jsonl_logger import TurnJsonlLogger
+from agent.panel.panel_speech import run_panel_round
+from agent.session.session_handoff import switch_to_role
+from agent.session.talkshow_runtime import build_runtime
+from agent.session.livekit_session import build_agent_session, load_vad
+from agent.session.session_lifecycle import register_session_lifecycle
+from agent.floor import TurnController
 
 logger = logging.getLogger("talkshow")
 logging.basicConfig(level=logging.INFO)
@@ -69,7 +71,7 @@ async def entrypoint(ctx: JobContext) -> None:
     log_dir = Path(os.environ.get("LOG_DIR", "logs"))
     turn_log = TurnJsonlLogger(log_dir)
     data.turn_log = turn_log
-    from agent.adapters.avatar_bridge import init_avatar_bridge
+    from agent.adapters.dystream_bridge import init_avatar_bridge
 
     init_avatar_bridge(turn_log=turn_log)
     dlg = scenario.dialogue
@@ -124,11 +126,11 @@ async def entrypoint(ctx: JobContext) -> None:
         else:
             controller.record_handoff(to_role=next_role, reason=reason)
             controller.apply_persona_for_role(next_role)
-            from agent.participant_display import set_agent_display_name
+            from agent.ui.participant_display import set_agent_display_name
 
             await set_agent_display_name(next_role)
             session.update_agent(build_agent(next_role, data))
-            from agent.session_handoff import wait_for_session_agent
+            from agent.session.session_handoff import wait_for_session_agent
 
             await wait_for_session_agent(session)
         turn_log.log(
@@ -160,7 +162,6 @@ async def entrypoint(ctx: JobContext) -> None:
             logger.info("PANEL round done — waiting for human")
         finally:
             data.panel_chain_running = False
-            data.user_turn_pending_panel = False
             data.panel_followup_pending = False
 
     async def _maybe_rotate_after_reply() -> None:
@@ -189,7 +190,7 @@ async def entrypoint(ctx: JobContext) -> None:
         handle = ev.speech_handle
 
         def _on_playout_done(_h) -> None:  # type: ignore[no-untyped-def]
-            from agent.ui_events import emit_role_idle
+            from agent.ui.ui_events import emit_role_idle
 
             asyncio.create_task(emit_role_idle())
 
@@ -201,8 +202,10 @@ async def entrypoint(ctx: JobContext) -> None:
         if _is_speaking_state(new_state):
             pending = data.pop_pending_speech_ui()
             if pending:
-                role, text, step = pending
-                asyncio.create_task(_emit_speech_ui(role, text, step=step))
+                role, text, step, texts = pending
+                asyncio.create_task(
+                    _emit_speech_ui(role, text, step=step, texts=texts)
+                )
         if not _is_listening_state(new_state):
             return
         if not controller.is_panel_mode():
@@ -223,7 +226,6 @@ async def entrypoint(ctx: JobContext) -> None:
             )
             return
         data.panel_followup_pending = False
-        data.user_turn_pending_panel = False
         turn_log.log(
             "panel_trigger",
             reason="host_reply_done",
@@ -234,12 +236,19 @@ async def entrypoint(ctx: JobContext) -> None:
 
     data.panel_followup_runner = lambda: asyncio.create_task(_run_panel_followups())
 
-    async def _emit_speech_ui(role: str, text: str, *, step: str) -> None:
-        from agent.ui_events import emit_role_active, emit_transcript
+    async def _emit_speech_ui(
+        role: str,
+        text: str,
+        *,
+        step: str,
+        texts: dict[str, str] | None = None,
+    ) -> None:
+        from agent.emotion import get_role_emotion
+        from agent.ui.ui_events import emit_role_active, emit_transcript
 
-        await emit_role_active(role)
-        if text.strip():
-            await emit_transcript(role, text, step=step)
+        await emit_role_active(role, emotion=get_role_emotion(data, role))
+        if text.strip() or (texts and any(v.strip() for v in texts.values())):
+            await emit_transcript(role, text, step=step, texts=texts)
 
     @session.on("conversation_item_added")
     def _on_item(ev) -> None:  # type: ignore[no-untyped-def]
@@ -249,11 +258,14 @@ async def entrypoint(ctx: JobContext) -> None:
         if role != "assistant" or not text:
             return
         data.touch_activity()
+        from agent.emotion import get_role_emotion
+
         turn_log.log(
             "assistant_reply",
             text=text,
             room=ctx.room.name,
             active_role=data.active_role,
+            emotion=get_role_emotion(data, data.active_role),
         )
 
         if controller.is_panel_mode():
@@ -265,7 +277,7 @@ async def entrypoint(ctx: JobContext) -> None:
         asyncio.create_task(_maybe_rotate_after_reply())
 
     async def _bootstrap() -> None:
-        from agent.bootstrap_session import bootstrap_after_connect
+        from agent.session.bootstrap_session import bootstrap_after_connect
 
         await bootstrap_after_connect(ctx, session, data, controller, scenario)
 

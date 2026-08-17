@@ -1,3 +1,5 @@
+"""Thread-safe handoff of one Gemma turn result between custom STT and StoredReplyLLM."""
+
 from __future__ import annotations
 
 import threading

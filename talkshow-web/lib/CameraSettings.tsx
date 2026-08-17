@@ -1,3 +1,6 @@
+/**
+ * Local camera device menu and virtual background options for the meet settings drawer.
+ */
 import React from 'react';
 import {
   MediaDeviceMenu,

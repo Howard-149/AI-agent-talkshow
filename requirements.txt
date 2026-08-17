@@ -24,7 +24,8 @@ numpy>=1.26.0
 
 # TTS — Piper ONNX on GPU (CUDA 12.x). If pip also installs cpu `onnxruntime`, remove it:
 #   pip uninstall -y onnxruntime
-piper-tts>=1.2.0
+# [zh] pulls g2pw (+ friends) for Chinese voices (huayan / xiao_ya / chaowen).
+piper-tts[zh]>=1.2.0
 onnxruntime-gpu[cuda,cudnn]>=1.20.0
 
 # vLLM + Gemma audio-in (CUDA 12.9 / Babel L40S)

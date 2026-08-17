@@ -1,3 +1,5 @@
+"""Passthrough LiveKit LLM that replays TurnStore replies without calling Gemma again."""
+
 from __future__ import annotations
 
 import uuid

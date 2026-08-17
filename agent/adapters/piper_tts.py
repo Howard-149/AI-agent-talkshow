@@ -1,3 +1,5 @@
+"""LiveKit TTS adapter wrapping local Piper ONNX voices."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent.hooks.logging import TurnJsonlLogger
+    from agent.telemetry.turn_jsonl_logger import TurnJsonlLogger
 
 from livekit.agents import tts
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions

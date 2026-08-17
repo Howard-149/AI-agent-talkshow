@@ -1,5 +1,8 @@
 'use client';
 
+/**
+ * Syncs transcript lines, speaker highlight, and lip-sync UI to agent audio playout timing.
+ */
 import { ParticipantEvent, type Participant, type RemoteParticipant } from 'livekit-client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

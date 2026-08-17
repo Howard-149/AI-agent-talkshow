@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from datetime import timedelta
 
@@ -18,6 +19,12 @@ def main() -> None:
     parser.add_argument("--identity", default="human-host", help="Participant identity")
     parser.add_argument("--name", default=None, help="Display name (defaults to identity)")
     parser.add_argument("--ttl", type=int, default=3600, help="TTL seconds")
+    parser.add_argument(
+        "--locale",
+        default="en",
+        choices=("en", "zh"),
+        help="Viewer UI / TTS locale — baked into join-token metadata so opening TTS matches immediately",
+    )
     args = parser.parse_args()
 
     display = args.name or args.identity
@@ -28,10 +35,13 @@ def main() -> None:
 
     from livekit import api
 
+    metadata = json.dumps({"locale": args.locale}, ensure_ascii=False)
+
     token = (
         api.AccessToken(api_key, api_secret)
         .with_identity(args.identity)
         .with_name(display)
+        .with_metadata(metadata)
         .with_grants(
             api.VideoGrants(
                 room_join=True,
@@ -46,6 +56,7 @@ def main() -> None:
 
     print(f"LIVEKIT_URL={url}")
     print(f"ROOM={args.room}")
+    print(f"LOCALE={args.locale}")
     print(f"TOKEN={token}")
 
 

@@ -1,3 +1,5 @@
+"""Call DyStream sidecar (or subprocess) for bake and streaming RGBA synthesize."""
+
 from __future__ import annotations
 
 import json

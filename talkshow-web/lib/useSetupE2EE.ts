@@ -1,3 +1,6 @@
+/**
+ * Reads an E2EE passphrase from the URL hash and constructs the LiveKit E2EE worker when needed.
+ */
 import React from 'react';
 import { ExternalE2EEKeyProvider } from 'livekit-client';
 import { decodePassphrase } from './client-utils';
