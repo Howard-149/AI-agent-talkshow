@@ -2,11 +2,13 @@
 .env.*
 !.env.example
 .venv/
+.venv-showgraph/
 venv/
 __pycache__/
 *.py[cod]
 .DS_Store
 node_modules/
+.pnpm-store/
 logs/
 eval/figures/
 eval/results/
@@ -15,11 +17,7 @@ eval/results/
 *.swp
 
 # Local-only (not in repo)
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
-!.cursor/skills/
-!.cursor/skills/**
+.cursor/
 docs/
 scripts/
 avatar/assets/portraits/*.png
@@ -29,6 +27,7 @@ avatar/runtime/clips/*
 !avatar/runtime/clips/.gitkeep
 eval/demo_emotions/*
 *.mp4
+poster/
 
 # Local DyStream clone for reading upstream (Babel uses DYSTREAM_ROOT)
 /DyStream/

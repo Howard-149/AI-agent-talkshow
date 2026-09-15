@@ -181,6 +181,28 @@ def extract_session_metrics(events: list[dict[str, Any]]) -> list[dict[str, Any]
                 add(_label(role, "TTS"), lat, source)
             continue
 
+        if ev == "avatar_synth_profile":
+            role = (e.get("role") or "").strip()
+            if not role:
+                continue
+            for key, suffix in (
+                ("ms_per_frame_ar_a2f_inner", "a2f inner /frame"),
+                ("ms_per_frame_ar_attn", "AR attn /frame"),
+                ("ms_per_frame_fm_net", "FM net /frame"),
+                ("ms_per_frame_fm_ode", "FM ODE /frame"),
+                ("ms_per_frame_ar_other", "AR other /frame"),
+                ("ms_per_frame_vis_flow", "vis flow /frame"),
+                ("ms_per_frame_face_gen", "face gen /frame"),
+                ("ms_per_frame_xfer", "xfer /frame"),
+            ):
+                try:
+                    ms = float(e.get(key) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if ms > 0:
+                    add(_label(role, suffix), ms / 1000.0, source)
+            continue
+
         if ev == "avatar_bake":
             role = (e.get("role") or "").strip()
             if not role:

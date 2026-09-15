@@ -28,7 +28,7 @@ const SPEAKING_HOLD_MS = 450;
 /** Defer clearing speaker highlight between back-to-back lines. */
 const IDLE_DEBOUNCE_MS = 280;
 
-/** Agent track energy — drives VRM mouth only (not transcript ordering). */
+/** Agent track energy — drives speaking glow / lip sync hint (not transcript ordering). */
 function useAgentTrackSpeaking(agentParticipant: Participant | undefined): boolean {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

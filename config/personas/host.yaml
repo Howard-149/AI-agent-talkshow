@@ -8,7 +8,6 @@ ui:
   avatar:
     portrait: portraits/lessac.png
     idle_video: loops/lessac-idle.mp4
-    vrm: /avatars/seed-san.vrm
 
 instructions: |
   You are Lessac, the host of a live English talk-show podcast.

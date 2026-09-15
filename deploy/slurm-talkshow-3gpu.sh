@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=talkshow
-#SBATCH --partition=general
+#SBATCH --partition=preempt
+#SBATCH --qos=preempt_qos
+#SBATCH --requeue
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus=3
 #SBATCH --mem=128G
-#SBATCH --time=12:00:00
+#SBATCH --time=08:00:00
 #SBATCH --chdir=/home/hsuanhal/AI-agent-talkshow
 # Absolute paths — relative slurm-logs/ fails when that dir is missing in submit cwd.
 #SBATCH --output=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.out
@@ -14,14 +16,23 @@
 #SBATCH --mail-type=END
 #SBATCH --mail-user=hsuanhal@andrew.cmu.edu
 #
-# 3-GPU talkshow:
-#   GPU 0 → Gemma/vLLM (conda talkshow)
-#   GPU 1 → DyStream     (conda dystream)
-#   GPU 2 → CosyVoice    (conda cosyvoice_vllm)
-#   then agent           (conda talkshow)
+# 3-GPU talkshow on preempt (requires --gpus=3):
+#
+#   Slot (in CUDA_VISIBLE_DEVICES)   Conda env              Process
+#   ------------------------------   --------------------   ----------------------
+#   VLLM_CUDA_DEVICE (.env/0)        talkshow               vLLM Gemma
+#   DYSTREAM_CUDA_DEVICE (.env/1)    dystream               DyStream sidecar
+#   COSYVOICE_CUDA_DEVICE (.env/2)   cosyvoice_vllm         CosyVoice sidecar
+#   (all visible)                    talkshow               agent.main
+#
+# Values come from .env when set; otherwise the defaults above.
+# Job fails if the three CUDA slots or the three Python interpreters collide.
+#
+# Preempt jobs can be killed/requeued — walltime 8h; --requeue above.
+# Override partition:  sbatch -p <name> deploy/slurm-talkshow-3gpu.sh
 #
 # Default: start vLLM + DyStream + CosyVoice in parallel (128G host RAM).
-# If host OOM returns:  TALKSHOW_STAGGER_START=1 sbatch ...
+# If host OOM:  TALKSHOW_STAGGER_START=1 sbatch --export=ALL ...
 #
 # First time:  mkdir -p ~/AI-agent-talkshow/slurm-logs
 # Submit:      sbatch ~/AI-agent-talkshow/deploy/slurm-talkshow-3gpu.sh
@@ -88,7 +99,8 @@ if [[ -n "${SLURM_CVD}" ]]; then
   export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
 fi
 
-# Intended slots (override only if you know what you are doing).
+# Intended slots WITHIN the SLURM allocation (indices into CUDA_VISIBLE_DEVICES).
+# Prefer .env; fall back to 0/1/2 only when unset.
 export VLLM_CUDA_DEVICE="${VLLM_CUDA_DEVICE:-0}"
 export DYSTREAM_CUDA_DEVICE="${DYSTREAM_CUDA_DEVICE:-1}"
 export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-2}"
@@ -97,6 +109,12 @@ export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-2}"
 ENV_TALKSHOW="${TALKSHOW_CONDA_ENV:-talkshow}"
 ENV_DYSTREAM="${DYSTREAM_CONDA_ENV:-dystream}"
 ENV_COSYVOICE="${COSYVOICE_CONDA_ENV:-cosyvoice_vllm}"
+
+echo "=== 3-GPU / 3-env contract (from .env or defaults) ==="
+echo "  vLLM      slot=${VLLM_CUDA_DEVICE}  conda=${ENV_TALKSHOW}"
+echo "  DyStream  slot=${DYSTREAM_CUDA_DEVICE}  conda=${ENV_DYSTREAM}"
+echo "  CosyVoice slot=${COSYVOICE_CUDA_DEVICE}  conda=${ENV_COSYVOICE}"
+echo "  agent     all slots visible  conda=${ENV_TALKSHOW}"
 
 conda activate "${ENV_TALKSHOW}"
 echo "agent/vLLM env=${ENV_TALKSHOW} python=$(command -v python) $(python -V 2>&1)"
@@ -113,6 +131,17 @@ fi
 export DYSTREAM_PYTHON COSYVOICE_PYTHON
 echo "DyStream  env=${ENV_DYSTREAM}  python=${DYSTREAM_PYTHON}"
 echo "CosyVoice env=${ENV_COSYVOICE} python=${COSYVOICE_PYTHON}"
+
+# Refuse same-interpreter foot-gun (sidecars must not share talkshow python).
+if [[ "${DYSTREAM_PYTHON}" == "$(command -v python)" ]] \
+  || [[ "${COSYVOICE_PYTHON}" == "$(command -v python)" ]] \
+  || [[ "${DYSTREAM_PYTHON}" == "${COSYVOICE_PYTHON}" ]]; then
+  echo "FATAL: DyStream / CosyVoice / talkshow must use three distinct Python interpreters" >&2
+  echo "  talkshow=$(command -v python)" >&2
+  echo "  DYSTREAM_PYTHON=${DYSTREAM_PYTHON}" >&2
+  echo "  COSYVOICE_PYTHON=${COSYVOICE_PYTHON}" >&2
+  exit 1
+fi
 
 echo "CUDA_VISIBLE_DEVICES(after .env restore)=${CUDA_VISIBLE_DEVICES:-<unset>}"
 if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then

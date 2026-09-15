@@ -13,9 +13,6 @@ from agent.config import load_persona_name
 from agent.data import TalkShowData
 from agent.floor.floor_control import (
     apply_floor_next,
-    consume_floor_next,
-    is_direct_next,
-    is_hand_raise_pending,
     peek_floor_next,
 )
 from agent.floor.floor_parser import (
@@ -36,7 +33,7 @@ from agent.floor.host_lines import (
     host_open_floor_line,
 )
 from agent.panel.panel_prompts import panelist_hand_raise_system
-from agent.panel.panel_speech import PANEL_HOST_CLOSE, speak_one_panelist
+from agent.panel.panel_speech import speak_one_panelist
 from agent.session.session_lifecycle import should_stop_session_work
 from agent.show.show_history import append_role
 from agent.session.session_handoff import speak_panel_line
@@ -430,85 +427,21 @@ async def run_host_moderation_from_queue(
 ) -> str | None:
     """
     Whenever the host must pick the next speaker: poll into queue, resolve, grant.
-    Returns granted role id, or None when the beat ends with host still pending.
+    Orchestrated by LangGraph (agent.show_graph); actuators stay in this module.
     """
-    if should_stop_session_work(data, session):
-        return None
-    max_depth = int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8"))
-    if depth >= max_depth:
-        logger.warning("host moderation max depth=%d trigger=%s", max_depth, trigger)
-        return None
-    panel_roles = controller.panel_speaker_roles()
-    spoken = set(spoken_roles or ())
-    queue_before = data.hand_raise_queue.roles()
-    if not skip_open_floor and not queue_before:
-        await host_speak_open_floor(session, data, controller, trigger=trigger)
-    elif queue_before:
-        logger.info(
-            "open floor skip queue=%s trigger=%s",
-            queue_before,
-            trigger,
-        )
-        if data.turn_log:
-            data.turn_log.log(
-                "open_floor_skip",
-                reason="queue_nonempty",
-                trigger=trigger,
-                room=data.room_name,
-                queue=queue_before,
-            )
-    next_role, grant_reason = await _run_hand_raise_round(
+    from agent.show_graph.runner import (
+        run_host_moderation_from_queue as _langgraph_moderation,
+    )
+
+    return await _langgraph_moderation(
         session,
         data,
         controller,
-        panel_roles=panel_roles,
-        spoken_roles=spoken,
-        turn_idx=0,
+        trigger=trigger,
+        skip_open_floor=skip_open_floor,
+        depth=depth,
+        spoken_roles=spoken_roles,
     )
-    if next_role == "close":
-        return "close"
-    if is_direct_next(next_role, data.scenario):
-        await _grant_panelist_turn(
-            session,
-            data,
-            controller,
-            next_role,
-            grant_reason=grant_reason,
-            trigger=trigger,
-            step=f"queue_{next_role}_{trigger}",
-            skip_intro=grant_reason == "host_direct_no_raises",
-        )
-        spoken.add(next_role)
-        while is_direct_next(peek_floor_next(data)):
-            chained = consume_floor_next(data)
-            await emit_floor_grant(chained, reason="next_tag")
-            await dequeue_hand_raise(data, chained)
-            await speak_one_panelist(
-                session,
-                data,
-                speak_role=chained,
-                step=f"chain_{chained}_{trigger}",
-            )
-            spoken.add(chained)
-        await return_floor_to_host(
-            session, data, controller, trigger=f"queue_{trigger}"
-        )
-        if is_hand_raise_pending(peek_floor_next(data)):
-            nested = await run_host_moderation_from_queue(
-                session,
-                data,
-                controller,
-                trigger=f"after_{trigger}",
-                depth=depth + 1,
-                spoken_roles=spoken,
-            )
-            if nested in ("human", "close"):
-                return nested
-        return next_role
-    if next_role == "human":
-        await grant_human_floor(session, data, controller, reason=grant_reason)
-        return "human"
-    return None
 
 
 async def host_speak_open_floor(
@@ -626,65 +559,11 @@ async def run_host_moderated_panel(
     Floor routing via [next] tags:
     - panelist role → direct grant (chain if panelists tag each other)
     - host / unset → hand-raise pending, then host moderates
+
+    Orchestrated by LangGraph (agent.show_graph).
     """
-    listen = controller.listen_role()
-    panel_roles = controller.panel_speaker_roles()
-    max_turns = int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12"))
-    spoken_roles: set[str] = set()
-    turn_idx = 0
-    close_round = False
-
-    while turn_idx < max_turns and not close_round:
-        while True:
-            next_role = consume_floor_next(data)
-            if is_direct_next(next_role):
-                logger.info("floor direct grant role=%s", next_role)
-                await dequeue_hand_raise(data, next_role)
-                await emit_floor_grant(next_role, reason="next_tag")
-                await speak_one_panelist(
-                    session,
-                    data,
-                    speak_role=next_role,
-                    step=f"speech_{next_role}_{turn_idx}",
-                )
-                spoken_roles.add(next_role)
-                turn_idx += 1
-                continue
-            if next_role == "human":
-                await grant_human_floor(
-                    session, data, controller, reason="next_tag"
-                )
-                return
-            if next_role == "close":
-                close_round = True
-                break
-            apply_floor_next(data, next_role or "host")
-            break
-
-        if close_round:
-            break
-
-        outcome = await run_host_moderation_from_queue(
-            session,
-            data,
-            controller,
-            trigger=f"turn_{turn_idx}",
-            spoken_roles=spoken_roles,
-        )
-        if outcome == "human":
-            return
-        if outcome == "close":
-            logger.info("host_moderated: close round after %d panel turns", turn_idx)
-            break
-        if is_direct_next(outcome, data.scenario):
-            spoken_roles.add(outcome)
-        turn_idx += 1
-
-    append_role(data, listen, PANEL_HOST_CLOSE)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=PANEL_HOST_CLOSE,
-        step="close_round",
+    from agent.show_graph.runner import (
+        run_host_moderated_panel as _langgraph_panel,
     )
+
+    await _langgraph_panel(session, data, controller)

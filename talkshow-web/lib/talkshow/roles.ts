@@ -4,7 +4,6 @@
 export type PanelRole = string;
 
 export type PanelAvatarConfig = {
-  vrm?: string;
   portrait?: string;
   idle_video?: string;
   video_transport?: 'livekit' | 'http';

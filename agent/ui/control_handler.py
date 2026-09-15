@@ -14,7 +14,7 @@ from agent.ui.control_events import CONTROL_TOPIC, parse_control_payload
 from agent.data import TalkShowData
 from agent.floor.floor_control import apply_floor_next, peek_floor_next
 from agent.floor.hand_raise_ui import dequeue_hand_raise
-from agent.floor.host_floor import run_host_moderation_from_queue
+from agent.show_graph import run_host_moderation_from_queue
 from agent.session.session_lifecycle import (
     room_has_humans,
     session_is_active,

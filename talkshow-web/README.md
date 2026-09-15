@@ -9,19 +9,19 @@ Fork of [livekit-examples/meet](https://github.com/livekit-examples/meet) with t
 LiveKit media still runs on **LiveKit Cloud**; token via **`api/tokens.py`**.  
 **Env:** reads **repo root `.env`** (same as agent) — no `talkshow-web/.env.local`.
 
-## VRM panel avatars (3b)
+## DyStream panel avatars
 
-One-time fetch of official sample models (~30 MB, gitignored):
+When the Babel agent runs with `TALKSHOW_AVATAR_ENABLED=1` and DyStream sidecar, set in repo root `.env`:
 
-```bash
-bash scripts/fetch-vrm-samples.sh
-pnpm install   # or: npm install — see TLS note below if cert errors
-pnpm dev
+```
+NEXT_PUBLIC_DYSTREAM_ENABLED=1
 ```
 
-**macOS Node TLS:** if `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, set `export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` in `~/.zshrc` (see `.cursor/skill.md`).
+Panel cards show **idle loop MP4** per role (`avatar/assets/loops/*-idle.mp4`, symlinked under `public/avatars/loops/`). While a role speaks, video comes from the agent **LiveKit video track** (`AgentAvatarVideo`). Missing assets → letter fallback.
 
-Panel cards load `.vrm` from `public/avatars/` (paths in `config/personas/*/yaml` → `panel_roster`). Missing file or WebGL error → initials fallback.
+Portrait PNGs: `avatar/assets/portraits/` → `public/avatars/portraits/`. See [public/avatars/README.md](public/avatars/README.md).
+
+**macOS Node TLS:** if `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, set `export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem` in `~/.zshrc`.
 
 ## Quick start
 

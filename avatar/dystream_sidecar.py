@@ -350,9 +350,19 @@ class SidecarHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            stats = getattr(iter_synthesize_online, "last_stats", None)
+            profile = getattr(stats, "profile", None) if stats is not None else None
+            if isinstance(profile, dict) and profile:
+                prof_bytes = json.dumps(
+                    {"ok": True, "profile": profile}
+                ).encode("utf-8")
+                _send(
+                    struct.pack(">I", 0xFFFFFFFF)
+                    + struct.pack(">I", len(prof_bytes))
+                    + prof_bytes
+                )
             _send(struct.pack(">I", 0))  # EOS
             self.wfile.write(b"0\r\n\r\n")
-            stats = getattr(iter_synthesize_online, "last_stats", None)
             logger.info(
                 "synthesize/stream done frames=%d stats=%s",
                 frame_count,

@@ -22,6 +22,8 @@ conda create -n talkshow python=3.11 -y
 conda activate talkshow
 cd ~/AI-agent-talkshow
 pip install -r requirements.txt
+# Includes langgraph + langchain-core for agent/show_graph floor orchestration.
+# After sync/pull: reinstall if floor planner imports fail (ModuleNotFoundError: langgraph).
 
 bash deploy/download-piper-voices.sh en zh   # Lessac/Amy/Ryan + 中文 huayan
 # 自选：bash deploy/download-piper-voices.sh --list
@@ -81,7 +83,31 @@ python -m avatar.dystream_once --portrait avatar/assets/portraits/lessac.png \
 
 ---
 
-## 每次 session（Babel 上 3 个 tmux）
+## 每次 session（无 interactive node → SLURM preempt）
+
+登录节点只负责 `sbatch`；不要指望 `srun --pty` / 交互 GPU。
+
+```bash
+mkdir -p ~/AI-agent-talkshow/slurm-logs
+cd ~/AI-agent-talkshow
+
+# 代码 sync 后若缺 langgraph：
+sbatch deploy/slurm-install-deps.sh
+
+# 验证 floor planner：
+sbatch deploy/slurm-test-show-graph.sh
+
+# 开全栈（3×GPU；slot/env 跟 .env；可被 preempt 打断并 --requeue）：
+sbatch deploy/slurm-talkshow-3gpu.sh
+# 日志：slurm-logs/slurm-talkshow-<jobid>.{out,err}
+#       logs/slurm-<jobid>/{vllm,dystream,cosyvoice,agent}.log
+```
+
+分区名以 `sinfo` 为准；不对则：`sbatch -p <partition> deploy/…`。
+
+若报 `Invalid qos specification`：多半是账号默认还挂着 `r3lit_qos`（旧 interactive）。脚本已写 `#SBATCH --qos=preempt_qos`（与 `partition=preempt` 配对）。
+
+### 备选：有 interactive / tmux 时
 
 ```bash
 conda activate talkshow
@@ -205,7 +231,16 @@ Room 名须与 Babel agent 一致（默认 `talkshow-dev`）。
 - **tmux 2 agent：** **不要** `export CUDA_VISIBLE_DEVICES=0`（否则 Piper 看不到 GPU 1）。Piper 默认 `TALKSHOW_PIPER_CUDA_DEVICE` = `DYSTREAM_CUDA_DEVICE`（**1**）。
 - **tmux 3 sidecar：** `CUDA_VISIBLE_DEVICES=$DYSTREAM_CUDA_DEVICE`（默认 1）。
 - **tmux 4 CosyVoice（可选）：** `COSYVOICE_CUDA_DEVICE=1`，与 DyStream 共卡；显存不够就只开其一或回退 Piper。
-- **SLURM 3-GPU：** `sbatch deploy/slurm-talkshow-3gpu.sh` — 卡依次绑 Gemma / DyStream / CosyVoice；conda 分别为 `talkshow` / `dystream` / `cosyvoice_vllm`（可用 `TALKSHOW_CONDA_ENV` / `DYSTREAM_CONDA_ENV` / `COSYVOICE_CONDA_ENV` 或 `.env` 的 `*_PYTHON` 覆盖）。日志在 `logs/slurm-<jobid>/`。
+- **SLURM（preempt + preempt_qos；每个 job 都要 GPU）：**
+  - 依赖：`sbatch deploy/slurm-install-deps.sh`（`--gpus=1`）
+  - show_graph 单测：`sbatch deploy/slurm-test-show-graph.sh`（`--gpus=1`）
+  - 资源下载：`sbatch deploy/slurm-download-assets.sh`（`--gpus=1`）
+    - 全栈 3-GPU：`sbatch deploy/slurm-talkshow-3gpu.sh`（`--gpus=3`）
+    - slot / conda / `*_PYTHON` **以 `.env` 为准**（未设时默认 0→talkshow/vLLM、1→dystream、2→cosyvoice_vllm）
+    - 仍检查三卡 slot 互异、三个 Python 路径互不相同；冲突则 job fail
+    - agent 用 talkshow，可见 SLURM 分配的全部 GPU
+  - 日志：`logs/slurm-<jobid>/` 与 `slurm-logs/`
+  - 分区/QOS：`preempt` / `preempt_qos`；不对则 `sbatch -p … --qos …`
 - 单卡机器：`DYSTREAM_CUDA_DEVICE=0` 且 `TALKSHOW_PIPER_CUDA_DEVICE=0`，接受与 vLLM 抢同一张卡。
 
 ---
@@ -226,6 +261,10 @@ Room 名须与 Babel agent 一致（默认 `talkshow-dev`）。
 
 | 文件 | 用途 |
 |------|------|
+| [slurm-talkshow-3gpu.sh](slurm-talkshow-3gpu.sh) | preempt 3-GPU 全栈（vLLM + sidecars + agent） |
+| [slurm-install-deps.sh](slurm-install-deps.sh) | preempt：`pip install -r requirements.txt` |
+| [slurm-test-show-graph.sh](slurm-test-show-graph.sh) | preempt：LangGraph floor 单测 |
+| [slurm-download-assets.sh](slurm-download-assets.sh) | preempt：Piper / LiveKit / DyStream 下载 |
+| [slurm_common.sh](slurm_common.sh) | 上述 job 共用 conda/ROOT helpers |
 | [README.md](../README.md) | 团队 onboarding |
-| [avatar/README.md](../avatar/README.md) | Avatar 资产与 env |
-| [DYSTREAM_INTEGRATION.md](../DYSTREAM_INTEGRATION.md) | 架构与 latency 事件 |
+| [avatar/README.md](../avatar/README.md) | Avatar assets, env, latency JSONL events |

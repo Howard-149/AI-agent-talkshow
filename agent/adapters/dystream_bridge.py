@@ -259,6 +259,8 @@ class AvatarBridge:
                 ):
                     if kind == "meta":
                         meta_box.update(payload)
+                        if payload.get("profile"):
+                            continue
                         src_w = int(payload.get("width") or dst_w)
                         src_h = int(payload.get("height") or dst_h)
                         play_fps = float(payload.get("fps") or 25.0)
@@ -343,6 +345,52 @@ class AvatarBridge:
                 logger.exception("avatar stream reader failed")
             finally:
                 wav_path.unlink(missing_ok=True)
+                profile = meta_box.get("profile")
+                if isinstance(profile, dict) and profile and self._turn_log is not None:
+                    try:
+                        self._turn_log.log(
+                            "avatar_synth_profile",
+                            role=role,
+                            step=step,
+                            slot=slot,
+                            **{
+                                k: v
+                                for k, v in profile.items()
+                                if k
+                                in (
+                                    "clock",
+                                    "frames",
+                                    "steps",
+                                    "window",
+                                    "audio_load_ms",
+                                    "audio2face_ms",
+                                    "ar_fm_ms",
+                                    "ar_a2f_inner_ms",
+                                    "ar_attn_ms",
+                                    "ar_net_ms",
+                                    "fm_net_ms",
+                                    "fm_ode_ms",
+                                    "ar_other_ms",
+                                    "vis_flow_ms",
+                                    "face_gen_ms",
+                                    "xfer_ms",
+                                    "render_ms",
+                                    "ms_per_frame_ar_fm",
+                                    "ms_per_frame_ar_a2f_inner",
+                                    "ms_per_frame_ar_attn",
+                                    "ms_per_frame_ar_net",
+                                    "ms_per_frame_fm_net",
+                                    "ms_per_frame_fm_ode",
+                                    "ms_per_frame_ar_other",
+                                    "ms_per_frame_vis_flow",
+                                    "ms_per_frame_face_gen",
+                                    "ms_per_frame_xfer",
+                                    "ms_per_frame_render",
+                                )
+                            },
+                        )
+                    except Exception:
+                        logger.exception("avatar_synth_profile log failed")
                 if not preroll_ready.is_set():
                     meta_box.setdefault("preroll_frames", buffered)
                     meta_box.setdefault(

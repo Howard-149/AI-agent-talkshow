@@ -1,9 +1,9 @@
 # Avatar (DyStream)
 
-Live playout uses Piper PCM for audio and LiveKit video frames from DyStream
+Live playout uses TTS PCM for audio and LiveKit video frames from DyStream
 (**online stream** by default: generate while playing after a short preroll).
 
-See [DYSTREAM_INTEGRATION.md](../docs/DYSTREAM_INTEGRATION.md).
+See [deploy/RUN-BABEL.md](../deploy/RUN-BABEL.md) for sidecar startup and latency JSONL events.
 
 ## Storage
 

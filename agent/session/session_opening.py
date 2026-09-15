@@ -9,10 +9,8 @@ from typing import TYPE_CHECKING
 from livekit.agents import AgentSession
 
 from agent.data import TalkShowData
-from agent.floor.host_floor import (
-    host_speak_session_welcome,
-    run_host_moderation_from_queue,
-)
+from agent.floor.host_floor import host_speak_session_welcome
+from agent.show_graph import run_host_moderation_from_queue
 from agent.floor import TurnController
 
 if TYPE_CHECKING:

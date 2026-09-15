@@ -22,6 +22,10 @@ pyyaml>=6.0
 httpx>=0.27.0
 numpy>=1.26.0
 
+# Floor / show controller (host-moderated orchestration)
+langgraph>=0.2.0
+langchain-core>=0.3.0
+
 # TTS — Piper ONNX on GPU (CUDA 12.x). If pip also installs cpu `onnxruntime`, remove it:
 #   pip uninstall -y onnxruntime
 # [zh] pulls g2pw (+ friends) for Chinese voices (huayan / xiao_ya / chaowen).

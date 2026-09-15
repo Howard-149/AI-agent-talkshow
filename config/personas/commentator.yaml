@@ -8,7 +8,6 @@ ui:
   avatar:
     portrait: portraits/ryan.png
     idle_video: loops/ryan-idle.mp4
-    vrm: /avatars/seed-san.vrm
 
 # Personality traits for panel turns (speaking + hand-raise polls).
 personality: |

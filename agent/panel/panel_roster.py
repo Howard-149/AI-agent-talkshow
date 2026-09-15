@@ -42,7 +42,7 @@ def panel_roster_entries(scenario: ScenarioConfig) -> list[dict[str, object]]:
             lk_video = lk_video_enabled()
             if lk_video:
                 avatar["video_transport"] = "livekit"
-            # Portraits / idle loops / VRM are served from laptop talkshow-web/public.
+            # Portraits / idle loops are served from laptop talkshow-web/public.
             # Agent only signals LiveKit transport; no HTTP avatar URLs in roster.
             if avatar_cfg.get("scale") is not None:
                 avatar["scale"] = float(avatar_cfg["scale"])

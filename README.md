@@ -1,10 +1,10 @@
 # AI-Agent-Talkshow
 
-Voice-in / voice-out talk show: **3 AI roles** (Host / Guest / Commentator), **Gemma 4 audio-in**, **Piper TTS**, **LiveKit Agents**, custom frontend in **`talkshow-web/`**.
+Voice-in / voice-out talk show: **3 AI roles** (Host / Guest / Commentator), **Gemma 4 audio-in**, **TTS** (Piper default; **CosyVoice** optional for emotion instruct), optional **DyStream** talking-head avatars, **LiveKit Agents**, custom frontend in **`talkshow-web/`**.
 
 CMU capstone — single RTC agent + role handoff + virtual panel UI (Lessac / Ryan / Amy).
 
-**Collaboration:** [ROADMAP.md](ROADMAP.md) · [CONTRIBUTING.md](CONTRIBUTING.md)
+**Collaboration:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
@@ -25,7 +25,7 @@ Laptop (talkshow-web + token)
 LiveKit Cloud  (LIVEKIT_URL, room e.g. talkshow-dev)
     │
     ▼
-Babel GPU  —  vLLM (Gemma) + agent worker + Piper (3 voices)
+Babel GPU  —  vLLM (Gemma) + agent worker + TTS + optional DyStream/CosyVoice sidecars
 ```
 
 ---
@@ -273,7 +273,7 @@ After **agent code** changes: `git push` from laptop → `git pull` on Babel →
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
 | `config/scenarios/panel_fixed.yaml` | Legacy fixed Ryan → Amy |
 
-Turn modes: **`host_moderated`** (hand-raise + host picks floor), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
+Turn modes: **`host_moderated`** (hand-raise + FIFO; orchestrated by `agent/show_graph` LangGraph, actuators in `agent/floor/host_floor.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
 
 ---
 
@@ -289,12 +289,15 @@ See [talkshow-web/README.md](talkshow-web/README.md).
 
 ## Architecture (short)
 
-Single LiveKit participant; roles hand off in-process with different Piper models. Gemma audio-in per human utterance; panel lines via text API. Shared `show_history` for all roles.
+Single LiveKit participant; roles hand off in-process with per-role TTS. Gemma audio-in per human utterance; panel lines via text API. Shared `show_history` for all roles. Optional DyStream streams lip-synced video on the agent LiveKit track.
 
 ```
-User audio → GemmaAudioSTT → StoredReplyLLM → Piper (active role) → room
+User audio → GemmaAudioSTT → speak_panel_line → TTS (Piper or CosyVoice)
+          → optional DyStream RGBA stream → LiveKit audio + video
           → host-moderated panel → UI events → talkshow-web
 ```
+
+Full Babel stack (sidecars, 3-GPU SLURM): [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
 
 ---
 
@@ -310,7 +313,7 @@ requirements-laptop.txt   ← laptop pip install
 requirements.txt          ← Babel GPU pip install
 ```
 
-Not in git: `.env`, `.cursor/*` (except `.cursor/rules/`), `docs/`
+Not in git: `.env`, `.cursor/`, `docs/` (local notes, knowledge base, Cursor rules/skills)
 
 ---
 

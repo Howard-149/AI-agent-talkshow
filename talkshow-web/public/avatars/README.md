@@ -15,20 +15,4 @@ scp babel:~/AI-agent-talkshow/avatar/assets/portraits/*.png avatar/assets/portra
 
 Browser URLs stay `/avatars/loops/...` and `/avatars/portraits/...` (Next `public/`).
 
-Speech video is LiveKit only; idle is this static loop.
-
-## VRM (optional / legacy)
-
-Binary `.vrm` files stay under this directory (gitignored). Fetch:
-
-```bash
-cd talkshow-web
-bash scripts/fetch-vrm-samples.sh
-```
-
-| File | Role | Source |
-|------|------|--------|
-| `seed-san.vrm` | Host | [Seed-san](https://github.com/vrm-c/vrm-specification/tree/master/samples/Seed-san) |
-| `vrm1-twist-sample.vrm` | Guest | [three-vrm sample](https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm/examples/models) |
-
-Originals under `sources/`. License: [VRM Public License 1.0](https://vrm.dev/en/licenses/1.0/).
+Speech video is LiveKit only (agent `talkshow-avatar` track when `NEXT_PUBLIC_DYSTREAM_ENABLED=1`); idle is the static loop MP4 per role.

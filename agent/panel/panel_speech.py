@@ -173,7 +173,7 @@ async def run_panel_round(
 ) -> None:
     """Dispatch fixed-order panel or host-moderated floor control."""
     if controller.is_host_moderated_mode():
-        from agent.floor.host_floor import run_host_moderated_panel
+        from agent.show_graph import run_host_moderated_panel
 
         await run_host_moderated_panel(session, data, controller)
         return

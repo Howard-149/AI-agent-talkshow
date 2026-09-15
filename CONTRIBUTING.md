@@ -6,18 +6,16 @@ Thanks for collaborating on AI-Agent-Talkshow.
 
 **All files tracked in git must be in English**, including:
 
-- README, ROADMAP, CONTRIBUTING, code comments (new/changed)
+- README, CONTRIBUTING, code comments (new/changed)
 - YAML scenario/persona comments
 - `.env.example` comments
 
-Local-only notes (e.g. `.cursor/soul.md`, personal `docs/`) may use any language.
-
-**Shared Cursor rules** (`.cursor/rules/`) are tracked in git so collaborators get the same agent guidelines.
+Local-only notes (e.g. `.cursor/`, `docs/`, personal `ROADMAP.md`) may use any language and stay out of git.
 
 ## Before you start
 
 1. Read [README.md](README.md) for setup and architecture.
-2. Read [ROADMAP.md](ROADMAP.md) for current priorities.
+2. For Babel sidecars (DyStream, CosyVoice): [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
 3. Copy `.env.example` → `.env` (never commit secrets).
 
 ## Development split
@@ -30,7 +28,7 @@ Local-only notes (e.g. `.cursor/soul.md`, personal `docs/`) may use any language
 | LiveKit media | LiveKit Cloud | Keys in repo root `.env` |
 
 - **Laptop:** do not use `requirements.txt` unless running the full agent on a GPU machine.
-- **Babel:** set per-role Piper paths in `.env` (`PIPER_MODEL_PATH`, `PIPER_MODEL_PATH_GUEST`, `PIPER_MODEL_PATH_COMMENTATOR`; Chinese: `PIPER_MODEL_PATH_ZH` / `PIPER_MODEL_PATH_ZH_*`). See README “Piper voices”.
+- **Babel:** set per-role Piper paths in `.env` (`PIPER_MODEL_PATH`, `PIPER_MODEL_PATH_GUEST`, `PIPER_MODEL_PATH_COMMENTATOR`; Chinese: `PIPER_MODEL_PATH_ZH` / `PIPER_MODEL_PATH_ZH_*`). Optional: `TALKSHOW_TTS_ENGINE=cosyvoice` — see README and RUN-BABEL.
 - Agent on Babel: `git pull` after merge, then restart `python -m agent.main dev`. Copy `.env` to Babel separately (never commit it).
 
 ## Pull requests
@@ -38,13 +36,13 @@ Local-only notes (e.g. `.cursor/soul.md`, personal `docs/`) may use any language
 - One logical change per PR when possible.
 - Describe **why**, not only what.
 - Note if Babel restart or frontend rebuild is required.
-- Link roadmap item if applicable.
 
 ## Key paths
 
 ```
 agent/           LiveKit worker, handoff, panel speech, ui_events
+avatar/          DyStream sidecar integration, streaming synth
 talkshow-web/    Next.js frontend (virtual panel + transcript)
 config/          personas, scenarios, multimodal.yaml
-ROADMAP.md       Planned features
+deploy/          vLLM, sidecars, SLURM
 ```

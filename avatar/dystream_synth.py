@@ -41,6 +41,7 @@ class OnlineStreamStats:
     total_ms: int
     ttff_ms: int
     cuda_mb_peak: float | None
+    profile: dict | None = None
 
 
 _role_cache: dict[str, dict] = {}
@@ -276,8 +277,11 @@ class _FrameRenderer:
         self.width: int | None = None
         self.height: int | None = None
 
-    def render(self, latent_1x512: torch.Tensor) -> bytes:
+    def render(self, latent_1x512: torch.Tensor, profiler: object | None = None) -> bytes:
         """latent: [1, 512] or [512] → RGBA bytes; frees step GPU tensors."""
+        from avatar.dystream_profile import SynthProfiler
+
+        prof = profiler if isinstance(profiler, SynthProfiler) else None
         lat = latent_1x512.detach()
         if lat.dim() == 1:
             lat = lat.unsqueeze(0)
@@ -291,9 +295,15 @@ class _FrameRenderer:
             self._ref_latent = lat.detach().clone()
 
         with torch.inference_mode():
-            tgt = self._flow_estimator(self._ref_latent, lat)
-            recon = self._face_generator(tgt, self._face_feat)
-            rgb = recon.permute(0, 2, 3, 1).detach().float().cpu().numpy()[0]
+            flow_cm = prof.span("vis_flow") if prof is not None else nullcontext()
+            with flow_cm:
+                tgt = self._flow_estimator(self._ref_latent, lat)
+            gen_cm = prof.span("face_gen") if prof is not None else nullcontext()
+            with gen_cm:
+                recon = self._face_generator(tgt, self._face_feat)
+            xfer_cm = prof.span("xfer") if prof is not None else nullcontext()
+            with xfer_cm:
+                rgb = recon.permute(0, 2, 3, 1).detach().float().cpu().numpy()[0]
         del tgt, recon, lat
         rgb_u8 = np.clip((rgb + 1) / 2 * 255, 0, 255).astype("uint8")
         del rgb
@@ -363,6 +373,13 @@ def iter_synthesize_online(
     t_all = time.monotonic()
     mem0 = cuda_mem_mb()
     peak = mem0
+    from avatar.dystream_profile import (
+        SynthProfiler,
+        install_model_hooks,
+        log_summary,
+    )
+
+    profiler = SynthProfiler()
     load_dystream_model()
     load_visualization_model()
 
@@ -377,19 +394,20 @@ def iter_synthesize_online(
     samples_per_pose = int(audio_sr / pose_fps)
 
     t_feat = time.monotonic()
-    audio_self, _ = librosa.load(str(audio_wav), sr=audio_sr)
-    additional_motion_seq = int(_dystream_model.inpainting_length)
-    audio_self = np.concatenate(
-        [
-            np.zeros(additional_motion_seq * samples_per_pose, dtype=np.float32),
-            audio_self.astype(np.float32),
-        ],
-        axis=0,
-    )
-    device = _device()
-    # Keep full waveform on CPU; move window slices to GPU per step.
-    audio_cpu = torch.from_numpy(audio_self).float().unsqueeze(0)
-    audio_other_cpu = torch.zeros_like(audio_cpu)
+    with profiler.maybe("audio_load"):
+        audio_self, _ = librosa.load(str(audio_wav), sr=audio_sr)
+        additional_motion_seq = int(_dystream_model.inpainting_length)
+        audio_self = np.concatenate(
+            [
+                np.zeros(additional_motion_seq * samples_per_pose, dtype=np.float32),
+                audio_self.astype(np.float32),
+            ],
+            axis=0,
+        )
+        device = _device()
+        # Keep full waveform on CPU; move window slices to GPU per step.
+        audio_cpu = torch.from_numpy(audio_self).float().unsqueeze(0)
+        audio_other_cpu = torch.zeros_like(audio_cpu)
     audio_feat_ms = round((time.monotonic() - t_feat) * 1000)
 
     motion_latent = motion_latent_cpu
@@ -428,6 +446,7 @@ def iter_synthesize_online(
     audio_ratio = int(_dystream_model.cfg.audio_fps // _dystream_model.cfg.pose_fps)
     w0, h0 = resized_pil.size
 
+    restore_hooks = install_model_hooks(_dystream_model, _noise_scheduler, profiler)
     try:
         audio_gpu = audio_cpu.to(device)
         audio_other_gpu = audio_other_cpu.to(device)
@@ -436,12 +455,13 @@ def iter_synthesize_online(
         # VRAM grows ~linearly with frame index (streaming OOM; offline does not).
         with ctx, torch.inference_mode():
             t_af = time.monotonic()
-            audio2face_fea = _precompute_audio2face(
-                _dystream_model, audio_gpu, pose_fps, other=False
-            ).detach()
-            audio_other2face_fea = _precompute_audio2face(
-                _dystream_model, audio_other_gpu, pose_fps, other=True
-            ).detach()
+            with profiler.maybe("audio2face"):
+                audio2face_fea = _precompute_audio2face(
+                    _dystream_model, audio_gpu, pose_fps, other=False
+                ).detach()
+                audio_other2face_fea = _precompute_audio2face(
+                    _dystream_model, audio_other_gpu, pose_fps, other=True
+                ).detach()
             motion_ms += round((time.monotonic() - t_af) * 1000)
 
             # Keep waveform for one_clip_only_inference signature (feats are precomputed).
@@ -467,21 +487,22 @@ def iter_synthesize_online(
                 ]
 
                 t_m = time.monotonic()
-                out = _dystream_model.one_clip_only_inference(
-                    per_compute_audio_feature=audio2face_fea[:, start_idx:end_idx],
-                    per_compute_audio_other_feature=audio_other2face_fea[
-                        :, start_idx:end_idx
-                    ],
-                    past_audio_self=past_audio,
-                    audio_self=audio_slice,
-                    past_audio_other=past_audio_other,
-                    audio_other=audio_slice_other,
-                    past_motion=past_motion,
-                    gen_frames=stride,
-                    anchor_latent=anchor_motion,
-                    noise_scheduler=_noise_scheduler,
-                    num_inference_steps=denoising_steps,
-                )
+                with profiler.maybe("ar_fm"):
+                    out = _dystream_model.one_clip_only_inference(
+                        per_compute_audio_feature=audio2face_fea[:, start_idx:end_idx],
+                        per_compute_audio_other_feature=audio_other2face_fea[
+                            :, start_idx:end_idx
+                        ],
+                        past_audio_self=past_audio,
+                        audio_self=audio_slice,
+                        past_audio_other=past_audio_other,
+                        audio_other=audio_slice_other,
+                        past_motion=past_motion,
+                        gen_frames=stride,
+                        anchor_latent=anchor_motion,
+                        noise_scheduler=_noise_scheduler,
+                        num_inference_steps=denoising_steps,
+                    )
                 out = out.detach()
                 motion_ms += round((time.monotonic() - t_m) * 1000)
 
@@ -493,7 +514,7 @@ def iter_synthesize_online(
                 for fi in range(out.shape[1]):
                     lat = out[:, fi, :].detach()
                     t_r = time.monotonic()
-                    rgba = renderer.render(lat)
+                    rgba = renderer.render(lat, profiler=profiler)
                     render_ms += round((time.monotonic() - t_r) * 1000)
                     del lat
                     frame_count += 1
@@ -530,6 +551,7 @@ def iter_synthesize_online(
         del audio_gpu, audio_other_gpu, audio2face_fea, audio_other2face_fea
         del past_motion, anchor_motion
     finally:
+        restore_hooks()
         renderer.close()
         release_cuda()
 
@@ -543,6 +565,11 @@ def iter_synthesize_online(
         )
 
     total_ms = round((time.monotonic() - t_all) * 1000)
+    profile = profiler.summary(
+        frames=frame_count, steps=denoising_steps, window=window
+    )
+    if profiler.enabled:
+        log_summary(profile)
     logger.info(
         "iter_synthesize_online frames=%d expected=%d ttff_ms=%d motion_ms=%d "
         "render_ms=%d total_ms=%d cuda_mb_before=%s peak=%s",
@@ -562,5 +589,6 @@ def iter_synthesize_online(
         total_ms=total_ms,
         ttff_ms=ttff_ms,
         cuda_mb_peak=peak,
+        profile=profile if profiler.enabled else None,
     )
 
