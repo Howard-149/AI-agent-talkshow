@@ -99,11 +99,23 @@ if [[ -n "${SLURM_CVD}" ]]; then
   export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
 fi
 
+# Avatar off (TALKSHOW_AVATAR_ENABLED unset/0) → skip DyStream; 2 GPUs are enough:
+#   sbatch --gpus=2 deploy/slurm-talkshow-3gpu.sh
+case "${TALKSHOW_AVATAR_ENABLED:-0}" in
+  1|true|yes|on) AVATAR_ON=1 ;;
+  *) AVATAR_ON=0 ;;
+esac
+echo "avatar=${AVATAR_ON} (TALKSHOW_AVATAR_ENABLED=${TALKSHOW_AVATAR_ENABLED:-<unset>})"
+
 # Intended slots WITHIN the SLURM allocation (indices into CUDA_VISIBLE_DEVICES).
 # Prefer .env; fall back to 0/1/2 only when unset.
 export VLLM_CUDA_DEVICE="${VLLM_CUDA_DEVICE:-0}"
 export DYSTREAM_CUDA_DEVICE="${DYSTREAM_CUDA_DEVICE:-1}"
-export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-2}"
+if [[ "${AVATAR_ON}" == "1" ]]; then
+  export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-2}"
+else
+  export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-1}"
+fi
 
 # Per-service conda envs (.env may set TALKSHOW_CONDA_ENV / DYSTREAM_CONDA_ENV / COSYVOICE_CONDA_ENV).
 ENV_TALKSHOW="${TALKSHOW_CONDA_ENV:-talkshow}"
@@ -120,10 +132,11 @@ conda activate "${ENV_TALKSHOW}"
 echo "agent/vLLM env=${ENV_TALKSHOW} python=$(command -v python) $(python -V 2>&1)"
 
 # Fill *_PYTHON from conda envs when .env left them unset.
-if [[ -z "${DYSTREAM_PYTHON:-}" ]]; then
+if [[ "${AVATAR_ON}" == "1" && -z "${DYSTREAM_PYTHON:-}" ]]; then
   DYSTREAM_PYTHON="$(conda_env_python "${ENV_DYSTREAM}")" \
     || { echo "FATAL: no python for conda env ${ENV_DYSTREAM}; set DYSTREAM_PYTHON in .env" >&2; exit 1; }
 fi
+[[ "${AVATAR_ON}" == "1" ]] || DYSTREAM_PYTHON="${DYSTREAM_PYTHON:-<avatar-off>}"
 if [[ -z "${COSYVOICE_PYTHON:-}" ]]; then
   COSYVOICE_PYTHON="$(conda_env_python "${ENV_COSYVOICE}")" \
     || { echo "FATAL: no python for conda env ${ENV_COSYVOICE}; set COSYVOICE_PYTHON in .env" >&2; exit 1; }
@@ -149,15 +162,17 @@ if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   exit 1
 fi
 IFS=',' read -r -a ALLOC_GPUS <<< "${CUDA_VISIBLE_DEVICES}"
-if ((${#ALLOC_GPUS[@]} < 3)); then
-  echo "FATAL: need 3 GPUs; got ${#ALLOC_GPUS[@]} (${CUDA_VISIBLE_DEVICES})" >&2
+NEED_GPUS=$((AVATAR_ON == 1 ? 3 : 2))
+if ((${#ALLOC_GPUS[@]} < NEED_GPUS)); then
+  echo "FATAL: need ${NEED_GPUS} GPUs; got ${#ALLOC_GPUS[@]} (${CUDA_VISIBLE_DEVICES})" >&2
   exit 1
 fi
 
 # Catch .env foot-guns that force CosyVoice onto DyStream's slot.
-if [[ "${DYSTREAM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]] \
-  || [[ "${VLLM_CUDA_DEVICE}" == "${DYSTREAM_CUDA_DEVICE}" ]] \
-  || [[ "${VLLM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]]; then
+if [[ "${VLLM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]] \
+  || { [[ "${AVATAR_ON}" == "1" ]] && {
+    [[ "${DYSTREAM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]] \
+      || [[ "${VLLM_CUDA_DEVICE}" == "${DYSTREAM_CUDA_DEVICE}" ]]; }; }; then
   echo "FATAL: GPU slots must be distinct:" >&2
   echo "  VLLM_CUDA_DEVICE=${VLLM_CUDA_DEVICE}" >&2
   echo "  DYSTREAM_CUDA_DEVICE=${DYSTREAM_CUDA_DEVICE}" >&2
@@ -174,7 +189,7 @@ echo "=============================================="
 echo "talkshow SLURM job ${JOB_TAG}"
 echo "  SLURM CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "  slots: vLLM=${VLLM_CUDA_DEVICE} DyStream=${DYSTREAM_CUDA_DEVICE} CosyVoice=${COSYVOICE_CUDA_DEVICE}"
-echo "  physical map: slot0=${ALLOC_GPUS[0]} slot1=${ALLOC_GPUS[1]} slot2=${ALLOC_GPUS[2]}"
+echo "  physical map: slot0=${ALLOC_GPUS[0]} slot1=${ALLOC_GPUS[1]} slot2=${ALLOC_GPUS[2]:-none}"
 echo "  envs: ${ENV_TALKSHOW} / ${ENV_DYSTREAM} / ${ENV_COSYVOICE}"
 echo "  stagger=${TALKSHOW_STAGGER_START:-0} (1 = vLLM first, then sidecars)"
 echo "  child logs → ${LOG_DIR}"
@@ -185,7 +200,7 @@ echo "=============================================="
   echo "# talkshow GPU bind plan $(date -Is) job=${JOB_TAG} host=$(hostname)"
   echo "SLURM_CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
   echo "slot_intent vLLM=${VLLM_CUDA_DEVICE} DyStream=${DYSTREAM_CUDA_DEVICE} CosyVoice=${COSYVOICE_CUDA_DEVICE}"
-  echo "slot_physical 0→${ALLOC_GPUS[0]} 1→${ALLOC_GPUS[1]} 2→${ALLOC_GPUS[2]}"
+  echo "slot_physical 0→${ALLOC_GPUS[0]} 1→${ALLOC_GPUS[1]} 2→${ALLOC_GPUS[2]:-none}"
   nvidia-smi -L 2>/dev/null || true
 } | tee "${GPU_BIND_LOG}"
 
@@ -284,6 +299,9 @@ report_gpu_bind() {
     nvidia-smi --query-compute-apps=gpu_uuid,gpu_bus_id,pid,process_name,used_gpu_memory --format=csv 2>/dev/null || true
   } | tee -a "${GPU_BIND_LOG}"
 
+  if [[ "${AVATAR_ON}" != "1" ]]; then
+    cvd_d="off"
+  fi
   if [[ -z "${cvd_v}" || -z "${cvd_d}" || -z "${cvd_c}" ]]; then
     echo "WARN: could not resolve all three CVDs — check ${GPU_BIND_LOG}" | tee -a "${GPU_BIND_LOG}"
     return 0
@@ -344,17 +362,19 @@ if [[ "${TALKSHOW_STAGGER_START:-0}" == "1" ]]; then
   echo "TALKSHOW_STAGGER_START=1 — vLLM first, then DyStream+CosyVoice"
   start_vllm
   wait_http "vLLM" "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" "" 900 "${VLLM_PID}" "${LOG_DIR}/vllm.log"
-  start_dystream
+  [[ "${AVATAR_ON}" == "1" ]] && start_dystream
   start_cosyvoice
 else
-  echo "Parallel start: vLLM + DyStream + CosyVoice (128G mem; set TALKSHOW_STAGGER_START=1 if OOM)"
+  echo "Parallel start: vLLM + CosyVoice$([[ "${AVATAR_ON}" == "1" ]] && echo " + DyStream") (128G mem; set TALKSHOW_STAGGER_START=1 if OOM)"
   start_vllm
-  start_dystream
+  [[ "${AVATAR_ON}" == "1" ]] && start_dystream
   start_cosyvoice
 fi
 
 wait_http "vLLM" "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" "" 900 "${VLLM_PID}" "${LOG_DIR}/vllm.log"
-wait_http "DyStream" "${DYSTREAM_SIDECAR_URL:-http://127.0.0.1:8766}/health" "models_warmed" 900 "${DYSTREAM_PID}" "${LOG_DIR}/dystream.log"
+if [[ "${AVATAR_ON}" == "1" ]]; then
+  wait_http "DyStream" "${DYSTREAM_SIDECAR_URL:-http://127.0.0.1:8766}/health" "models_warmed" 900 "${DYSTREAM_PID}" "${LOG_DIR}/dystream.log"
+fi
 wait_http "CosyVoice" "${COSYVOICE_SIDECAR_URL:-http://127.0.0.1:8767}/health" "" 900 "${COSYVOICE_PID}" "${LOG_DIR}/cosyvoice.log"
 
 report_gpu_bind

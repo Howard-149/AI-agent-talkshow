@@ -60,9 +60,17 @@ Logs:
 - `logs/slurm-<jobid>/{vllm,dystream,cosyvoice,agent}.log`
 - GPU bind check: `cat logs/slurm-<jobid>/gpu-bind.txt`
 
-Wait until vLLM (`:8000/v1/models`), DyStream (`:8766/health`), and CosyVoice (`:8767/health`) are up — the script blocks on those, then starts the agent. Room name defaults to **`talkshow-dev`**.
+Wait until vLLM (`:8000/v1/models`), DyStream (`:8766/health`, avatar runs only), and CosyVoice (`:8767/health`) are up — the script blocks on those, then starts the agent. Room name defaults to **`talkshow-dev`**.
 
 If host RAM OOMs while models load: `TALKSHOW_STAGGER_START=1 sbatch --export=ALL deploy/slurm-talkshow-3gpu.sh`.
+
+**Audio-only (no avatar).** The script skips DyStream and needs only 2 GPUs:
+
+| Where | Setting |
+|-------|---------|
+| Babel `.env` | `TALKSHOW_AVATAR_ENABLED=0`, `COSYVOICE_CUDA_DEVICE=1` (slot 2 does not exist with 2 GPUs) |
+| Laptop `.env` | `NEXT_PUBLIC_DYSTREAM_ENABLED=0` |
+| Submit | `sbatch --gpus=2 deploy/slurm-talkshow-3gpu.sh` |
 
 After **agent code** changes: push / sync → `scancel` the old job (or let it finish) → `sbatch` again. Frontend-only changes stay on the laptop (`pnpm dev`).
 
