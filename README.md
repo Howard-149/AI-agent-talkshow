@@ -1,6 +1,6 @@
 # AI-Agent-Talkshow
 
-Voice-in / voice-out talk show: **3 AI roles** (Host / Guest / Commentator), **Gemma 4 audio-in**, **TTS** (Piper default; **CosyVoice** optional for emotion instruct), optional **DyStream** talking-head avatars, **LiveKit Agents**, custom frontend in **`talkshow-web/`**.
+Voice-in / voice-out talk show: **3 AI roles** (Host / Guest / Commentator), **Gemma 4 audio-in**, **CosyVoice TTS** (default), optional **DyStream** talking-head avatars, **LiveKit Agents**, custom frontend in **`talkshow-web/`**.
 
 CMU capstone — single RTC agent + role handoff + virtual panel UI (Lessac / Ryan / Amy).
 
@@ -13,10 +13,11 @@ CMU capstone — single RTC agent + role handoff + virtual panel UI (Lessac / Ry
 | Machine | You install | You run |
 |---------|-------------|---------|
 | **Laptop** | `requirements-laptop.txt` + Node/pnpm | `api/tokens.py`, `talkshow-web` (`pnpm dev`) |
-| **Babel GPU node** | `requirements.txt` (conda `talkshow`, **Python 3.11**) | vLLM + `python -m agent.main dev` |
+| **Babel (login node)** | — | `sbatch deploy/slurm-talkshow-3gpu.sh` |
+| **Babel GPU (the SLURM job)** | `requirements.txt` (conda `talkshow`, **Python 3.11**) + CosyVoice / DyStream sidecars | vLLM + CosyVoice + DyStream + `python -m agent.main dev` |
 | **LiveKit Cloud** | (project keys in `.env`) | WebRTC room — no self-hosted server |
 
-You do **not** need vLLM, Piper, or the full agent stack on your laptop.
+You do **not** need vLLM, CosyVoice, or the full agent stack on your laptop.
 
 ```
 Laptop (talkshow-web + token)
@@ -25,7 +26,68 @@ Laptop (talkshow-web + token)
 LiveKit Cloud  (LIVEKIT_URL, room e.g. talkshow-dev)
     │
     ▼
-Babel GPU  —  vLLM (Gemma) + agent worker + TTS + optional DyStream/CosyVoice sidecars
+Babel 3-GPU job  —  vLLM (Gemma) + CosyVoice TTS + DyStream + agent worker
+```
+
+---
+
+## How to run a session
+
+### 1. Babel — start the 3-GPU stack
+
+From a Babel **login** node (not an interactive GPU shell). The job starts vLLM, the DyStream sidecar, the **CosyVoice** sidecar, then the agent worker.
+
+| CUDA slot (`.env` / default) | Conda env | Process |
+|------------------------------|-----------|---------|
+| `VLLM_CUDA_DEVICE` (0) | `talkshow` | vLLM Gemma |
+| `DYSTREAM_CUDA_DEVICE` (1) | `dystream` | DyStream sidecar |
+| `COSYVOICE_CUDA_DEVICE` (2) | `cosyvoice_vllm` | CosyVoice sidecar |
+| all slots visible | `talkshow` | `python -m agent.main dev` |
+
+```bash
+ssh babel
+cd ~/AI-agent-talkshow
+mkdir -p slurm-logs
+git pull    # or sync from the laptop: ./scripts/sync-to-babel.sh
+
+sbatch deploy/slurm-talkshow-3gpu.sh
+# Override partition if needed:  sbatch -p <name> deploy/slurm-talkshow-3gpu.sh
+```
+
+Logs:
+
+- `slurm-logs/slurm-talkshow-<jobid>.{out,err}`
+- `logs/slurm-<jobid>/{vllm,dystream,cosyvoice,agent}.log`
+- GPU bind check: `cat logs/slurm-<jobid>/gpu-bind.txt`
+
+Wait until vLLM (`:8000/v1/models`), DyStream (`:8766/health`), and CosyVoice (`:8767/health`) are up — the script blocks on those, then starts the agent. Room name defaults to **`talkshow-dev`**.
+
+If host RAM OOMs while models load: `TALKSHOW_STAGGER_START=1 sbatch --export=ALL deploy/slurm-talkshow-3gpu.sh`.
+
+After **agent code** changes: push / sync → `scancel` the old job (or let it finish) → `sbatch` again. Frontend-only changes stay on the laptop (`pnpm dev`).
+
+Sidecar install and `.env` keys: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
+
+### 2. Laptop — frontend + token
+
+```bash
+cd talkshow-web && pnpm dev          # http://localhost:3000
+# another terminal, repo root, venv active:
+python api/tokens.py --room talkshow-dev --identity your-name
+```
+
+Paste `LIVEKIT_URL` + `TOKEN` into the **Talkshow (token)** tab. **Room name must match** the Babel agent (default `talkshow-dev`).
+
+### 3. Optional — ghost session (no mic)
+
+Same running 3-GPU job. See [eval/ghost_session/README.md](eval/ghost_session/README.md).
+
+```bash
+# Babel (no frontend recording):
+python -m eval.ghost_session
+
+# Laptop (record the real UI):
+python -m eval.ghost_session --record --start-frontend
 ```
 
 ---
@@ -65,7 +127,9 @@ Edit **at minimum** on the laptop:
 | `LIVEKIT_API_KEY` | same |
 | `LIVEKIT_API_SECRET` | same |
 
-Laptop `.env` does **not** need Piper paths or `VLLM_*` unless you are also developing on Babel. The frontend reads this same file via `talkshow-web/next.config.js` — **no** `talkshow-web/.env.local`.
+Laptop `.env` does **not** need CosyVoice / vLLM paths unless you are also developing on Babel. The frontend reads this same file via `talkshow-web/next.config.js` — **no** `talkshow-web/.env.local`.
+
+For avatars in the panel: `NEXT_PUBLIC_DYSTREAM_ENABLED=1`.
 
 ### 3. Frontend
 
@@ -76,175 +140,196 @@ pnpm dev
 # → http://localhost:3000
 ```
 
-### 4. Token + connect
-
-In **another terminal** (repo root, venv active):
-
-```bash
-source .venv/bin/activate
-python api/tokens.py --room talkshow-dev --identity your-name
-```
-
-Copy `LIVEKIT_URL` + `TOKEN` into the **Talkshow (token)** tab, or use the printed values. **Room name must match** what the Babel agent uses (default `talkshow-dev`).
-
-### 5. Laptop checklist
+### 4. Laptop checklist
 
 - [ ] `pip install -r requirements-laptop.txt` (not `requirements.txt`)
 - [ ] Root `.env` has LiveKit URL + key + secret
 - [ ] `pnpm dev` in `talkshow-web/`
-- [ ] Agent worker running on Babel (see below)
+- [ ] 3-GPU job running on Babel (`sbatch deploy/slurm-talkshow-3gpu.sh`)
 - [ ] Same room name on token and cluster
 
 ---
 
-## Teammate setup — Babel GPU node (one-time)
+## Teammate setup — Babel (one-time)
 
-Only needed if you run or debug the **agent / vLLM**. Coordinate so one person’s interactive GPU session runs the shared dev stack, or use your own `$USER` paths below.
+Only if you submit or debug the **agent / vLLM / sidecars**. Replace `$USER` with your Babel username. Conda may live in `~/miniconda3` or `/data/user_data/$USER/miniconda3` — use whichever you actually have (`which python` after `conda activate`).
 
-### 1. Get code on Babel
+The 3-GPU job needs **three separate conda envs** (three Python binaries). Do not pip-install CosyVoice or DyStream into `talkshow`.
 
-Clone the GitHub repo on the GPU node (or `git pull` after you push from your laptop):
+| Env | Python | Used by |
+|-----|--------|---------|
+| `talkshow` | **3.11** | vLLM + agent worker |
+| `dystream` | **3.11** | DyStream sidecar |
+| `cosyvoice_vllm` | **3.10** | CosyVoice sidecar |
+
+### 1. Code + `.env` stub
 
 ```bash
 git clone <repo-url> ~/AI-agent-talkshow
 cd ~/AI-agent-talkshow
-```
-
-`.env` is not in git — copy your filled `.env` to Babel separately (scp, or recreate from `.env.example`).
-
-### 2. Conda env + Python deps
-
-On the GPU node, use **Python 3.11** (matches vLLM cu129 wheel and LiveKit Agents):
-
-```bash
-conda create -n talkshow python=3.11 -y   # skip if env already exists
-conda activate talkshow
-cd ~/AI-agent-talkshow
-pip install -r requirements.txt
-python --version   # should print 3.11.x
-```
-
-`requirements.txt` includes LiveKit Agents, Piper, vLLM (cu129 wheel), etc. **Laptop uses `requirements-laptop.txt` instead** (any recent Python 3.10+ for venv is fine).
-
-### 3. Download models (private paths under `/data/user_data/$USER/`)
-
-Replace `$USER` with your Babel username everywhere.
-
-```bash
-# Piper — English panel + Chinese default (huayan)
-bash deploy/download-piper-voices.sh en zh
-
-# Turn-detector + Silero ONNX (agent VAD / end-of-turn)
-source .env   # after step 4, or export TALKSHOW_TURN_DETECTOR_CACHE first
-bash deploy/download-livekit-agent-models.sh
-```
-
-Gemma weights: use your team’s existing vLLM model path, or set `VLLM_MODEL_PATH` in `.env` (see deploy script `deploy/vllm-gemma4-audio.sh`).
-
-### 4. Babel `.env`
-
-```bash
 cp .env.example .env
 ```
 
-Edit with **your** `$USER` (not a teammate’s). Critical paths:
+Fill LiveKit keys and the path variables in step 6 **before** you download models (several scripts `source .env`). `.env` is not in git — scp a filled copy if you already have one on the laptop.
 
-#### LiveKit (same project as laptops)
-
-```
-LIVEKIT_URL=wss://….
-LIVEKIT_API_KEY=…
-LIVEKIT_API_SECRET=…
-```
-
-#### Piper voices
-
-Catalog: [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).  
-Voice id = `{locale}-{speaker}-{quality}` (folder `en/…` or `zh/zh_CN/…`).  
-List short names: `bash deploy/download-piper-voices.sh --list`
-
-**English (always)** — one ONNX per role:
-
-| Role | Default voice | `.env` | Example path |
-|------|---------------|--------|--------------|
-| Host | `en_US-lessac-medium` | `PIPER_MODEL_PATH` | `/data/user_data/$USER/piper/en_US-lessac-medium.onnx` |
-| Guest | `en_US-amy-medium` | `PIPER_MODEL_PATH_GUEST` | `/data/user_data/$USER/piper/en_US-amy-medium.onnx` |
-| Commentator | `en_US-ryan-medium` | `PIPER_MODEL_PATH_COMMENTATOR` | `/data/user_data/$USER/piper/en_US-ryan-medium.onnx` |
+### 2. `talkshow` env (agent + vLLM)
 
 ```bash
-bash deploy/download-piper-voices.sh en                    # lessac + amy + ryan
-bash deploy/download-piper-voices.sh en_US-kristin-medium  # pick another
+conda create -n talkshow python=3.11 -y
+conda activate talkshow
+cd ~/AI-agent-talkshow
+pip install -r requirements.txt
+python --version   # 3.11.x
 ```
 
-If `PIPER_MODEL_PATH_GUEST` / `_COMMENTATOR` are unset, those roles fall back to the host voice.
-
-**Chinese (only when a zh viewer is in the room):**
-
-Chinese Piper voices use G2PW phonemization — install the optional extras once in the `talkshow` env:
+Login-node pip is often slow or blocked. Prefer:
 
 ```bash
-pip install "piper-tts[zh]"   # or: pip install -r requirements.txt
-bash deploy/download-piper-voices.sh zh                     # zh_CN-huayan-medium
-bash deploy/download-piper-voices.sh zh_CN-xiao_ya-medium
+mkdir -p slurm-logs
+sbatch deploy/slurm-install-deps.sh
 ```
 
-| `.env` | Meaning |
-|--------|---------|
-| `PIPER_MODEL_PATH_ZH` | Shared Chinese voice for every role |
-| `PIPER_MODEL_PATH_ZH_HOST` / `_GUEST` / `_COMMENTATOR` | Optional per-role Chinese voices |
+Gemma: first `vllm serve` can pull `google/gemma-4-E4B-it` from Hugging Face, or set `VLLM_MODEL_PATH=/data/user_data/$USER/models/gemma-4-E4B-it` if the team already has weights. Keep `VLLM_MODEL=google/gemma-4-E4B-it` as the API id either way.
 
-Each `.onnx` needs a sibling `.onnx.json` (the download script creates both). Restart the agent worker after changing paths.
+### 3. LiveKit agent ONNX (VAD / end-of-turn)
 
-#### vLLM (same GPU node as agent)
-
-```
-VLLM_BASE_URL=http://127.0.0.1:8000/v1
-VLLM_MODEL=google/gemma-4-E4B-it
-# optional local weights:
-# VLLM_MODEL_PATH=/data/user_data/$USER/models/gemma-4-E4B-it
-```
-
-#### Turn-detector cache (per-user, not shared `/data/hf_cache`)
+In `.env`:
 
 ```
 TALKSHOW_TURN_DETECTOR_CACHE=/data/user_data/$USER/livekit-turn-detector/hub
 TALKSHOW_ORT_NUM_THREADS=1
 ```
 
-#### Optional tuning
-
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `SCENARIO_PATH` | `config/scenarios/default.yaml` | `host_moderated` (default) or `panel_fixed.yaml` for fixed Ryan→Amy |
-| `TALKSHOW_HISTORY_MAX_LINES` | `48` | Shared transcript length sent to Gemma |
-| `TALKSHOW_PANEL_MAX_TURNS` | `12` | Max panel speeches per human turn |
-| `TALKSHOW_IDLE_TOPIC_SEC` | `60` | Host opens topic if room is quiet |
-
-### 5. Run each session (two tmux panes, same GPU node)
-
 ```bash
-# tmux 1 — vLLM
-bash deploy/vllm-gemma4-audio.sh
-
-# tmux 2 — agent worker
-cd ~/AI-agent-talkshow
-source .env
-python -m agent.main dev
+set -a && source .env && set +a
+bash deploy/download-livekit-agent-models.sh
 ```
 
-Smoke-test vLLM: `curl -s http://127.0.0.1:8000/v1/models`
+### 4. CosyVoice (default TTS)
 
-After **agent code** changes: `git push` from laptop → `git pull` on Babel → restart agent in tmux 2. Frontend-only changes stay on the laptop (`pnpm dev`); Babel only needs `agent/`, `config/`, `deploy/`, etc.
+Do **not** `pip install` CosyVoice into `talkshow`. The 3-GPU job looks for conda env **`cosyvoice_vllm`** (Python 3.10). Login-node pip is usually too slow for torch / vLLM — create the empty env on login, then install on a GPU node.
 
-### 6. Babel checklist
+**4a. Clone + Fun-CosyVoice3 weights** (login is fine):
 
-- [ ] Conda env `talkshow` with **Python 3.11**; `pip install -r requirements.txt`
-- [ ] Piper ONNX + JSON for lessac, amy, ryan under `/data/user_data/$USER/piper/`
-- [ ] `.env` `PIPER_MODEL_PATH*` points at those three files
-- [ ] (Multilingual) `bash deploy/download-piper-voices.sh zh` and `PIPER_MODEL_PATH_ZH` set
-- [ ] `download-livekit-agent-models.sh` run; `TALKSHOW_TURN_DETECTOR_CACHE` set
-- [ ] vLLM up on `:8000`, then agent `dev`
-- [ ] Log shows `ONNX/thread env ORT_NUM_THREADS=1` and no `pthread_setaffinity_np` errors
+```bash
+export COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
+git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git "${COSYVOICE_ROOT}"
+# if you cloned without --recursive:
+#   cd "${COSYVOICE_ROOT}" && git submodule update --init --recursive
+
+export HF_TOKEN=hf_...
+huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 \
+  --local-dir "${COSYVOICE_ROOT}/pretrained_models/Fun-CosyVoice3-0.5B"
+```
+
+**4b. Create + install env `cosyvoice_vllm`:**
+
+```bash
+# login: empty env only
+conda create -n cosyvoice_vllm python=3.10 -y
+
+# GPU node: inference deps + vLLM 0.11 (needed by the sidecar)
+srun -p preempt --gres=gpu:1 --mem=32G --time=02:00:00 --pty bash
+cd ~/AI-agent-talkshow
+export COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
+export COSYVOICE_CONDA_ENV=cosyvoice_vllm   # must match slurm-talkshow-3gpu.sh
+bash deploy/install-cosyvoice-env.sh
+```
+
+That script `conda create`s the env if missing, then `pip install`s `deploy/cosyvoice-requirements-inference.txt` plus vLLM/TensorRT. Do **not** `pip install -r "${COSYVOICE_ROOT}/requirements.txt"`.
+
+```bash
+conda activate cosyvoice_vllm
+python --version                                          # 3.10.x
+python -c "import whisper; print('whisper ok')"
+python -c "import vllm; print('vllm', vllm.__version__)"  # 0.11.x
+which python
+# → COSYVOICE_PYTHON=.../envs/cosyvoice_vllm/bin/python
+```
+
+**Prompt wavs** (`cosyvoice-prompts/`) are Howard’s local test clips. Teammates skip bake / copy.
+
+### 5. DyStream (talking heads)
+
+Do **not** `pip install` DyStream into `talkshow` or `pip install -r $DYSTREAM_ROOT/requirements.txt` (upstream pins conflict). The 3-GPU job looks for conda env **`dystream`** (Python 3.11).
+
+**5a. Clone + weights** (login is fine; HF token required on Babel shared IPs):
+
+```bash
+export DYSTREAM_ROOT=/data/user_data/$USER/dystream
+export HF_TOKEN=hf_...
+huggingface-cli whoami          # must print your HF user, not "Not logged in"
+git clone https://github.com/RobinWitch/DyStream.git "${DYSTREAM_ROOT}"
+cd ~/AI-agent-talkshow
+bash deploy/download-dystream-weights.sh   # checkpoints/ + tools/ into DYSTREAM_ROOT
+bash deploy/init-avatar-dirs.sh            # portraits / idle loops
+```
+
+**5b. Create + install env `dystream`:**
+
+```bash
+conda create -n dystream python=3.11 -y
+
+srun -p preempt --gres=gpu:1 --mem=32G --time=02:00:00 --pty bash
+cd ~/AI-agent-talkshow
+export DYSTREAM_ROOT=/data/user_data/$USER/dystream
+export DYSTREAM_CONDA_ENV=dystream
+bash deploy/install-dystream-env.sh        # curated deps, not upstream requirements.txt
+```
+
+```bash
+conda activate dystream
+python --version                           # 3.11.x
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+which python
+# → DYSTREAM_PYTHON=.../envs/dystream/bin/python
+```
+
+### 6. Babel `.env` (minimum for `slurm-talkshow-3gpu.sh`)
+
+Point `*_PYTHON` at the interpreters you just created (`conda activate … && which python`).
+
+```
+LIVEKIT_URL=wss://….
+LIVEKIT_API_KEY=…
+LIVEKIT_API_SECRET=…
+
+VLLM_BASE_URL=http://127.0.0.1:8000/v1
+VLLM_MODEL=google/gemma-4-E4B-it
+# VLLM_MODEL_PATH=/data/user_data/$USER/models/gemma-4-E4B-it
+
+TALKSHOW_TTS_ENGINE=cosyvoice
+COSYVOICE_MODE=instruct2
+COSYVOICE_SIDECAR_URL=http://127.0.0.1:8767
+COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
+COSYVOICE_MODEL_DIR=/data/user_data/$USER/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B
+COSYVOICE_PYTHON=/data/user_data/$USER/miniconda3/envs/cosyvoice_vllm/bin/python
+COSYVOICE_CUDA_DEVICE=2
+COSYVOICE_CONDA_ENV=cosyvoice_vllm
+
+DYSTREAM_ROOT=/data/user_data/$USER/dystream
+DYSTREAM_PYTHON=/data/user_data/$USER/miniconda3/envs/dystream/bin/python
+DYSTREAM_CUDA_DEVICE=1
+DYSTREAM_SIDECAR_URL=http://127.0.0.1:8766
+DYSTREAM_CONDA_ENV=dystream
+TALKSHOW_AVATAR_ENABLED=1
+TALKSHOW_AVATAR_LK_VIDEO=1
+NEXT_PUBLIC_DYSTREAM_ENABLED=1
+
+TALKSHOW_TURN_DETECTOR_CACHE=/data/user_data/$USER/livekit-turn-detector/hub
+TALKSHOW_ORT_NUM_THREADS=1
+```
+
+The job fails if the three GPU slots or three Python paths collide. Extra sidecar knobs: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
+
+### 7. Babel checklist
+
+- [ ] `talkshow` **Python 3.11** + `pip install -r requirements.txt` (or `slurm-install-deps.sh`)
+- [ ] LiveKit ONNX in `TALKSHOW_TURN_DETECTOR_CACHE`
+- [ ] CosyVoice clone + Fun-CosyVoice3 weights + env `cosyvoice_vllm`
+- [ ] DyStream clone + weights + env `dystream` + `init-avatar-dirs.sh`
+- [ ] `.env` LiveKit keys match the laptop; `TALKSHOW_TTS_ENGINE=cosyvoice`
+- [ ] `sbatch deploy/slurm-talkshow-3gpu.sh` — health on `:8000`, `:8766`, `:8767`, then agent log
 
 ---
 
@@ -252,10 +337,12 @@ After **agent code** changes: `git push` from laptop → `git pull` on Babel →
 
 | Task | Where | Command |
 |------|--------|---------|
+| Start the show stack | Babel login | `sbatch deploy/slurm-talkshow-3gpu.sh` |
 | UI / panel / transcript | Laptop | `cd talkshow-web && pnpm dev` |
 | Mint token | Laptop | `python api/tokens.py --room talkshow-dev --identity <you>` |
-| Edit agent logic | Git + Babel | edit `agent/`, `git push` → on Babel `git pull`, restart agent |
-| Run voice pipeline | Babel | vLLM + `python -m agent.main dev` |
+| Edit agent logic | Git + Babel | edit `agent/`, push / `sync-to-babel.sh`, resubmit the 3-GPU job |
+| Ghost session (no mic) | Babel | `python -m eval.ghost_session` |
+| Record ghost frontend | Laptop | `python -m eval.ghost_session --record` |
 | Change persona text | Git | `config/personas/*.yaml` |
 | Change turn order / mode | Git | `config/scenarios/*.yaml` |
 
@@ -266,8 +353,8 @@ After **agent code** changes: `git push` from laptop → `git pull` on Babel →
 | Path | Purpose |
 |------|---------|
 | `.env` (repo root) | Secrets + Babel paths; shared by token script and `talkshow-web` |
-| `config/multimodal.yaml` | Default vLLM URL, fallback Piper path template (`${USER}`) |
-| `config/personas/host.yaml` | Lessac instructions + `piper_voice` |
+| `config/multimodal.yaml` | Default vLLM URL |
+| `config/personas/host.yaml` | Lessac — CosyVoice prompt wav under `tts.cosyvoice` |
 | `config/personas/guest.yaml` | Amy |
 | `config/personas/commentator.yaml` | Ryan |
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
@@ -289,15 +376,15 @@ See [talkshow-web/README.md](talkshow-web/README.md).
 
 ## Architecture (short)
 
-Single LiveKit participant; roles hand off in-process with per-role TTS. Gemma audio-in per human utterance; panel lines via text API. Shared `show_history` for all roles. Optional DyStream streams lip-synced video on the agent LiveKit track.
+Single LiveKit participant; roles hand off in-process with per-role TTS. Gemma audio-in per human utterance; panel lines via text API. Shared `show_history` for all roles. DyStream streams lip-synced video on the agent LiveKit track.
 
 ```
-User audio → GemmaAudioSTT → speak_panel_line → TTS (Piper or CosyVoice)
+User audio → GemmaAudioSTT → speak_panel_line → CosyVoice sidecar
           → optional DyStream RGBA stream → LiveKit audio + video
           → host-moderated panel → UI events → talkshow-web
 ```
 
-Full Babel stack (sidecars, 3-GPU SLURM): [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
+Full sidecar / SLURM notes: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
 
 ---
 
@@ -307,10 +394,10 @@ Full Babel stack (sidecars, 3-GPU SLURM): [deploy/RUN-BABEL.md](deploy/RUN-BABEL
 agent/              LiveKit worker, host_floor, ui_events
 talkshow-web/       Next.js frontend
 config/             personas/, scenarios/, multimodal.yaml
-deploy/             vLLM launch, Piper / turn-detector download
+deploy/             SLURM 3-GPU job, vLLM, CosyVoice / DyStream sidecars
 api/tokens.py       Laptop token helper
 requirements-laptop.txt   ← laptop pip install
-requirements.txt          ← Babel GPU pip install
+requirements.txt          ← Babel GPU pip install (talkshow env)
 ```
 
 Not in git: `.env`, `.cursor/`, `docs/` (local notes, knowledge base, Cursor rules/skills)
@@ -321,13 +408,14 @@ Not in git: `.env`, `.cursor/`, `docs/` (local notes, knowledge base, Cursor rul
 
 | Log / symptom | Fix |
 |---------------|-----|
+| Job wants 3 GPUs / slots collide | Check `VLLM_CUDA_DEVICE` / `DYSTREAM_CUDA_DEVICE` / `COSYVOICE_CUDA_DEVICE` are 0/1/2 and distinct |
+| CosyVoice / DyStream / talkshow share one Python | Set `COSYVOICE_PYTHON` and `DYSTREAM_PYTHON` to their conda envs |
 | `pthread_setaffinity_np failed` | `TALKSHOW_ORT_NUM_THREADS=1` in `.env` |
 | Turn detector / ONNX missing | `bash deploy/download-livekit-agent-models.sh` |
-| Wrong voice for Ryan/Amy | Check `PIPER_MODEL_PATH_GUEST` / `_COMMENTATOR` paths |
-| Chinese viewer hears English TTS | Run `bash deploy/download-piper-voices.sh zh`; set `PIPER_MODEL_PATH_ZH` |
-| `No module named 'g2pw'` (zh Piper / bake `--zh`) | `pip install "piper-tts[zh]"` in the talkshow conda env |
 | Agent never joins room | LiveKit keys match laptop; room name matches |
-| `memory usage is high` | Normal with vLLM + agent; or `TALKSHOW_TURN_DETECTOR=vad` |
+| CosyVoice health never comes up | `logs/slurm-<jobid>/cosyvoice.log`; `TALKSHOW_TTS_ENGINE=cosyvoice` + sidecar URL |
+| `memory usage is high` | Normal with vLLM + sidecars; or `TALKSHOW_STAGGER_START=1` |
+| `Invalid qos specification` | Script uses `--qos=preempt_qos` with `partition=preempt` |
 
 ---
 
