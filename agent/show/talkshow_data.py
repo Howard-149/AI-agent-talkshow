@@ -56,6 +56,10 @@ class TalkShowData:
     viewer_locale_by_identity: dict[str, str] = field(default_factory=dict)
     # Per-role mood for emotion-aware dialogue (host/guest/commentator → emotion code).
     role_emotion: dict[str, str] = field(default_factory=dict)
+    # Per-role continuous PAD (Pleasure, Arousal, Dominance) in [-1, 1].
+    role_pad: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    # Monotonic timestamps for PAD decay between turns (role → time.monotonic()).
+    role_pad_ts: dict[str, float] = field(default_factory=dict)
     # Host reply after human STT — spoken via speak_panel_line (not StoredReplyLLM+TTS).
     pending_host_speak: str = ""
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS

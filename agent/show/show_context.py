@@ -68,24 +68,67 @@ def host_after_human_card(scenario) -> str:
 
 def host_audio_user_hint() -> str:
     from agent.config import load_scenario
-    from agent.emotion import EMOTION_CHOICES, emotion_output_lines
+    from agent.emotion import emotion_source, mood_output_lines
 
     scenario = load_scenario()
     panel_roles = panel_speaker_roles(scenario)
     tags = next_tag_options(panel_roles, include_host=True) + " | human | close"
+    mood_rule = (
+        "[reply] must acknowledge what the human raised and match your current affect "
+        "(see mood / PAD block). Not a 1-on-1 interview."
+        if emotion_source() != "llm"
+        else (
+            "[reply] must acknowledge what the human raised and match your [emotion]. "
+            "Not a 1-on-1 interview."
+        )
+    )
     return (
         f"{host_after_human_card(scenario)}\n\n"
         "Listen to the human's audio. Output exactly:\n"
         "[heard]: <transcript>\n"
         "[reply]: <short host tee-up to the room>\n"
         f"[next]: {tags}\n"
-        f"{emotion_output_lines()}\n\n"
+        f"{mood_output_lines()}\n"
+        "[pad] is required on the last line even if 0 0 0. Do not output [emotion].\n\n"
         "[next] rules:\n"
         "- You named a panelist to speak next → their role id\n"
         "- Open floor, no one picked → host (panel raises hands)\n"
         "- If [reply] names someone but you forget the tag, the show may still route from your tee-up\n"
-        f"[reply] must acknowledge what the human raised and match your [emotion] ({EMOTION_CHOICES}). "
-        "Not a 1-on-1 interview."
+        f"{mood_rule}"
+    )
+
+
+def host_text_user_hint(human_text: str) -> str:
+    """Same host tee-up contract as audio-in, but the transcript is already known."""
+    from agent.config import load_scenario
+    from agent.emotion import emotion_source, mood_output_lines
+
+    scenario = load_scenario()
+    panel_roles = panel_speaker_roles(scenario)
+    tags = next_tag_options(panel_roles, include_host=True) + " | human | close"
+    mood_rule = (
+        "[reply] must acknowledge what the human raised and match your current affect "
+        "(see mood / PAD block). Not a 1-on-1 interview."
+        if emotion_source() != "llm"
+        else (
+            "[reply] must acknowledge what the human raised and match your [emotion]. "
+            "Not a 1-on-1 interview."
+        )
+    )
+    quoted = (human_text or "").strip()
+    return (
+        f"{host_after_human_card(scenario)}\n\n"
+        f'The human guest said: "{quoted}"\n\n'
+        "Output exactly:\n"
+        "[reply]: <short host tee-up to the room>\n"
+        f"[next]: {tags}\n"
+        f"{mood_output_lines()}\n"
+        "[pad] is required on the last line even if 0 0 0. Do not output [emotion].\n\n"
+        "[next] rules:\n"
+        "- You named a panelist to speak next → their role id\n"
+        "- Open floor, no one picked → host (panel raises hands)\n"
+        "- If [reply] names someone but you forget the tag, the show may still route from your tee-up\n"
+        f"{mood_rule}"
     )
 
 

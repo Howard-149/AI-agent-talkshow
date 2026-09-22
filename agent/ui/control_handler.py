@@ -83,6 +83,24 @@ def register_control_channel(
             asyncio.create_task(
                 _apply_set_locale(identity=identity, locale=parsed.locale)
             )
+            return
+        if parsed.type == "ghost_human_turn":
+            from agent.session.ghost_flags import ghost_turns_allowed, is_ghost_participant
+            from agent.session.ghost_turn import run_ghost_human_turn
+
+            if not ghost_turns_allowed():
+                logger.warning("ghost_human_turn ignored — TALKSHOW_GHOST_TURNS=0")
+                return
+            if not is_ghost_participant(ev.participant):
+                logger.warning(
+                    "ghost_human_turn ignored — sender is not a ghost participant"
+                )
+                return
+            asyncio.create_task(
+                run_ghost_human_turn(
+                    session, data, controller, text=parsed.text
+                )
+            )
 
     @room.on("participant_connected")
     def _on_participant_connected(participant: rtc.RemoteParticipant) -> None:

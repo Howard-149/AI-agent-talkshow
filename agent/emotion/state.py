@@ -1,8 +1,14 @@
-"""Per-role emotion state + [emotion] tag parse/strip for talk-show turns."""
+"""Per-role emotion state + [emotion]/[pad] tag helpers for talk-show turns.
+
+Live path (``TALKSHOW_EMOTION_SOURCE=pad``, default): ``role_emotion`` holds the
+MSP kNN primary label (e.g. Anger, Concerned). Legacy closed-set tags remain
+only for ``TALKSHOW_EMOTION_SOURCE=llm`` rollback.
+"""
 
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -11,7 +17,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-EMOTIONS = frozenset(
+# Legacy CosyVoice closed set (llm rollback only).
+LEGACY_EMOTIONS = frozenset(
     {
         "neutral",
         "amused",
@@ -22,24 +29,49 @@ EMOTIONS = frozenset(
         "surprised",
     }
 )
-DEFAULT_EMOTION = "neutral"
-EMOTION_CHOICES = " | ".join(sorted(EMOTIONS))
+# Back-compat alias
+EMOTIONS = LEGACY_EMOTIONS
+DEFAULT_EMOTION = "Neutral"
+LEGACY_DEFAULT_EMOTION = "neutral"
+EMOTION_CHOICES = " | ".join(sorted(LEGACY_EMOTIONS))
 
 _EMOTION_RE = re.compile(
-    r"\[emotion\]\s*:\s*(\w+)\b"
-    r"|\[emotion\s*:\s*(\w+)\s*\]",
+    r"\[emotion\]\s*:\s*([A-Za-z][\w-]*)\b"
+    r"|\[emotion\s*:\s*([A-Za-z][\w-]*)\s*\]",
+    re.IGNORECASE,
+)
+
+_PAD_RE = re.compile(
+    r"\[pad\]\s*:?\s*"
+    r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\s*,\s*|\s+)"
+    r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\s*,\s*|\s+)"
+    r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
     re.IGNORECASE,
 )
 
 
+def emotion_source() -> str:
+    """``pad`` (default) = PAD→kNN MSP tags; ``llm`` = legacy [emotion] closed set."""
+    return (os.environ.get("TALKSHOW_EMOTION_SOURCE") or "pad").strip().lower()
+
+
 def normalize_emotion(raw: str | None) -> str | None:
-    """Return a valid emotion code, or None if missing/invalid."""
+    """Return a usable emotion label, or None if missing/invalid."""
     if not raw:
         return None
-    key = raw.strip().lower()
-    if key in EMOTIONS:
+    s = str(raw).strip()
+    if not s:
+        return None
+    key = s.lower()
+    if key in LEGACY_EMOTIONS:
+        # Preserve lowercase closed-set codes for llm / instruct overrides.
         return key
-    return None
+    from agent.emotion.msp_anchors import canonicalize_emotion_label
+
+    label = canonicalize_emotion_label(s)
+    if not label or label.lower() in {"none", "nan"}:
+        return None
+    return label
 
 
 def parse_emotion_tag(text: str) -> str | None:
@@ -56,19 +88,41 @@ def strip_emotion_tag(text: str) -> str:
     return cleaned.strip()
 
 
+def parse_pad_delta(text: str) -> tuple[float, float, float] | None:
+    m = _PAD_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        p, a, d = float(m.group(1)), float(m.group(2)), float(m.group(3))
+    except ValueError:
+        return None
+    def _clip(x: float) -> float:
+        return max(-1.0, min(1.0, x))
+
+    return (_clip(p), _clip(a), _clip(d))
+
+
+def strip_pad_tag(text: str) -> str:
+    cleaned = _PAD_RE.sub("", text or "")
+    cleaned = re.sub(r"\[pad\s*:?\s*\]", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 def get_role_emotion(data: TalkShowData, role: str) -> str:
     role = (role or "").strip().lower()
+    default = LEGACY_DEFAULT_EMOTION if emotion_source() == "llm" else DEFAULT_EMOTION
     if not role or role == "human":
-        return DEFAULT_EMOTION
+        return default
     current = data.role_emotion.get(role)
-    return normalize_emotion(current) or DEFAULT_EMOTION
+    return normalize_emotion(current) or default
 
 
 def set_role_emotion(data: TalkShowData, role: str, emotion: str | None) -> str:
     """Update role emotion when tag is valid; otherwise keep previous. Returns current."""
     role = (role or "").strip().lower()
+    default = LEGACY_DEFAULT_EMOTION if emotion_source() == "llm" else DEFAULT_EMOTION
     if not role or role == "human":
-        return DEFAULT_EMOTION
+        return default
     normalized = normalize_emotion(emotion)
     if normalized is None:
         return get_role_emotion(data, role)
@@ -87,14 +141,14 @@ def apply_emotion_from_parsed(
 
 
 def emotion_prompt_block(data: TalkShowData, role: str) -> str:
-    """Inject into speaking prompts: current mood + output contract."""
+    """Legacy llm-mode prompt: current mood + closed-set output contract."""
     current = get_role_emotion(data, role)
     others: list[str] = []
     for other_role, emo in sorted(data.role_emotion.items()):
         if other_role == role:
             continue
-        code = normalize_emotion(emo) or DEFAULT_EMOTION
-        if code == DEFAULT_EMOTION:
+        code = normalize_emotion(emo) or LEGACY_DEFAULT_EMOTION
+        if code == LEGACY_DEFAULT_EMOTION or code == DEFAULT_EMOTION:
             continue
         from agent.config import load_persona_name
 
@@ -114,3 +168,50 @@ def emotion_prompt_block(data: TalkShowData, role: str) -> str:
 
 def emotion_output_lines() -> str:
     return f"[emotion]: {EMOTION_CHOICES}"
+
+
+def pad_prompt_block(data: TalkShowData, role: str) -> str:
+    """PAD mode: show current PAD + MSP tag (read-only); ask for [pad] deltas."""
+    from agent.emotion.role_pad import get_role_pad
+
+    p, a, d = get_role_pad(data, role)
+    tag = get_role_emotion(data, role)
+    others: list[str] = []
+    for other_role, emo in sorted(getattr(data, "role_emotion", {}).items()):
+        if other_role == role:
+            continue
+        code = normalize_emotion(emo)
+        if not code or code in {DEFAULT_EMOTION, LEGACY_DEFAULT_EMOTION}:
+            continue
+        from agent.config import load_persona_name
+
+        others.append(f"{load_persona_name(other_role)}={code}")
+    others_line = ""
+    if others:
+        others_line = f"\nOther panel moods (for context): {', '.join(others)}."
+
+    return (
+        f"Affect state (PAD in [-1,1]): P={p:.2f} A={a:.2f} D={d:.2f}; "
+        f"current mood tag **{tag}** (derived — do not invent a tag).{others_line}\n"
+        f"- Keep [reply] wording consistent with that affect.\n"
+        f"- You MUST output [pad]: ΔP ΔA ΔD on its own last line — never skip it. "
+        f"Three numbers in [-1,1] (spaces, not commas). Use 0 0 0 if affect is unchanged. "
+        f"Example: [pad]: 0.12 -0.05 0.00 — small gradual shifts only. "
+        f"Do not output [emotion]; the tag is derived from PAD."
+    )
+
+
+def pad_output_lines() -> str:
+    return "[pad]: <ΔP> <ΔA> <ΔD>   (REQUIRED last line; 0 0 0 if unchanged)"
+
+
+def mood_prompt_block(data: TalkShowData, role: str) -> str:
+    if emotion_source() == "llm":
+        return emotion_prompt_block(data, role)
+    return pad_prompt_block(data, role)
+
+
+def mood_output_lines() -> str:
+    if emotion_source() == "llm":
+        return emotion_output_lines()
+    return pad_output_lines()

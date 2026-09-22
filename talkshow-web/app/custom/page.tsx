@@ -9,9 +9,10 @@ export default async function CustomRoomConnection(props: {
     codec?: string;
     singlePC?: string;
     locale?: string;
+    record?: string;
   }>;
 }) {
-  const { liveKitUrl, token, codec, singlePC, locale } = await props.searchParams;
+  const { liveKitUrl, token, codec, singlePC, locale, record } = await props.searchParams;
   if (typeof liveKitUrl !== 'string') {
     return <h2>Missing LiveKit URL</h2>;
   }
@@ -32,6 +33,7 @@ export default async function CustomRoomConnection(props: {
         codec={codec}
         singlePeerConnection={singlePC === 'true'}
         locale={viewerLocale}
+        recordMode={record === '1' || record === 'true'}
       />
     </main>
   );

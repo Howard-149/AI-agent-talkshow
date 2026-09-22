@@ -29,6 +29,7 @@ import {
 } from '@/lib/talkshow/usePlayoutSyncedUi';
 import {
   UI_TOPIC,
+  isGhostViewer,
   parseAgentMetadata,
   parseUiEvent,
   rosterFromParticipants,
@@ -82,17 +83,24 @@ function humanSeats(
   localIdentity: string,
   remotes: Array<{ identity: string; name?: string; metadata?: string }>,
 ) {
-  const seats = [
-    {
+  const seats: Array<{
+    key: string;
+    name: string;
+    label: string;
+    isLocal: boolean;
+  }> = [];
+  if (!isGhostViewer(localIdentity)) {
+    seats.push({
       key: localIdentity || 'local',
       name: localName || 'You',
       label: 'Human guest',
       isLocal: true,
-    },
-  ];
+    });
+  }
   for (const p of remotes) {
     const meta = parseAgentMetadata(p.metadata);
     if (meta?.talkshowAgent) continue;
+    if (isGhostViewer(p.identity, p.metadata)) continue;
     seats.push({
       key: p.identity,
       name: p.name || p.identity,
@@ -104,7 +112,9 @@ function humanSeats(
 }
 
 /** Virtual panel stage + LiveKit media controls (mic/camera/settings from Meet). */
-export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
+export function TalkshowView(
+  props: { viewerLocale?: TalkshowLocale; recordMode?: boolean } = {},
+) {
   const [viewerLocale, setViewerLocale] = useState<TalkshowLocale>(
     props.viewerLocale ?? 'en',
   );
@@ -117,7 +127,7 @@ export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
   const agentParticipant = useMemo(() => findAgentParticipant(remotes), [remotes]);
   const { activeRole, lipSyncActive, lines, onRoleActive, onRoleIdle, pushLine } =
     usePlayoutSyncedUi(agentParticipant);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(!!props.recordMode);
   const [showSettings, setShowSettings] = useState(false);
   const [handRaised, setHandRaised] = useState<Record<string, boolean>>({});
   const [queueState, setQueueState] = useState<QueueEntry[]>([]);
@@ -284,7 +294,11 @@ export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
         </div>
       </header>
 
-      <section className={styles.stage} aria-label="Panel">
+      <section
+        className={styles.stage}
+        aria-label="Panel"
+        data-talkshow-ready={panelists.length > 0 ? 'true' : 'false'}
+      >
         <div className={styles.panelRow}>
           {humans.map((h) =>
             h.isLocal ? (
@@ -365,7 +379,8 @@ export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
         </div>
       )}
 
-      <div className={styles.controlDock}>
+      {!props.recordMode && (
+        <div className={styles.controlDock}>
         {showQueueDebug && (
           <div
             id="talkshow-hand-queue"
@@ -426,7 +441,8 @@ export function TalkshowView(props: { viewerLocale?: TalkshowLocale } = {}) {
           viewerLocale={viewerLocale}
           onLocaleChange={changeLocale}
         />
-      </div>
+        </div>
+      )}
     </div>
   );
 }

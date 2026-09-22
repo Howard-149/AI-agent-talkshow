@@ -184,10 +184,10 @@ class GemmaAudioSTT(stt.STT):
                     room=data.room_name,
                 )
             from agent.show.show_context import host_audio_user_hint
-            from agent.emotion import emotion_prompt_block
+            from agent.emotion import mood_prompt_block
 
             user_hint = (
-                f"{host_audio_user_hint()}\n\n{emotion_prompt_block(data, 'host')}"
+                f"{host_audio_user_hint()}\n\n{mood_prompt_block(data, 'host')}"
             )
         else:
             user_hint = None
@@ -218,87 +218,15 @@ class GemmaAudioSTT(stt.STT):
                 )
             return _empty_transcript_event()
 
-        reply = parsed.reply
-        resolved_next = parsed.next_speaker
-        from agent.emotion import apply_emotion_from_parsed, get_role_emotion
+        from agent.session.human_turn import finalize_human_turn
 
-        emotion = apply_emotion_from_parsed(data, "host", parsed.emotion)
-        if panel_turn:
-            from agent.floor.floor_control import resolve_floor_after_host_speech
-            from agent.show.show_context import host_used_tee_fallback, sanitize_host_panel_reply
-
-            fitted = sanitize_host_panel_reply(reply, parsed.heard, data.scenario)
-            if fitted != reply:
-                logger.info(
-                    "host reply reshaped for panel floor (was %r)",
-                    reply[:80],
-                )
-            reply = fitted
-            from agent.floor.floor_parser import strip_speech_control_tags
-
-            reply = strip_speech_control_tags(reply)
-            resolved_next = resolve_floor_after_host_speech(
-                data,
-                spoken=reply,
-                tagged_next=parsed.next_speaker,
-                tee_fallback=host_used_tee_fallback(reply, parsed.heard, data.scenario),
-                after_human_turn=True,
-            )
-            logger.info(
-                "human turn floor next=%s tag=%r emotion=%s",
-                resolved_next,
-                parsed.next_speaker,
-                emotion,
-            )
-        else:
-            from agent.floor.floor_parser import strip_speech_control_tags
-
-            reply = strip_speech_control_tags(reply)
-
-        from agent.locale.localize import texts_for_needed_locales
-        from agent.show.show_history import append_human, append_role
-        from agent.ui.ui_events import emit_floor_grant, emit_transcript
-
-        append_human(data, parsed.heard)
-        append_role(data, "host", reply)
-        human_texts = await texts_for_needed_locales(data, parsed.heard)
-        await emit_transcript(
-            "human", parsed.heard, step="human_turn", texts=human_texts
-        )
-        if data.human_hand_raised:
-            await emit_floor_grant("human", reason="human_spoke_hand_up")
-        # Spoken in TalkShowAgent.on_user_turn_completed via speak_panel_line
-        # (same Piper→DyStream path as panel lines). UI queues inside speak_panel_line.
-        data.pending_host_speak = reply
-        data.last_human_heard = parsed.heard
-        if panel_turn:
-            data.last_host_panel_tee = reply
-            data.panel_followup_pending = True
-
-        # Handoff tag only for non-panel rotation; reply is not spoken by StoredReplyLLM.
-        self._turn_store.set_turn(parsed.heard, reply, handoff_to=parsed.handoff_to)
-
-        if data.turn_log is not None:
-            data.turn_log.log(
-                "gemma_stt_done",
-                heard=parsed.heard,
-                reply=reply,
-                model_latency_s=round(model_latency_s, 3),
-                floor_next=data.floor_next_speaker,
-                tagged_next=parsed.next_speaker,
-                resolved_next=resolved_next,
-                emotion=get_role_emotion(data, "host"),
-                room=data.room_name,
-                active_role=data.active_role,
-                panel_followup_pending=data.panel_followup_pending,
-            )
-
-        logger.info(
-            "heard=%r reply_len=%d floor_next=%s emotion=%s",
-            parsed.heard[:80],
-            len(reply),
-            data.floor_next_speaker,
-            get_role_emotion(data, "host"),
+        await finalize_human_turn(
+            data,
+            heard=parsed.heard,
+            parsed=parsed,
+            panel_turn=panel_turn,
+            model_latency_s=model_latency_s,
+            done_event="gemma_stt_done",
         )
         return self._final_event(parsed.heard, language)
 

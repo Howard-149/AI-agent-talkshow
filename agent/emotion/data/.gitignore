@@ -1,0 +1,3 @@
+# Built MSP PAD anchors (npz) — generate on Babel, do not commit large dumps by default.
+*.npz
+!README.md

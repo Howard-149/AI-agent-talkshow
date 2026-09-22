@@ -1,29 +1,65 @@
-"""Closed-set role emotion tags and CosyVoice instruct mapping."""
+"""Closed-set / MSP role emotion tags, CosyVoice mapping, and PAD / KNN helpers."""
 
 from agent.emotion.state import (
     DEFAULT_EMOTION,
     EMOTION_CHOICES,
     EMOTIONS,
+    LEGACY_EMOTIONS,
     apply_emotion_from_parsed,
     emotion_output_lines,
     emotion_prompt_block,
+    emotion_source,
     get_role_emotion,
+    mood_output_lines,
+    mood_prompt_block,
     normalize_emotion,
+    pad_output_lines,
+    pad_prompt_block,
     parse_emotion_tag,
+    parse_pad_delta,
     set_role_emotion,
     strip_emotion_tag,
+    strip_pad_tag,
 )
+from agent.emotion.knn_map import KNNEmotionResult, PADEmotionKNN
+from agent.emotion.pad_pipeline import (
+    apply_mood_from_parsed,
+    apply_pad_delta_from_parsed,
+    materialize_emotion_from_pad,
+)
+from agent.emotion.pad_state import PADState, apply_pad_delta, decay_pad, decay_then_update
+from agent.emotion.role_pad import get_role_pad, set_role_pad, update_role_pad
 
 __all__ = [
     "DEFAULT_EMOTION",
     "EMOTION_CHOICES",
     "EMOTIONS",
+    "LEGACY_EMOTIONS",
+    "KNNEmotionResult",
+    "PADEmotionKNN",
+    "PADState",
     "apply_emotion_from_parsed",
+    "apply_mood_from_parsed",
+    "apply_pad_delta",
+    "apply_pad_delta_from_parsed",
+    "decay_pad",
+    "decay_then_update",
     "emotion_output_lines",
     "emotion_prompt_block",
+    "emotion_source",
     "get_role_emotion",
+    "get_role_pad",
+    "materialize_emotion_from_pad",
+    "mood_output_lines",
+    "mood_prompt_block",
     "normalize_emotion",
+    "pad_output_lines",
+    "pad_prompt_block",
     "parse_emotion_tag",
+    "parse_pad_delta",
     "set_role_emotion",
+    "set_role_pad",
     "strip_emotion_tag",
+    "strip_pad_tag",
+    "update_role_pad",
 ]

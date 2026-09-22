@@ -593,13 +593,17 @@ async def speak_panel_line(
         primary_text,
     )
 
+    from agent.emotion import emotion_source, get_role_emotion
+    from agent.emotion.pad_pipeline import materialize_emotion_from_pad
+
+    if emotion_source() != "llm":
+        materialize_emotion_from_pad(data, speak_role)
+    role_emotion = get_role_emotion(data, speak_role)
+
     data.speak_line_busy = True
     try:
         if bridge is not None:
             try:
-                from agent.emotion import get_role_emotion
-
-                role_emotion = get_role_emotion(data, speak_role)
                 primary_tts = load_persona_tts(
                     speak_role, data.runtime.config, locale=primary
                 )

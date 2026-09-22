@@ -137,15 +137,28 @@ def panelist_system_prompt(
         "- If the human's floor is FROZEN, do not ask them direct questions — they are listening.\n"
         f"- Plain English. After your spoken lines, output [next]: {tag_opts} — "
         "use a panelist role ONLY if you pass the floor to them by name; otherwise host.\n"
-        "- Also output [emotion]: matching your [reply] tone (closed set in the user prompt)."
-        f"{_panel_identity_guard(role, scenario=scenario, panel_roles=panel_roles, history=history)}"
+    )
+    from agent.emotion import emotion_source
+
+    if emotion_source() == "llm":
+        mechanics += (
+            "- Also output [emotion]: matching your [reply] tone "
+            "(closed set in the user prompt)."
+        )
+    else:
+        mechanics += (
+            "- REQUIRED last line: [pad]: ΔP ΔA ΔD matching [reply] "
+            "(0 0 0 if unchanged). Never omit [pad]. Never output [emotion]."
+        )
+    mechanics += _panel_identity_guard(
+        role, scenario=scenario, panel_roles=panel_roles, history=history
     )
 
     mood_block = ""
     if data is not None:
-        from agent.emotion import emotion_prompt_block
+        from agent.emotion import mood_prompt_block
 
-        mood_block = f"\n\n{emotion_prompt_block(data, role)}"  # type: ignore[arg-type]
+        mood_block = f"\n\n{mood_prompt_block(data, role)}"  # type: ignore[arg-type]
 
     hint_block = f"\n\n{dialogue_hint.strip()}" if dialogue_hint.strip() else ""
     return f"{personality}\n\n{mechanics}{mood_block}{hint_block}"
@@ -163,7 +176,7 @@ def panel_speech_prompt(
     closing: bool = False,
     data: object | None = None,
 ) -> str:
-    from agent.emotion import emotion_output_lines, emotion_prompt_block
+    from agent.emotion import mood_output_lines, mood_prompt_block
 
     tag_opts = next_tag_options(panel_roles, include_host=True)
     if closing:
@@ -184,7 +197,7 @@ def panel_speech_prompt(
 
     mood = ""
     if data is not None:
-        mood = f"\n{emotion_prompt_block(data, role)}\n"  # type: ignore[arg-type]
+        mood = f"\n{mood_prompt_block(data, role)}\n"  # type: ignore[arg-type]
 
     return f"""Live talk-show panel — your speaking turn.
 {topic_block}
@@ -200,12 +213,13 @@ Rules:
 - Do not ask the human direct questions while their floor is frozen.
 - Do NOT say you are {host_name} unless you are the host closing.
 
-Output exactly:
+Output exactly (all three lines; [pad] is mandatory):
 [reply]: <your spoken lines>
 [next]: {tag_opts}
-{emotion_output_lines()}
+{mood_output_lines()}
 - Pass [next:<role>] ONLY if you explicitly hand off to that panelist by name in [reply]
 - Otherwise [next:host] — the host will moderate who speaks next
+- End with [pad] even if 0 0 0. Do not output [emotion].
 """
 
 

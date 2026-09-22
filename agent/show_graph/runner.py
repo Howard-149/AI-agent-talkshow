@@ -30,6 +30,7 @@ def _sync_from_data(state: ShowState, data: TalkShowData) -> None:
     state["panel_priority"] = list(data.panel_priority)
     state["active_role"] = data.active_role
     state["role_emotion"] = dict(getattr(data, "role_emotion", {}) or {})
+    state["role_pad"] = dict(getattr(data, "role_pad", {}) or {})
 
 
 def _state_from_session(
@@ -63,6 +64,7 @@ def _state_from_session(
         queue=data.hand_raise_queue.roles(),
         panel_priority=list(data.panel_priority),
         role_emotion=dict(getattr(data, "role_emotion", {}) or {}),
+        role_pad=dict(getattr(data, "role_pad", {}) or {}),
         spoken_roles=list(spoken_roles or ()),
     )
 

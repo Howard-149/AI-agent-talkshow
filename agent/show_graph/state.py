@@ -49,6 +49,7 @@ class ShowState(TypedDict):
     queue: list[str]
     panel_priority: list[str]
     role_emotion: dict[str, str]
+    role_pad: dict[str, tuple[float, float, float]]
     spoken_roles: list[str]
     pending_commands: list[Command]
     # Set by hand_raise_round actuator
@@ -82,6 +83,7 @@ def base_state(
     queue: list[str] | None = None,
     panel_priority: list[str] | None = None,
     role_emotion: dict[str, str] | None = None,
+    role_pad: dict[str, tuple[float, float, float]] | None = None,
     spoken_roles: list[str] | None = None,
 ) -> ShowState:
     return {
@@ -100,6 +102,7 @@ def base_state(
         "queue": list(queue or ()),
         "panel_priority": list(panel_priority or ()),
         "role_emotion": dict(role_emotion or {}),
+        "role_pad": dict(role_pad or {}),
         "spoken_roles": list(spoken_roles or ()),
         "pending_commands": [],
         "next_role": "",

@@ -13,6 +13,9 @@ ROLE_DISPLAY = {
     "guest": ("Amy", "Guest"),
 }
 
+HUMAN_TURN_START_EVENTS = frozenset({"gemma_stt_start", "ghost_human_start"})
+HUMAN_TURN_DONE_EVENTS = frozenset({"gemma_stt_done", "ghost_human_done"})
+
 
 def role_label(role: str) -> str:
     name, kind = ROLE_DISPLAY.get(role, (role.capitalize(), role))
@@ -73,7 +76,7 @@ def turn_window_end(
         e = events[j]
         if e.get("_source", "") != source:
             return j
-        if e.get("event") == "gemma_stt_start":
+        if e.get("event") in HUMAN_TURN_START_EVENTS:
             return j
     return len(events)
 
@@ -97,10 +100,10 @@ def session_metadata(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def extract_human_turns(events: list[dict[str, Any]]) -> list[HumanTurn]:
-    """One human turn = gemma_stt_start → next gemma_stt_start (or EOF)."""
+    """One human turn = gemma_stt_start / ghost_human_start → next start (or EOF)."""
     meta = session_metadata(events)
     stt_starts = [
-        (i, e) for i, e in enumerate(events) if e["event"] == "gemma_stt_start"
+        (i, e) for i, e in enumerate(events) if e["event"] in HUMAN_TURN_START_EVENTS
     ]
     turns: list[HumanTurn] = []
     seq = 0
@@ -113,7 +116,9 @@ def extract_human_turns(events: list[dict[str, Any]]) -> list[HumanTurn]:
         turn_counters[source] = turn_counters.get(source, 0) + 1
         turn_num = turn_counters[source]
 
-        stt_done = next((e for e in window if e["event"] == "gemma_stt_done"), None)
+        stt_done = next(
+            (e for e in window if e["event"] in HUMAN_TURN_DONE_EVENTS), None
+        )
         if stt_done is None:
             continue
 

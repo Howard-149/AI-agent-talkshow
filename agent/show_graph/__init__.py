@@ -11,8 +11,10 @@ Future swap points (do not require another rewrite):
   back to grant / open_floor.
 - Real multi-agent: same Command bus; multiple workers execute speak_*;
   graph stays coordinator.
-- Emotion per participant: nodes read/write role_emotion; optional VAD
-  updater before introduce_and_speak.
+- Emotion per participant: ``role_pad`` + ``role_emotion`` mirrored on
+  ShowState; PAD→kNN materialize runs in speak_panel_line (pre-TTS). LLM
+  updates PAD deltas; MSP primary label is the live CosyVoice/UI tag.
+  Optional future: VAD updater before introduce_and_speak.
 - Role enter/exit: mutate participants + UI roster reload; poll/grant iterate
   that list.
 

@@ -10,6 +10,7 @@ export function VideoConferenceClientImpl(props: {
   codec?: unknown;
   singlePeerConnection: boolean | undefined;
   locale?: TalkshowLocale;
+  recordMode?: boolean;
 }) {
   return (
     <TalkshowRoom
@@ -17,6 +18,7 @@ export function VideoConferenceClientImpl(props: {
       token={props.token}
       singlePeerConnection={props.singlePeerConnection}
       locale={props.locale}
+      recordMode={props.recordMode}
     />
   );
 }

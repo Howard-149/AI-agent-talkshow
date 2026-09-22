@@ -10,9 +10,9 @@ from agent.adapters.response_parser import parse_host_speech
 from agent.config import load_persona_instructions, load_persona_name
 from agent.data import TalkShowData
 from agent.emotion import (
-    apply_emotion_from_parsed,
-    emotion_output_lines,
-    emotion_prompt_block,
+    apply_mood_from_parsed,
+    mood_output_lines,
+    mood_prompt_block,
 )
 from agent.floor.floor_control import apply_floor_next, resolve_floor_after_host_speech
 from agent.floor.floor_parser import strip_speech_control_tags
@@ -61,12 +61,12 @@ Call on ONE panelist directly — use their name in [reply] and set matching [ne
 Prefer someone not heard yet this round: {names_hint}.
 Speak 2–3 sentences with a question or topic angle FOR THEM.
 
-{emotion_prompt_block(data, "host")}
+{mood_prompt_block(data, "host")}
 
 Output exactly:
 [reply]: <spoken host line naming them>
 [next]: {tag_opts}
-{emotion_output_lines()}
+{mood_output_lines()}
 """
     hist = data.show_history.prior_messages()
     system = load_persona_instructions("host", panel_mode=controller.is_panel_mode())
@@ -76,7 +76,25 @@ Output exactly:
         history_messages=hist,
     )
     parsed = parse_host_speech(raw)
-    emotion = apply_emotion_from_parsed(data, "host", parsed.emotion)
+    emotion = apply_mood_from_parsed(
+        data,
+        "host",
+        emotion=parsed.emotion,
+        pad_delta=parsed.pad_delta,
+    )
+    if data.turn_log is not None:
+        data.turn_log.log(
+            "host_direct_call",
+            role="host",
+            trigger=trigger,
+            reply=(parsed.reply or "")[:400],
+            next_tag=parsed.next_speaker,
+            emotion=emotion,
+            pad_delta=list(parsed.pad_delta) if parsed.pad_delta is not None else None,
+            has_pad_tag="[pad]" in (raw or "").lower(),
+            raw=(raw or "")[:1500] or None,
+            room=data.room_name,
+        )
     text = strip_speech_control_tags(parsed.reply.strip())
     if not text or len(text) < 8:
         pick = unspoken[0]

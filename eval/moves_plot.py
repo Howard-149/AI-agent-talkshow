@@ -139,10 +139,12 @@ def session_metadata(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def extract_human_turns(events: list[dict[str, Any]]) -> list[HumanTurn]:
-    """One human turn = gemma_stt_start → next gemma_stt_start (or EOF)."""
+    """One human turn = gemma_stt_start / ghost_human_start → next start (or EOF)."""
+    from eval.log_parse import HUMAN_TURN_DONE_EVENTS, HUMAN_TURN_START_EVENTS
+
     meta = session_metadata(events)
     stt_starts = [
-        (i, e) for i, e in enumerate(events) if e["event"] == "gemma_stt_start"
+        (i, e) for i, e in enumerate(events) if e["event"] in HUMAN_TURN_START_EVENTS
     ]
     turns: list[HumanTurn] = []
 
@@ -151,7 +153,9 @@ def extract_human_turns(events: list[dict[str, Any]]) -> list[HumanTurn]:
         window = events[start_idx:end_idx]
         source = window[0].get("_source", "")
 
-        stt_done = next((e for e in window if e["event"] == "gemma_stt_done"), None)
+        stt_done = next(
+            (e for e in window if e["event"] in HUMAN_TURN_DONE_EVENTS), None
+        )
         if stt_done is None:
             continue
 

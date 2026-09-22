@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus=3
 #SBATCH --mem=128G
-#SBATCH --time=08:00:00
+#SBATCH --time=16:00:00
 #SBATCH --chdir=/home/hsuanhal/AI-agent-talkshow
 # Absolute paths — relative slurm-logs/ fails when that dir is missing in submit cwd.
 #SBATCH --output=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.out
