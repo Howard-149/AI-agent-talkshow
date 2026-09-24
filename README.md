@@ -262,7 +262,6 @@ huggingface-cli whoami          # must print your HF user, not "Not logged in"
 git clone https://github.com/RobinWitch/DyStream.git "${DYSTREAM_ROOT}"
 cd ~/AI-agent-talkshow
 bash deploy/download-dystream-weights.sh   # checkpoints/ + tools/ into DYSTREAM_ROOT
-bash deploy/init-avatar-dirs.sh            # portraits / idle loops
 ```
 
 **5b. Create + install env `dystream`:**
@@ -327,7 +326,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 - [ ] `talkshow` **Python 3.11** + `pip install -r requirements.txt` (or `slurm-install-deps.sh`)
 - [ ] LiveKit ONNX in `TALKSHOW_TURN_DETECTOR_CACHE`
 - [ ] CosyVoice clone + Fun-CosyVoice3 weights + env `cosyvoice_vllm`
-- [ ] DyStream clone + weights + env `dystream` + `init-avatar-dirs.sh`
+- [ ] DyStream clone + weights + env `dystream`
 - [ ] `.env` LiveKit keys match the laptop; `TALKSHOW_TTS_ENGINE=cosyvoice`
 - [ ] `sbatch deploy/slurm-talkshow-3gpu.sh` — health on `:8000`, `:8766`, `:8767`, then agent log
 

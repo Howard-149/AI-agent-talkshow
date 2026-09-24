@@ -64,10 +64,6 @@ TALKSHOW_AVATAR_LK_VIDEO=1
 
 Portrait（Linux 大小写敏感）→ `avatar/assets/portraits/`，与 persona yaml 一致。
 
-```bash
-bash deploy/init-avatar-dirs.sh
-```
-
 可选 smoke test：
 
 ```bash

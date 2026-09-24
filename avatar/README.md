@@ -13,7 +13,6 @@ See [deploy/RUN-BABEL.md](../deploy/RUN-BABEL.md) for sidecar startup and latenc
 | `avatar/runtime/clips/` | Temp speech wav / optional legacy `.mp4` |
 
 ```bash
-bash deploy/init-avatar-dirs.sh
 bash deploy/bake-avatar-assets.sh
 ```
 
