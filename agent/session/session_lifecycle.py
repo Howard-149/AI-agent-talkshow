@@ -122,19 +122,33 @@ async def _alone_watchdog(
     *,
     job_ctx: JobContext | None,
 ) -> None:
-    """Fallback when participant_disconnected is missed (tab kill, network drop)."""
+    """Fallback when participant_disconnected is missed (tab kill, network drop).
+
+    Do not shut down during initial room/session startup before a human has actually joined. 
+    Once at least one human has been observed, shut down if the room later becomes human-free.
+    """
     interval = 5.0
+    seen_human = room_has_humans(room)
+
     while not data.shutdown_event.is_set():
         try:
             await asyncio.wait_for(data.shutdown_event.wait(), timeout=interval)
             break
         except asyncio.TimeoutError:
             pass
+
         if not session_is_active(session):
             break
+
         if room_has_humans(room):
+            seen_human = True
             continue
-        logger.info("alone_watchdog: no humans in room=%s — shutting down", room.name)
+
+        if not seen_human:
+            continue
+
+        logger.info("alone_watchdog: last human no longer present in room=%s — shutting down", room.name)
+
         await shutdown_session_when_alone(
             session,
             data,
