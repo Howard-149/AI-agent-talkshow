@@ -19,7 +19,7 @@ eval/results/
 # Local-only (not in repo)
 .cursor/
 docs/
-/scripts/
+scripts/
 avatar/assets/portraits/*.png
 avatar/assets/loops/*
 !avatar/assets/loops/README.md

@@ -1,9 +1,0 @@
-# Opening + one scripted human turn (3Q Test 1). TTS / avatar still run.
-locale: en
-identity: ghost-guest
-turns:
-  - text: >
-      Our startup is deciding whether to freeze senior engineer hiring in 2026.
-      I'm arguing one senior plus AI tools can replace three mid-level hires —
-      convince me I'm wrong, or tell me if I'm right.
-    topic: freeze senior hiring
