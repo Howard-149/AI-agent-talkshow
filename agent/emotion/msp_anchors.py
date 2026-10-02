@@ -9,13 +9,34 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 
+# Consensus table: one row per utterance, attributes averaged across annotators
+# (264,705 rows = Sentipolis A.2). Do NOT use labels_detailed.csv: it has one row
+# per annotator with integer 1–7 ratings, which collapses onto 7³ = 343 PAD grid
+# points and makes k=3 neighbors arbitrary picks among thousands of ties.
 DEFAULT_MSP_LABELS_CSV = (
-    "/data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0/Labels/labels_detailed.csv"
+    "/data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0/Labels/labels_consensus.csv"
 )
+# Per-utterance vote counts (count::<Emotion>, num_other_annotations) used to
+# resolve "No Agreement" rows into a two-label mix instead of Vague.
+DEFAULT_MSP_VOTES_CSV = (
+    "/data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0/Labels/"
+    "labels_detailed_aggregated.csv"
+)
+VOTE_EMOTIONS = (
+    "Anger",
+    "Sadness",
+    "Happiness",
+    "Surprise",
+    "Fear",
+    "Disgust",
+    "Contempt",
+    "Neutral",
+)
+VAGUE = "Vague"
 
 # MSP consensus single-letter codes → Sentipolis-style names.
 # "Other" / "No Agreement" → Vague (paper A.2).
@@ -191,9 +212,65 @@ def summarize_anchors(pad: np.ndarray, labels: list[str]) -> dict[str, Any]:
     }
 
 
+def resolve_no_agreement(votes: Sequence[float]) -> tuple[tuple[str, float], ...]:
+    """Soft label for an MSP "No Agreement" utterance from its emotion vote counts.
+
+    ``votes`` follows :data:`VOTE_EMOTIONS`. Rules (ours; Sentipolis maps all to Vague):
+    - exactly two emotions tied for most votes (e.g. 2-2-1) → 50/50 mix of the pair;
+    - a single top emotion (tie was with free-text "Other" votes) → that emotion;
+    - three or more tied (e.g. 1-1-1-1-1) or no votes → Vague (genuine disagreement).
+    """
+    v = np.asarray(votes, dtype=np.float64)
+    if v.size != len(VOTE_EMOTIONS) or not np.isfinite(v).all() or v.max() <= 0:
+        return ((VAGUE, 1.0),)
+    top = [VOTE_EMOTIONS[i] for i in np.flatnonzero(v == v.max())]
+    if len(top) == 1:
+        return ((top[0], 1.0),)
+    if len(top) == 2:
+        return ((top[0], 0.5), (top[1], 0.5))
+    return ((VAGUE, 1.0),)
+
+
+def soft_labels_from_votes(df_consensus, df_votes) -> list[tuple[tuple[str, float], ...]]:
+    """Per consensus row: soft label list. Only EmoClass X (No Agreement) uses votes;
+    O (Other) stays Vague — it is decided by free-text Other votes."""
+    ecol = discover_columns(df_consensus)["emotion"]
+    fcol = discover_columns(df_consensus)["filename"]
+    vote_cols = [f"count::{e}" for e in VOTE_EMOTIONS]
+    missing = [c for c in vote_cols + ["FileName"] if c not in df_votes.columns]
+    if missing:
+        raise ValueError(f"votes table missing columns: {missing}")
+    votes = df_votes.set_index("FileName")[vote_cols]
+    out: list[tuple[tuple[str, float], ...]] = []
+    for fname, raw in zip(df_consensus[fcol], df_consensus[ecol]):
+        code = str(raw).strip().upper()
+        if code == "X" and fname in votes.index:
+            out.append(resolve_no_agreement(votes.loc[fname].to_numpy()))
+        else:
+            out.append(((canonicalize_emotion_label(raw), 1.0),))
+    return out
+
+
 def load_anchor_npz(path: Path | str) -> tuple[np.ndarray, np.ndarray]:
     path = Path(path)
     data = np.load(path, allow_pickle=True)
     pad = np.asarray(data["pad"], dtype=np.float64)
     labels = np.asarray(data["labels"], dtype=object)
     return pad, labels
+
+
+def load_anchor_npz_soft(
+    path: Path | str,
+) -> tuple[np.ndarray, list[tuple[tuple[str, float], ...]]]:
+    """PAD + soft labels. Old single-label NPZ files load as weight-1 labels."""
+    data = np.load(Path(path), allow_pickle=True)
+    pad = np.asarray(data["pad"], dtype=np.float64)
+    labels = [str(x) for x in data["labels"]]
+    if "labels_b" not in data.files:
+        return pad, [((lab, 1.0),) for lab in labels]
+    labels_b = [str(x) for x in data["labels_b"]]
+    weights_a = np.asarray(data["weights_a"], dtype=np.float64)
+    soft = []
+    for a, b, w in zip(labels, labels_b, weights_a):
+        soft.append(((a, float(w)), (b, 1.0 - float(w))) if b else ((a, 1.0),))
+    return pad, soft

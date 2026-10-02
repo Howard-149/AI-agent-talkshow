@@ -77,3 +77,73 @@ class KNNTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KNNTieTests(unittest.TestCase):
+    def test_stacked_ties_vote_by_share(self) -> None:
+        # 7 Neutral + 3 Happiness stacked at the origin, one far Anger point.
+        pad = np.array([[0.0, 0.0, 0.0]] * 10 + [[0.9, 0.9, 0.9]])
+        labels = ["Happiness"] * 3 + ["Neutral"] * 7 + ["Anger"]
+        r = PADEmotionKNN(pad, labels, k=3).query([0.0, 0.0, 0.0])
+        self.assertEqual(r.primary_label, "Neutral")
+        self.assertEqual(r.neighbor_labels, ("Neutral", "Neutral", "Happiness"))
+
+    def test_no_tie_keeps_plain_order(self) -> None:
+        pad = np.array([[0.1, 0, 0], [0.2, 0, 0], [0.3, 0, 0], [0.4, 0, 0]])
+        r = PADEmotionKNN(pad, ["A", "B", "C", "D"], k=3).query([0.0, 0.0, 0.0])
+        self.assertEqual(r.neighbor_labels, ("A", "B", "C"))
+
+    def test_tie_is_order_independent(self) -> None:
+        pad = np.zeros((6, 3))
+        a = PADEmotionKNN(pad, ["X", "Y", "Y", "Z", "Y", "X"], k=3).query([0, 0, 0])
+        b = PADEmotionKNN(pad, ["Y", "X", "Z", "Y", "X", "Y"], k=3).query([0, 0, 0])
+        self.assertEqual(a.neighbor_labels, b.neighbor_labels)
+        self.assertEqual(a.neighbor_labels, ("Y", "Y", "X"))
+
+
+class SoftLabelTests(unittest.TestCase):
+    def test_resolve_no_agreement(self) -> None:
+        from agent.emotion.msp_anchors import VOTE_EMOTIONS, resolve_no_agreement
+
+        def votes(**kw):
+            return [kw.get(e, 0) for e in VOTE_EMOTIONS]
+
+        self.assertEqual(
+            resolve_no_agreement(votes(Fear=2, Contempt=2, Neutral=1)),
+            (("Fear", 0.5), ("Contempt", 0.5)),
+        )
+        # Single top emotion (the tie was with free-text "Other" votes).
+        self.assertEqual(resolve_no_agreement(votes(Sadness=2, Anger=1)), (("Sadness", 1.0),))
+        self.assertEqual(
+            resolve_no_agreement(votes(Anger=1, Sadness=1, Happiness=1, Neutral=1, Fear=1)),
+            (("Vague", 1.0),),
+        )
+        self.assertEqual(resolve_no_agreement(votes()), (("Vague", 1.0),))
+
+    def test_soft_labels_vote_by_weight(self) -> None:
+        pad = np.array([[0.0, 0, 0], [0.01, 0, 0], [0.02, 0, 0], [0.9, 0.9, 0.9]])
+        soft = [
+            (("Fear", 0.5), ("Contempt", 0.5)),
+            (("Fear", 0.5), ("Contempt", 0.5)),
+            (("Neutral", 1.0),),
+            (("Anger", 1.0),),
+        ]
+        knn = PADEmotionKNN(pad, [s[0][0] for s in soft], k=3, soft_labels=soft)
+        r = knn.query([0.0, 0.0, 0.0])
+        # Fear 1.0, Contempt 1.0, Neutral 1.0 → one slot each, nearest first.
+        self.assertEqual(sorted(r.neighbor_labels), ["Contempt", "Fear", "Neutral"])
+        self.assertEqual(r.primary_label, "Contempt")  # tie on weight+distance → name
+
+    def test_npz_roundtrip_soft(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "a.npz"
+            np.savez_compressed(
+                path,
+                pad=np.zeros((2, 3), dtype=np.float32),
+                labels=np.array(["Fear", "Neutral"], dtype=object),
+                labels_b=np.array(["Contempt", ""], dtype=object),
+                weights_a=np.array([0.5, 1.0], dtype=np.float32),
+            )
+            knn = PADEmotionKNN.from_npz(path, k=2)
+            self.assertEqual(knn.soft_labels[0], (("Fear", 0.5), ("Contempt", 0.5)))
+            self.assertEqual(knn.soft_labels[1], (("Neutral", 1.0),))

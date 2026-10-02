@@ -18,7 +18,7 @@
 # Inspect MSP-PODCAST labels + build PAD KNN anchors (needs pandas on talkshow env).
 #
 # Submit:  sbatch deploy/slurm-build-msp-anchors.sh
-# Override CSV:  MSP_LABELS_CSV=/path/to/labels_consensus.csv sbatch --export=ALL ...
+# Override CSV:  MSP_LABELS_CSV=/path/to/other.csv sbatch --export=ALL ...
 #
 set -euo pipefail
 
@@ -31,7 +31,7 @@ talkshow_activate "${TALKSHOW_CONDA_ENV:-talkshow}"
 # pandas may already be present via vLLM stack; install if missing.
 python -c "import pandas" 2>/dev/null || pip install -q pandas
 
-CSV="${MSP_LABELS_CSV:-/data/user_data/${USER}/MSP-PODCAST-Publish-2.0/Labels/labels_detailed.csv}"
+CSV="${MSP_LABELS_CSV:-/data/user_data/${USER}/MSP-PODCAST-Publish-2.0/Labels/labels_consensus.csv}"
 OUT="${MSP_ANCHORS_OUT:-agent/emotion/data/msp_pad_anchors.npz}"
 
 export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"

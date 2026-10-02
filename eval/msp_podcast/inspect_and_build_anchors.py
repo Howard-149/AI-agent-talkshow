@@ -1,16 +1,23 @@
 """Build PAD emotion anchors from MSP-PODCAST labels (Sentipolis-style KNN).
 
-Default path (Babel)::
+Default path (Babel, compute nodes only — /data is not mounted on login)::
 
-    /data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0/Labels/labels_detailed.csv
+    /data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0/Labels/labels_consensus.csv
 
-Also accepts ``labels_consensus.csv`` (FileName,EmoClass,EmoAct,EmoVal,EmoDom).
+Use the consensus table (FileName,EmoClass,EmoAct,EmoVal,EmoDom; 264,705 rows as in
+Sentipolis A.2). ``labels_detailed.csv`` is per-annotator with integer ratings and
+collapses onto 343 grid points — the builder refuses it unless --allow-per-annotator.
+
+"No Agreement" (X) rows are resolved from per-utterance vote counts in
+``labels_detailed_aggregated.csv`` (``--votes-csv``): exactly two emotions tied for first
+→ 50/50 soft label; single top emotion → that emotion; ≥3 tied → Vague. "Other" (O)
+stays Vague. Pass ``--votes-csv ''`` for the paper's plain mapping (all X/O → Vague).
 
 Usage::
 
     PYTHONPATH=. python eval/msp_podcast/inspect_and_build_anchors.py
     PYTHONPATH=. python eval/msp_podcast/inspect_and_build_anchors.py \\
-      --csv /path/to/labels_detailed.csv \\
+      --csv /path/to/labels_consensus.csv \\
       --out agent/emotion/data/msp_pad_anchors.npz
 """
 
@@ -27,11 +34,13 @@ import numpy as np
 # Repo root on PYTHONPATH
 from agent.emotion.msp_anchors import (
     DEFAULT_MSP_LABELS_CSV,
+    DEFAULT_MSP_VOTES_CSV,
     build_anchors_from_dataframe,
     canonicalize_emotion_label,
     discover_columns,
     load_labels_csv,
     normalize_pad_1_to_7,
+    soft_labels_from_votes,
     summarize_anchors,
 )
 
@@ -42,7 +51,18 @@ def main(argv: list[str] | None = None) -> int:
         "--csv",
         type=Path,
         default=Path(DEFAULT_MSP_LABELS_CSV),
-        help="MSP labels_detailed.csv or labels_consensus.csv",
+        help="MSP labels_consensus.csv (per-utterance consensus)",
+    )
+    p.add_argument(
+        "--votes-csv",
+        type=str,
+        default=DEFAULT_MSP_VOTES_CSV,
+        help="labels_detailed_aggregated.csv for No-Agreement soft labels ('' = all Vague)",
+    )
+    p.add_argument(
+        "--allow-per-annotator",
+        action="store_true",
+        help="Permit a per-annotator table (labels_detailed.csv); not recommended",
     )
     p.add_argument(
         "--out",
@@ -94,11 +114,14 @@ def main(argv: list[str] | None = None) -> int:
     ecol2 = cols.get("emotion_second")
     worker = cols.get("worker")
     if worker:
-        print(
-            f"NOTE: per-annotator table (worker={worker}); "
-            f"n≈{len(df)} rows. Paper used consensus (~265k). "
-            f"Optional: --csv .../labels_consensus.csv"
+        msg = (
+            f"per-annotator table (worker={worker}); n={len(df)} rows. Integer ratings "
+            f"collapse onto ≤343 PAD grid points. Use labels_consensus.csv (paper: 264,705)."
         )
+        if not args.allow_per_annotator:
+            print(f"FATAL: {msg}", file=sys.stderr)
+            return 1
+        print(f"WARN: {msg}")
     if ecol2:
         print(f"secondary emotion column present: {ecol2} (anchors use primary only)")
     print(
@@ -139,7 +162,45 @@ def main(argv: list[str] | None = None) -> int:
         print("FATAL: zero usable rows after filtering NaN", file=sys.stderr)
         return 1
 
+    soft = [((lab, 1.0),) for lab in labels]
+    if args.votes_csv and not args.max_rows:
+        votes_path = Path(args.votes_csv)
+        if not votes_path.is_file():
+            print(f"FATAL: votes CSV not found: {votes_path}", file=sys.stderr)
+            return 1
+        print(f"Loading votes {votes_path} …")
+        df_votes = load_labels_csv(votes_path)
+        usable = df.dropna(subset=[c for c in (vcol, acol) if c]).reset_index(drop=True)
+        if len(usable) != len(labels):
+            print("FATAL: row alignment mismatch with votes table", file=sys.stderr)
+            return 1
+        soft = soft_labels_from_votes(usable, df_votes)
+        kinds = Counter(
+            "mix" if len(s) == 2 else ("vague" if s[0][0] == "Vague" else "single")
+            for s, raw in zip(soft, usable[ecol]) if str(raw).strip().upper() == "X"
+        )
+        print(f"No Agreement resolved: {dict(kinds)}")
+        pairs = Counter("/".join(sorted(n for n, _ in s)) for s in soft if len(s) == 2)
+        print(f"top mixes: {pairs.most_common(8)}")
+    labels = [s[0][0] for s in soft]
+
+    uniq, counts = np.unique(pad.round(4), axis=0, return_counts=True)
+    print(
+        f"distinct PAD coordinates: {len(uniq)} "
+        f"(largest stack {counts.max()} anchors at one point; "
+        f"{(counts > 1).sum()} points shared by ≥2 anchors)"
+    )
+
     summary = summarize_anchors(pad, labels)
+    weighted: Counter = Counter()
+    for s in soft:
+        for name, w in s:
+            weighted[name] += w
+    summary["weighted_label_counts"] = {k: round(v, 1) for k, v in weighted.most_common()}
+    summary["mixed_anchors"] = int(sum(1 for s in soft if len(s) == 2))
+    print(f"weighted label histogram: {summary['weighted_label_counts']}")
+    summary["distinct_coords"] = int(len(uniq))
+    summary["max_stack"] = int(counts.max())
     print(f"label histogram: {summary['label_counts']}")
     print(
         f"PAD means P={summary['pad_mean'][0]:.3f} "
@@ -151,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out,
         pad=pad.astype(np.float32),
         labels=np.asarray(labels, dtype=object),
+        labels_b=np.asarray([s[1][0] if len(s) == 2 else "" for s in soft], dtype=object),
+        weights_a=np.asarray([s[0][1] for s in soft], dtype=np.float32),
         source_csv=str(csv_path),
         columns_json=json.dumps(cols),
     )
