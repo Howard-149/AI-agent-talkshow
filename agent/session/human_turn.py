@@ -66,7 +66,6 @@ async def finalize_human_turn(
         data,
         "host",
         emotion=parsed.emotion,
-        pad_delta=parsed.pad_delta,
     )
     if panel_turn:
         from agent.floor.floor_control import resolve_floor_after_host_speech
@@ -129,8 +128,6 @@ async def finalize_human_turn(
             tagged_next=parsed.next_speaker,
             resolved_next=resolved_next,
             emotion=get_role_emotion(data, "host"),
-            pad_delta=list(parsed.pad_delta) if parsed.pad_delta is not None else None,
-            has_pad_tag="[pad]" in (raw or "").lower(),
             raw=(raw or "")[:1500] or None,
             room=data.room_name,
             active_role=data.active_role,

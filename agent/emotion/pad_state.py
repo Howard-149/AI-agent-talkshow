@@ -78,19 +78,38 @@ def decay_pad(
     return state
 
 
+def soft_bounded_add(value: float, delta: float) -> float:
+    """Diminishing returns toward the PAD bounds (talk-show addition, not Sentipolis).
+
+    A delta that pushes further in the direction the axis already leans is scaled
+    by ``1 - |value|``; a delta pulling back toward neutral applies in full. The
+    result can approach but never exceed ±1, so repeated mild praise saturates
+    gracefully instead of pinning the axis at the clip limit.
+    """
+    v, d = float(value), float(delta)
+    if v * d > 0:
+        d *= 1.0 - abs(v)
+    return _clip_pad(v + d)
+
+
 def apply_pad_delta(
     state: PADState,
     delta: Sequence[float],
     *,
     scale: float = 1.0,
+    soft_bound: bool = False,
     now: float | None = None,
 ) -> PADState:
-    """Add appraisal delta [dP, dA, dD] (optionally scaled) and clamp."""
+    """Add appraisal delta [dP, dA, dD] (optionally scaled) and clamp.
+
+    ``soft_bound=True`` uses :func:`soft_bounded_add` (diminishing returns).
+    """
     if len(delta) != 3:
         raise ValueError(f"delta must have length 3, got {len(delta)}")
-    state.pleasure = _clip_pad(state.pleasure + scale * float(delta[0]))
-    state.arousal = _clip_pad(state.arousal + scale * float(delta[1]))
-    state.dominance = _clip_pad(state.dominance + scale * float(delta[2]))
+    add = soft_bounded_add if soft_bound else (lambda v, d: _clip_pad(v + d))
+    state.pleasure = add(state.pleasure, scale * float(delta[0]))
+    state.arousal = add(state.arousal, scale * float(delta[1]))
+    state.dominance = add(state.dominance, scale * float(delta[2]))
     state.updated_at = time.monotonic() if now is None else now
     return state
 
@@ -102,10 +121,11 @@ def decay_then_update(
     delta_t: float,
     half_life: float = 120.0 * 60.0,
     scale: float = 1.0,
+    soft_bound: bool = False,
 ) -> PADState:
     """Apply time decay, then appraisal delta (fast-update path)."""
     decay_pad(state, delta_t=delta_t, half_life=half_life)
-    apply_pad_delta(state, delta, scale=scale)
+    apply_pad_delta(state, delta, scale=scale, soft_bound=soft_bound)
     return state
 
 

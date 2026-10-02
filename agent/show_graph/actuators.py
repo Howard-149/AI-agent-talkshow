@@ -181,7 +181,7 @@ async def execute_command(
 
     if op == "host_close":
         listen = controller.listen_role()
-        append_role(data, listen, PANEL_HOST_CLOSE)
+        append_role(data, listen, PANEL_HOST_CLOSE, appraise=False)
         await speak_panel_line(
             session,
             data,

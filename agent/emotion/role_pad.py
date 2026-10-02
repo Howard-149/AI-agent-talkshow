@@ -72,6 +72,7 @@ def update_role_pad(
     delta_t_s: float = 0.0,
     half_life_s: float = DEFAULT_HALF_LIFE_S,
     scale: float = 1.0,
+    soft_bound: bool = False,
 ) -> tuple[float, float, float]:
     """Decay by elapsed seconds (optional), then apply appraisal delta."""
     role = (role or "").strip().lower()
@@ -84,6 +85,7 @@ def update_role_pad(
         delta_t=delta_t_s,
         half_life=half_life_s,
         scale=scale,
+        soft_bound=soft_bound,
     )
     _store(data, role, state)
     logger.info(

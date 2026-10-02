@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent.config import ScenarioConfig
 from agent.floor.hand_raise_queue import HandRaiseQueue
@@ -60,6 +60,10 @@ class TalkShowData:
     role_pad: dict[str, tuple[float, float, float]] = field(default_factory=dict)
     # Monotonic timestamps for PAD decay between turns (role → time.monotonic()).
     role_pad_ts: dict[str, float] = field(default_factory=dict)
+    # Latest kNN neighbor labels per role (k=3) — prompt mood descriptor.
+    role_pad_neighbors: dict[str, list[str]] = field(default_factory=dict)
+    # In-flight separate PAD appraisal per listener role (latest task; chained).
+    pending_appraisals: dict[str, Any] = field(default_factory=dict, repr=False)
     # Host reply after human STT — spoken via speak_panel_line (not StoredReplyLLM+TTS).
     pending_host_speak: str = ""
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS

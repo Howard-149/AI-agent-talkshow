@@ -147,3 +147,9 @@ class SoftLabelTests(unittest.TestCase):
             knn = PADEmotionKNN.from_npz(path, k=2)
             self.assertEqual(knn.soft_labels[0], (("Fear", 0.5), ("Contempt", 0.5)))
             self.assertEqual(knn.soft_labels[1], (("Neutral", 1.0),))
+
+    def test_speakable_label_skips_vague(self) -> None:
+        from agent.emotion.pad_pipeline import speakable_label
+
+        self.assertEqual(speakable_label(("Vague", "Anger", "Vague")), "Anger")
+        self.assertEqual(speakable_label(("Vague", "Vague", "Vague")), "Neutral")

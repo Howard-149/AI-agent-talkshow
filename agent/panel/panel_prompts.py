@@ -145,11 +145,6 @@ def panelist_system_prompt(
             "- Also output [emotion]: matching your [reply] tone "
             "(closed set in the user prompt)."
         )
-    else:
-        mechanics += (
-            "- REQUIRED last line: [pad]: ΔP ΔA ΔD matching [reply] "
-            "(0 0 0 if unchanged). Never omit [pad]. Never output [emotion]."
-        )
     mechanics += _panel_identity_guard(
         role, scenario=scenario, panel_roles=panel_roles, history=history
     )
@@ -176,7 +171,7 @@ def panel_speech_prompt(
     closing: bool = False,
     data: object | None = None,
 ) -> str:
-    from agent.emotion import mood_output_lines, mood_prompt_block
+    from agent.emotion import mood_output_block, mood_prompt_block
 
     tag_opts = next_tag_options(panel_roles, include_host=True)
     if closing:
@@ -213,13 +208,11 @@ Rules:
 - Do not ask the human direct questions while their floor is frozen.
 - Do NOT say you are {host_name} unless you are the host closing.
 
-Output exactly (all three lines; [pad] is mandatory):
+Output exactly:
 [reply]: <your spoken lines>
 [next]: {tag_opts}
-{mood_output_lines()}
-- Pass [next:<role>] ONLY if you explicitly hand off to that panelist by name in [reply]
+{mood_output_block()}- Pass [next:<role>] ONLY if you explicitly hand off to that panelist by name in [reply]
 - Otherwise [next:host] — the host will moderate who speaks next
-- End with [pad] even if 0 0 0. Do not output [emotion].
 """
 
 

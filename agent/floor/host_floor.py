@@ -397,7 +397,7 @@ async def host_speak_session_welcome(
     line = texts.get(primary) or canned["en"]
     listen = controller.listen_role()
     # History stays English for shared transcript / prompts.
-    append_role(data, listen, canned["en"])
+    append_role(data, listen, canned["en"], appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -454,7 +454,7 @@ async def host_speak_open_floor(
     """Host opens hand-raise moderation before panelists are polled."""
     listen = controller.listen_role()
     line = host_open_floor_line()
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -476,7 +476,7 @@ async def host_introduce_speaker(
     listen = controller.listen_role()
     name = load_persona_name(role)
     line = host_intro_speaker_line(name)
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -525,7 +525,7 @@ async def grant_human_floor(
     """End panel beat — human speaks via mic."""
     listen = controller.listen_role()
     line = host_human_floor_line(topic=data.human_hand_topic or None)
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,

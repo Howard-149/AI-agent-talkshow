@@ -11,7 +11,7 @@ from agent.config import load_persona_instructions, load_persona_name
 from agent.data import TalkShowData
 from agent.emotion import (
     apply_mood_from_parsed,
-    mood_output_lines,
+    mood_output_block,
     mood_prompt_block,
 )
 from agent.floor.floor_control import apply_floor_next, resolve_floor_after_host_speech
@@ -50,6 +50,9 @@ async def host_direct_call_when_no_raises(
     if not unspoken:
         return "close", "no_panelists_left"
 
+    from agent.emotion.appraisal import await_pending_appraisal
+
+    await await_pending_appraisal(data, "host")
     role_map = panel_role_name_map(panel_roles)
     names_hint = ", ".join(load_persona_name(r) for r in unspoken)
     tag_opts = next_tag_options(panel_roles, include_host=False)
@@ -66,21 +69,20 @@ Speak 2–3 sentences with a question or topic angle FOR THEM.
 Output exactly:
 [reply]: <spoken host line naming them>
 [next]: {tag_opts}
-{mood_output_lines()}
-"""
+{mood_output_block()}"""
     hist = data.show_history.prior_messages()
     system = load_persona_instructions("host", panel_mode=controller.is_panel_mode())
     raw = await data.runtime.gemma_client.complete_text(
         prompt,
         system_prompt=system,
         history_messages=hist,
+        raw=True,
     )
     parsed = parse_host_speech(raw)
     emotion = apply_mood_from_parsed(
         data,
         "host",
         emotion=parsed.emotion,
-        pad_delta=parsed.pad_delta,
     )
     if data.turn_log is not None:
         data.turn_log.log(
@@ -90,8 +92,6 @@ Output exactly:
             reply=(parsed.reply or "")[:400],
             next_tag=parsed.next_speaker,
             emotion=emotion,
-            pad_delta=list(parsed.pad_delta) if parsed.pad_delta is not None else None,
-            has_pad_tag="[pad]" in (raw or "").lower(),
             raw=(raw or "")[:1500] or None,
             room=data.room_name,
         )

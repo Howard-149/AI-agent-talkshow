@@ -49,6 +49,10 @@ async def speak_one_panelist(
     if speak_role != data.active_role:
         await switch_to_role(session, data, speak_role, reason=f"panel:{step}")
 
+    from agent.emotion.appraisal import await_pending_appraisal
+
+    await await_pending_appraisal(data, speak_role)
+
     dialogue_hint = ""
     dlg = data.scenario.dialogue
     if dlg and dlg.library:
@@ -100,6 +104,7 @@ async def speak_one_panelist(
         prompt,
         system_prompt=system_prompt,
         history_messages=hist,
+        raw=True,
     )
     model_latency_s = time.monotonic() - t0
     from agent.emotion import apply_mood_from_parsed, get_role_emotion
@@ -110,7 +115,6 @@ async def speak_one_panelist(
         data,
         speak_role,
         emotion=parsed.emotion,
-        pad_delta=parsed.pad_delta,
     )
     speech = strip_speech_control_tags(parsed.reply.strip())
     if not speech:
@@ -144,8 +148,6 @@ async def speak_one_panelist(
             reply_len=len(speech),
             next_tag=next_role,
             emotion=emotion,
-            pad_delta=list(parsed.pad_delta) if parsed.pad_delta is not None else None,
-            has_pad_tag="[pad]" in (raw or "").lower(),
             raw=(raw or "")[:1500],
             model_latency_s=round(model_latency_s, 3),
             dialogue_library=dlg.library if dlg and dlg.library else None,
@@ -196,7 +198,7 @@ async def run_panel_round(
             step=f"speech_{role}",
         )
 
-    append_role(data, listen, PANEL_HOST_CLOSE)
+    append_role(data, listen, PANEL_HOST_CLOSE, appraise=False)
     await speak_panel_line(
         session,
         data,

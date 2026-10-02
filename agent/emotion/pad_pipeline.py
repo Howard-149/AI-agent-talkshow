@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from agent.emotion.knn_map import PADEmotionKNN
+from agent.emotion.knn_map import PADEmotionKNN, modal_labels
 from agent.emotion.role_pad import (
     decay_role_pad,
     get_role_pad,
@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 # Talk-show turn scale (seconds). Paper uses 120 minutes — too slow for audible shifts.
 DEFAULT_TALKSHOW_HALF_LIFE_S = 120.0
+# Optional global gain on appraisal deltas (1.0 = use the appraiser's values as-is).
+DEFAULT_TALKSHOW_DELTA_SCALE = 1.0
 
 _knn: PADEmotionKNN | None = None
 _knn_failed = False
@@ -43,6 +45,24 @@ def talkshow_half_life_s() -> float:
         except ValueError:
             pass
     return DEFAULT_TALKSHOW_HALF_LIFE_S
+
+
+def talkshow_delta_scale() -> float:
+    raw = os.environ.get("TALKSHOW_PAD_DELTA_SCALE", "").strip()
+    if raw:
+        try:
+            v = float(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return DEFAULT_TALKSHOW_DELTA_SCALE
+
+
+def talkshow_soft_bound() -> bool:
+    """Diminishing-returns PAD update (default on; ``TALKSHOW_PAD_SOFT_BOUND=0`` = paper's plain clip)."""
+    raw = os.environ.get("TALKSHOW_PAD_SOFT_BOUND", "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
 
 
 def default_anchors_path() -> Path:
@@ -95,6 +115,28 @@ def _touch_ts(data: TalkShowData, role: str) -> None:
     data.role_pad_ts[role] = time.monotonic()  # type: ignore[attr-defined]
 
 
+VAGUE_LABEL = "Vague"
+
+
+def speakable_label(neighbors: Sequence[str]) -> str:
+    """Primary label for TTS / UI: first non-Vague neighbor, else Neutral.
+
+    MSP "Vague" (annotators disagreed / Other) is kept in kNN and logs, but it is
+    not a voice or a mood a speaker can act on.
+    """
+    for lab in neighbors:
+        if lab and lab != VAGUE_LABEL:
+            return lab
+    return DEFAULT_EMOTION
+
+
+def _store_neighbors(data: TalkShowData, role: str, labels: Sequence[str]) -> None:
+    """kNN neighbor labels feed the prompt mood descriptor (Sentipolis: keep all k)."""
+    if not hasattr(data, "role_pad_neighbors") or data.role_pad_neighbors is None:  # type: ignore[attr-defined]
+        data.role_pad_neighbors = {}  # type: ignore[attr-defined]
+    data.role_pad_neighbors[role] = [str(x) for x in labels]  # type: ignore[attr-defined]
+
+
 def _round3(pad: Sequence[float]) -> list[float]:
     return [round(float(pad[0]), 4), round(float(pad[1]), 4), round(float(pad[2]), 4)]
 
@@ -128,6 +170,7 @@ def _log_pad_map(
         emotion=emotion,
         emotion_was=emotion_was,
         neighbors=list(neighbors),
+        labels=list(modal_labels(neighbors)) if neighbors else [emotion],
         neighbor_distances=[round(float(x), 4) for x in neighbor_distances],
         source="pad",
         reason=reason,
@@ -169,9 +212,10 @@ def materialize_emotion_from_pad(
     neighbor_distances: tuple[float, ...] = ()
     if knn is None:
         label = set_role_emotion(data, role, DEFAULT_EMOTION)
+        _store_neighbors(data, role, (label,))
     else:
         result = knn.query(pad)
-        label = result.primary_label
+        label = speakable_label(result.neighbor_labels)
         neighbors = result.neighbor_labels
         neighbor_distances = result.neighbor_distances
         logger.info(
@@ -184,6 +228,7 @@ def materialize_emotion_from_pad(
             neighbors,
         )
         label = set_role_emotion(data, role, label)
+        _store_neighbors(data, role, neighbors or (label,))
 
     why = reason or ("decay" if decay else "materialize")
     _log_pad_map(
@@ -207,6 +252,8 @@ def apply_pad_delta_from_parsed(
     data: TalkShowData,
     role: str,
     delta: Sequence[float] | None,
+    *,
+    reason: str = "delta",
 ) -> str:
     """Apply optional PAD delta (with decay), then materialize MSP emotion tag."""
     role = (role or "").strip().lower()
@@ -223,6 +270,8 @@ def apply_pad_delta_from_parsed(
             delta,
             delta_t_s=dt,
             half_life_s=half,
+            scale=talkshow_delta_scale(),
+            soft_bound=talkshow_soft_bound(),
         )
         _touch_ts(data, role)
         # Skip second decay inside materialize — already decayed+updated.
@@ -233,7 +282,7 @@ def apply_pad_delta_from_parsed(
             pad_before=pad_before,
             delta=delta,
             dt_s=dt,
-            reason="delta",
+            reason=reason,
         )
 
     return materialize_emotion_from_pad(data, role, decay=True, reason="decay")
@@ -244,11 +293,11 @@ def apply_mood_from_parsed(
     role: str,
     *,
     emotion: str | None = None,
-    pad_delta: Sequence[float] | None = None,
 ) -> str:
     """Dispatch pad vs llm mood update after a model turn."""
     if emotion_source() == "llm":
         from agent.emotion.state import apply_emotion_from_parsed
 
         return apply_emotion_from_parsed(data, role, emotion)
-    return apply_pad_delta_from_parsed(data, role, pad_delta)
+    # PAD itself is updated by listeners' separate appraisal (agent/emotion/appraisal.py).
+    return materialize_emotion_from_pad(data, role, decay=True, reason="decay")

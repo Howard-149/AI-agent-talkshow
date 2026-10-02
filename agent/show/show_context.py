@@ -68,7 +68,7 @@ def host_after_human_card(scenario) -> str:
 
 def host_audio_user_hint() -> str:
     from agent.config import load_scenario
-    from agent.emotion import emotion_source, mood_output_lines
+    from agent.emotion import emotion_source, mood_output_block
 
     scenario = load_scenario()
     panel_roles = panel_speaker_roles(scenario)
@@ -88,8 +88,7 @@ def host_audio_user_hint() -> str:
         "[heard]: <transcript>\n"
         "[reply]: <short host tee-up to the room>\n"
         f"[next]: {tags}\n"
-        f"{mood_output_lines()}\n"
-        "[pad] is required on the last line even if 0 0 0. Do not output [emotion].\n\n"
+        f"{mood_output_block()}\n"
         "[next] rules:\n"
         "- You named a panelist to speak next → their role id\n"
         "- Open floor, no one picked → host (panel raises hands)\n"
@@ -101,7 +100,7 @@ def host_audio_user_hint() -> str:
 def host_text_user_hint(human_text: str) -> str:
     """Same host tee-up contract as audio-in, but the transcript is already known."""
     from agent.config import load_scenario
-    from agent.emotion import emotion_source, mood_output_lines
+    from agent.emotion import emotion_source, mood_output_block
 
     scenario = load_scenario()
     panel_roles = panel_speaker_roles(scenario)
@@ -122,8 +121,7 @@ def host_text_user_hint(human_text: str) -> str:
         "Output exactly:\n"
         "[reply]: <short host tee-up to the room>\n"
         f"[next]: {tags}\n"
-        f"{mood_output_lines()}\n"
-        "[pad] is required on the last line even if 0 0 0. Do not output [emotion].\n\n"
+        f"{mood_output_block()}\n"
         "[next] rules:\n"
         "- You named a panelist to speak next → their role id\n"
         "- Open floor, no one picked → host (panel raises hands)\n"

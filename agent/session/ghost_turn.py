@@ -91,14 +91,17 @@ async def _run_ghost_human_turn_locked(
 
     from agent.adapters.response_parser import ParsedTurn, parse_host_speech
     from agent.emotion import mood_prompt_block
+    from agent.emotion.appraisal import await_pending_appraisal
     from agent.show.show_context import host_text_user_hint
 
+    await await_pending_appraisal(data, "host")
     user_hint = f"{host_text_user_hint(heard)}\n\n{mood_prompt_block(data, 'host')}"
     hist = data.show_history.prior_messages()
     t0 = time.monotonic()
     raw = await data.runtime.gemma_client.complete_text(
         user_hint,
         history_messages=hist,
+        raw=True,
     )
     model_latency_s = time.monotonic() - t0
     parsed_raw = parse_host_speech(raw)
@@ -108,7 +111,6 @@ async def _run_ghost_human_turn_locked(
         handoff_to=parsed_raw.handoff_to,
         next_speaker=parsed_raw.next_speaker,
         emotion=parsed_raw.emotion,
-        pad_delta=parsed_raw.pad_delta,
     )
 
     reply = await finalize_human_turn(

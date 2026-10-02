@@ -107,6 +107,11 @@ def load_persona_instructions(
     persona_id: str = "host", *, panel_mode: bool = False
 ) -> str:
     base = str(load_persona_yaml(persona_id)["instructions"]).strip()
+    from agent.emotion.state import mood_persona_addon
+
+    addon = mood_persona_addon()
+    if addon:
+        base = f"{base}\n\n{addon}"
     if not panel_mode:
         return base
     from agent.show.show_context import panel_host_gemma_addon
