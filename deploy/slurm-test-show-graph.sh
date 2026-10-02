@@ -38,8 +38,8 @@ nvidia-smi -L 2>/dev/null || true
 
 export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
 
-echo "unittest tests.show_graph.test_parity …"
-python -m unittest tests.show_graph.test_parity -v
+echo "unittest tests.show_graph.test_show_graph …"
+python -m unittest tests.show_graph.test_show_graph -v
 
 if [[ -n "${FLOOR_JSONL_REF:-}" && -n "${FLOOR_JSONL_NEW:-}" ]]; then
   echo "JSONL floor event order: ${FLOOR_JSONL_REF} vs ${FLOOR_JSONL_NEW}"

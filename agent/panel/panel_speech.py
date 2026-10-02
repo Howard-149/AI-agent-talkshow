@@ -18,6 +18,7 @@ from agent.panel.dialogue_library import format_dialogue_hint
 from agent.session.session_handoff import speak_panel_line, switch_to_role
 from agent.panel.panel_speech_normalize import normalize_panelist_speech
 from agent.show.show_history import append_role
+from agent.show_graph.state import PanelistLine
 from agent.floor import TurnController
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,36 @@ async def speak_one_panelist(
     step: str,
 ) -> str:
     """
-    Generate and speak one panelist line.
+    Generate and speak one panelist line (non-graph turn modes).
     Returns consumed [next] role for floor routing.
     """
+    line = await generate_panelist_line(session, data, speak_role=speak_role, step=step)
+    append_role(data, speak_role, line.text)
+    await speak_panel_line(
+        session,
+        data,
+        speak_role=speak_role,
+        text=line.text,
+        step=step,
+    )
+    apply_floor_next(data, line.next_role)
+    logger.info(
+        "panelist spoke role=%s tagged next=%s emotion=%s",
+        speak_role,
+        line.next_role,
+        line.emotion,
+    )
+    return line.next_role
+
+
+async def generate_panelist_line(
+    session: AgentSession,
+    data: TalkShowData,
+    *,
+    speak_role: str,
+    step: str,
+) -> PanelistLine:
+    """Generate one panelist line (prompt → Gemma → parse/normalize); does not speak."""
     controller = TurnController(data.scenario, data)
     panel_roles = controller.panel_speaker_roles()
     name = load_persona_name(speak_role)
@@ -158,22 +186,7 @@ async def speak_one_panelist(
             room=getattr(data, "room_name", ""),
         )
 
-    append_role(data, speak_role, speech)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=speak_role,
-        text=speech,
-        step=step,
-    )
-    apply_floor_next(data, next_role)
-    logger.info(
-        "panelist spoke role=%s tagged next=%s emotion=%s",
-        speak_role,
-        next_role,
-        get_role_emotion(data, speak_role),
-    )
-    return next_role
+    return PanelistLine(role=speak_role, text=speech, next_role=next_role, emotion=emotion)
 
 
 async def run_panel_round(

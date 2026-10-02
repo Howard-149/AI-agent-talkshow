@@ -16,20 +16,17 @@ from agent.emotion import (
 )
 from agent.floor.floor_control import apply_floor_next, resolve_floor_after_host_speech
 from agent.floor.floor_parser import strip_speech_control_tags
-from agent.floor.hand_raise_ui import dequeue_hand_raise
 from agent.panel.panel_context import (
     next_tag_options,
     panel_role_name_map,
 )
 from agent.floor.host_lines import host_direct_call_fallback_line, host_intro_speaker_line
-from agent.session.session_handoff import speak_panel_line
-from agent.show.show_history import append_role
 from agent.floor import TurnController
 
 logger = logging.getLogger(__name__)
 
 
-async def host_direct_call_when_no_raises(
+async def plan_host_direct_call(
     session: AgentSession,
     data: TalkShowData,
     controller: TurnController,
@@ -37,18 +34,20 @@ async def host_direct_call_when_no_raises(
     panel_roles: list[str],
     spoken_roles: set[str],
     trigger: str,
-) -> tuple[str | None, str]:
+) -> tuple[str | None, str, str | None]:
     """
     Queue empty after open floor — host names a panelist and grants direct [next].
+
+    Returns ``(resolved_role, reason, host_line)``. The show graph speaks ``host_line``
+    (so listeners appraise it) and dequeues the role; nothing is spoken here.
     """
     from agent.floor.floor_control import is_direct_next
     from agent.floor.floor_parser import fallback_floor_decision
 
-    listen = controller.listen_role()
     host = load_persona_name("host")
     unspoken = [r for r in panel_roles if r not in spoken_roles]
     if not unspoken:
-        return "close", "no_panelists_left"
+        return "close", "no_panelists_left", None
 
     from agent.emotion.appraisal import await_pending_appraisal
 
@@ -130,13 +129,4 @@ Output exactly:
         emotion,
         trigger,
     )
-    append_role(data, listen, text)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=text,
-        step=f"direct_call_{trigger}",
-    )
-    await dequeue_hand_raise(data, resolved)
-    return resolved, "host_direct_no_raises"
+    return resolved, "host_direct_no_raises", text

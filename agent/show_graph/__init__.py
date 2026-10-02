@@ -1,24 +1,16 @@
 """
-LangGraph show controller — host-moderated floor orchestration.
+LangGraph show graph — the runtime for host-moderated shows.
 
-Phase 1: rule nodes emit Commands; the LiveKit runner executes actuators
-(speak / poll / UI). Behavior matches the pre-migration host_floor loops.
+One invocation runs one show beat (a human turn and the panel round after it, or a
+host-moderation beat at session start / idle). Nodes are async and act through
+``Actuators`` (``LiveActuators`` in production, fakes in tests). Every spoken line
+goes through ``prepare_speak``, which fans out TTS and the listeners' PAD
+appraisals in parallel; ``after_speak`` joins them, so a speaker's next prompt
+always sees an up-to-date mood.
 
-Future swap points (do not require another rewrite):
-- Host chooses speaker: replace grant node with tool-calling LLM; mask with
-  legal set from queue / participants.
-- Interrupt / yield: runner cancels actuator; set interrupt_requested; edge
-  back to grant / open_floor.
-- Real multi-agent: same Command bus; multiple workers execute speak_*;
-  graph stays coordinator.
-- Emotion per participant: ``role_pad`` + ``role_emotion`` mirrored on
-  ShowState; PAD→kNN materialize runs in speak_panel_line (pre-TTS). LLM
-  updates PAD deltas; MSP primary label is the live CosyVoice/UI tag.
-  Optional future: VAD updater before introduce_and_speak.
-- Role enter/exit: mutate participants + UI roster reload; poll/grant iterate
-  that list.
-
-LiveKit-only fields stay on TalkShowData — not duplicated into ShowState.
+Not yet in the graph (next phases): a session-long graph that waits for human /
+idle / UI events via ``interrupt``, and an LLM host node that picks speakers.
+Non-host-moderated turn modes keep the legacy path in agent/panel/panel_speech.py.
 """
 
 from __future__ import annotations
@@ -28,6 +20,8 @@ from typing import Any
 __all__ = [
     "run_host_moderated_panel",
     "run_host_moderation_from_queue",
+    "run_show_beat",
+    "submit_human_turn",
 ]
 
 

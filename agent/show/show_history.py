@@ -112,11 +112,25 @@ def append_human(data: object, text: str, *, appraise: bool = True) -> None:
             _schedule_appraisal(data, "human", text)
 
 
-def append_role(data: object, role_id: str, text: str, *, appraise: bool = True) -> None:
-    """``appraise=False`` for canned procedural host lines (no emotional content)."""
+def append_role(
+    data: object,
+    role_id: str,
+    text: str,
+    *,
+    appraise: bool = True,
+    procedural: bool | None = None,
+) -> None:
+    """Record a spoken line.
+
+    ``appraise`` runs the legacy background appraisal hook (non-graph turn modes);
+    the show graph appraises lines itself and passes ``appraise=False``.
+    ``procedural`` marks canned host lines ("Floor's open.") — defaults to
+    ``not appraise`` for legacy callers.
+    """
     from agent.data import TalkShowData
 
     if isinstance(data, TalkShowData):
-        data.show_history.append(role_id, text, procedural=not appraise)
+        is_procedural = (not appraise) if procedural is None else procedural
+        data.show_history.append(role_id, text, procedural=is_procedural)
         if appraise:
             _schedule_appraisal(data, role_id, text)

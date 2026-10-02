@@ -53,10 +53,44 @@ async def finalize_human_turn(
     done_event: str = "gemma_stt_done",
     raw: str | None = None,
 ) -> str:
-    """Sanitize host reply, apply floor / PAD / history, and queue host TTS.
+    """Non-graph turn modes: commit the turn and queue host TTS + panel follow-up.
 
     Shared by Gemma audio-in and the ghost-session text inject path.
     Returns the spoken host reply (also stored on ``data.pending_host_speak``).
+    """
+    reply = await commit_human_turn(
+        data,
+        heard=heard,
+        parsed=parsed,
+        panel_turn=panel_turn,
+        model_latency_s=model_latency_s,
+        done_event=done_event,
+        raw=raw,
+        graph=False,
+    )
+    # Spoken via speak_panel_line (TalkShowAgent.on_user_turn_completed or ghost_turn).
+    data.pending_host_speak = reply
+    if panel_turn:
+        data.panel_followup_pending = True
+    return reply
+
+
+async def commit_human_turn(
+    data: TalkShowData,
+    *,
+    heard: str,
+    parsed: ParsedTurn,
+    panel_turn: bool,
+    model_latency_s: float,
+    done_event: str = "gemma_stt_done",
+    raw: str | None = None,
+    graph: bool = False,
+) -> str:
+    """Sanitize the host reply, resolve the floor, record the human line, log.
+
+    ``graph=True`` (show graph): the human line is recorded without the legacy
+    appraisal hook and the host reply is *not* recorded — the graph records,
+    appraises and speaks it like every other line.
     """
     from agent.emotion import apply_mood_from_parsed, get_role_emotion
 
@@ -103,18 +137,18 @@ async def finalize_human_turn(
     from agent.show.show_history import append_human, append_role
     from agent.ui.ui_events import emit_floor_grant, emit_transcript
 
-    append_human(data, heard)
-    append_role(data, "host", reply)
+    if graph:
+        append_human(data, heard, appraise=False)
+    else:
+        append_human(data, heard)
+        append_role(data, "host", reply)
     human_texts = await texts_for_needed_locales(data, heard)
     await emit_transcript("human", heard, step="human_turn", texts=human_texts)
     if data.human_hand_raised:
         await emit_floor_grant("human", reason="human_spoke_hand_up")
-    # Spoken via speak_panel_line (TalkShowAgent.on_user_turn_completed or ghost_turn).
-    data.pending_host_speak = reply
     data.last_human_heard = heard
     if panel_turn:
         data.last_host_panel_tee = reply
-        data.panel_followup_pending = True
 
     data.runtime.turn_store.set_turn(heard, reply, handoff_to=parsed.handoff_to)
 

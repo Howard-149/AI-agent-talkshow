@@ -220,6 +220,30 @@ class GemmaAudioSTT(stt.STT):
                 )
             return _empty_transcript_event()
 
+        if (
+            panel_turn
+            and ctrl.is_host_moderated_mode()
+            and data.agent_session is not None
+        ):
+            # Show graph speaks the host reply and runs the panel round (in the
+            # background — the STT must hand its transcript back to LiveKit now).
+            from agent.show_graph import submit_human_turn
+
+            await submit_human_turn(
+                data.agent_session,
+                data,
+                ctrl,
+                {
+                    "heard": parsed.heard,
+                    "parsed": parsed,
+                    "raw": None,
+                    "model_latency_s": model_latency_s,
+                    "done_event": "gemma_stt_done",
+                },
+                background=True,
+            )
+            return self._final_event(parsed.heard, language)
+
         from agent.session.human_turn import finalize_human_turn
 
         await finalize_human_turn(

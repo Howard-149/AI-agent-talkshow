@@ -1,4 +1,4 @@
-"""LangGraph wiring for moderation-from-queue and host-moderated panel loop."""
+"""LangGraph wiring for one show beat (human turn, host moderation, or panel round)."""
 
 from __future__ import annotations
 
@@ -9,111 +9,46 @@ from langgraph.graph import END, START, StateGraph
 from agent.show_graph import nodes as N
 from agent.show_graph.state import ShowState
 
+# Node routing is dynamic (nodes return ``Command(goto=...)``); only the fan-in
+# from the parallel speak/appraise branches and the terminal edge are static.
+_COMMAND_NODES = (
+    "human_turn",
+    "panel_consume",
+    "moderate",
+    "hand_raise",
+    "panelist_line",
+    "grant_human",
+    "close",
+    "prepare_speak",
+    "after_speak",
+)
 
-def _route(state: ShowState) -> str:
-    return state["phase"]
 
-
-def _passthrough(state: ShowState) -> dict:
-    return {}
-
-
-def build_moderation_graph() -> Any:
-    """Host-moderation beat with phase router for barrier re-entry."""
+def build_show_graph() -> Any:
     g: StateGraph = StateGraph(ShowState)
+    for name in _COMMAND_NODES:
+        g.add_node(name, getattr(N, name))
+    g.add_node("speak", N.speak)
+    g.add_node("appraise", N.appraise)
+    g.add_node("finish", N.finish)
 
-    g.add_node("router", _passthrough)
-    g.add_node("mod_start", N.node_mod_start)
-    g.add_node("open_floor", N.node_open_floor)
-    g.add_node("hand_raise", N.node_hand_raise)
-    g.add_node("after_raise", N.node_after_raise)
-
-    g.add_edge(START, "router")
     g.add_conditional_edges(
-        "router",
-        _route,
-        {
-            "mod_start": "mod_start",
-            "open_floor": "open_floor",
-            "hand_raise": "hand_raise",
-            "after_raise": "after_raise",
-            "done": END,
-        },
+        START,
+        N.route_entry,
+        {"human_turn": "human_turn", "moderate": "moderate", "panel_consume": "panel_consume"},
     )
-    g.add_conditional_edges(
-        "mod_start",
-        _route,
-        {"open_floor": "open_floor", "done": END},
-    )
-    # open_floor / hand_raise set next phase then END (barrier)
-    g.add_edge("open_floor", END)
-    g.add_edge("hand_raise", END)
-    g.add_edge("after_raise", END)
+    # Join: after_speak runs once both the playout and all appraisals finished.
+    g.add_edge("speak", "after_speak")
+    g.add_edge("appraise", "after_speak")
+    g.add_edge("finish", END)
     return g.compile()
 
 
-def build_panel_graph() -> Any:
-    g: StateGraph = StateGraph(ShowState)
-
-    g.add_node("router", _passthrough)
-    g.add_node("panel_start", N.node_panel_start)
-    g.add_node("panel_consume", N.node_panel_consume)
-    g.add_node("panel_after_moderate", N.node_panel_after_moderate)
-    g.add_node("panel_close", N.node_panel_close)
-
-    g.add_edge(START, "router")
-    g.add_conditional_edges(
-        "router",
-        _route,
-        {
-            "panel_start": "panel_start",
-            "panel_consume": "panel_consume",
-            "panel_after_moderate": "panel_after_moderate",
-            "panel_close": "panel_close",
-            "panel_moderate": END,
-            "done": END,
-        },
-    )
-    g.add_conditional_edges(
-        "panel_start",
-        _route,
-        {"panel_consume": "panel_consume", "done": END},
-    )
-    g.add_edge("panel_consume", END)
-    g.add_conditional_edges(
-        "panel_after_moderate",
-        _route,
-        {
-            "panel_consume": "panel_consume",
-            "panel_close": "panel_close",
-            "done": END,
-        },
-    )
-    g.add_edge("panel_close", END)
-    return g.compile()
+_app: Any = None
 
 
-_moderation_app = None
-_panel_app = None
-
-
-def moderation_app() -> Any:
-    global _moderation_app
-    if _moderation_app is None:
-        _moderation_app = build_moderation_graph()
-    return _moderation_app
-
-
-def panel_app() -> Any:
-    global _panel_app
-    if _panel_app is None:
-        _panel_app = build_panel_graph()
-    return _panel_app
-
-
-def plan_moderation_step(state: ShowState) -> ShowState:
-    return moderation_app().invoke(state)  # type: ignore[return-value]
-
-
-def plan_panel_step(state: ShowState) -> ShowState:
-    return panel_app().invoke(state)  # type: ignore[return-value]
+def show_app() -> Any:
+    global _app
+    if _app is None:
+        _app = build_show_graph()
+    return _app

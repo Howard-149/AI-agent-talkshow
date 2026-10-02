@@ -113,6 +113,27 @@ async def _run_ghost_human_turn_locked(
         emotion=parsed_raw.emotion,
     )
 
+    if panel_turn and controller.is_host_moderated_mode():
+        # Show graph: host reply + panel round, awaited so the ghost turn ends
+        # when the floor is back with the human (or the round closed).
+        from agent.show_graph import submit_human_turn
+
+        ok = await submit_human_turn(
+            session,
+            data,
+            controller,
+            {
+                "heard": heard,
+                "parsed": parsed,
+                "raw": raw,
+                "model_latency_s": model_latency_s,
+                "done_event": "ghost_human_done",
+            },
+            background=False,
+        )
+        data.touch_activity()
+        return ok
+
     reply = await finalize_human_turn(
         data,
         heard=heard,
