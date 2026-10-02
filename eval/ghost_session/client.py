@@ -474,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
         args.opening_only,
         args.record,
     )
+    started_at = time.time()
     recorded = asyncio.run(
         run_ghost_session(
             room=args.room,
@@ -499,9 +500,14 @@ def main(argv: list[str] | None = None) -> int:
     if log_dir is not None:
         from eval.ghost_session.summarize import find_session_log, summarize_session
 
-        path = find_session_log(log_dir, args.room)
+        path = find_session_log(log_dir, args.room, newer_than=started_at)
         if path is None:
-            logger.warning("no session JSONL for room=%s in %s", args.room, log_dir)
+            logger.warning(
+                "no session JSONL for room=%s written during this run in %s — the live "
+                "log is on the agent worker; on Babel: python eval/pad_report.py",
+                args.room,
+                log_dir,
+            )
         else:
             print(summarize_session(path))
             from eval.ghost_session.judge_pad import format_pad_judgment, judge_pad_events

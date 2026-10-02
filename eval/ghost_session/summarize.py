@@ -9,13 +9,21 @@ from pathlib import Path
 from eval.log_parse import extract_human_turns, load_events, role_label, session_metadata
 
 
-def find_session_log(log_dir: Path, room: str) -> Path | None:
-    """Newest ``session-*.jsonl`` whose ``session_start`` matches ``room``."""
+def find_session_log(
+    log_dir: Path, room: str, *, newer_than: float | None = None
+) -> Path | None:
+    """Newest ``session-*.jsonl`` whose ``session_start`` matches ``room``.
+
+    ``newer_than`` (epoch seconds) skips logs not written since then — on a laptop the
+    live JSONL is on the Babel worker, and an old local copy must not be recapped.
+    """
     candidates: list[tuple[float, Path]] = []
     for path in log_dir.glob("session-*.jsonl"):
         try:
             mtime = path.stat().st_mtime
         except OSError:
+            continue
+        if newer_than is not None and mtime < newer_than:
             continue
         if _log_room(path) == room:
             candidates.append((mtime, path))
@@ -82,7 +90,18 @@ def summarize_session(log_path: Path) -> str:
             lines.append(
                 f"    {role_label(rec.role)}{lat} {rec.reply[:90]!r}"
             )
-    model_lines = _format_model_pad_lines(events)
+    appraisals = [e for e in events if e.get("event") == "pad_appraisal"]
+    if appraisals:
+        ok = sum(1 for e in appraisals if e.get("ok"))
+        lines.append(f"pad_appraisal: {ok}/{len(appraisals)} ok")
+        for e in appraisals[:24]:
+            got = (
+                f"{e.get('word') or '-'} {e.get('delta')}"
+                if e.get("ok")
+                else f"FAILED {(e.get('raw') or e.get('error') or '')[:60]!r}"
+            )
+            lines.append(f"  {e.get('speaker')} → {e.get('role')}: {got}")
+    model_lines = _format_model_pad_lines(events) if not appraisals else []
     if model_lines:
         lines.append("model_raw:")
         lines.extend(model_lines)
