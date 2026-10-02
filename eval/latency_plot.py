@@ -8,7 +8,7 @@ Usage:
 
 Logic (no turn windows):
     Walk the whole session. Each occurrence is one sample:
-        host / panel inference – gemma_stt_done / panel_model_done
+        host / panel inference – gemma_stt_done / ghost_human_done / panel_model_done
         TTS                    – tts_synthesize paired with avatar_bake by (role, step)
         1st frame play         – avatar_chunk_play.perceived_wait_ms
                                  (prev playout end → this chunk ready to play first frame;
@@ -152,7 +152,7 @@ def extract_session_metrics(events: list[dict[str, Any]]) -> list[dict[str, Any]
         source = e.get("_source", "")
         ev = e.get("event")
 
-        if ev == "gemma_stt_done":
+        if ev in ("gemma_stt_done", "ghost_human_done"):
             if "model_latency_s" in e:
                 try:
                     add(_label("host", "inference"), float(e["model_latency_s"]), source)

@@ -16,6 +16,7 @@ from agent.floor.floor_control import apply_floor_next
 from agent.multi_agent.types import AgentDraft
 from agent.session.session_handoff import speak_panel_line, switch_to_role
 from agent.show.show_history import append_role
+from agent.show_graph.state import PanelistLine
 from agent.floor import TurnController
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,27 @@ async def speak_draft(
     return draft.next_role
 
 
+async def generate_panelist_line(
+    session: AgentSession,
+    data: TalkShowData,
+    *,
+    speak_role: str,
+    step: str,
+) -> PanelistLine:
+    """Show graph: draft a line that *will* be spoken.
+
+    The graph records, appraises and speaks it itself (prepare_speak), so only the
+    draft-side bookkeeping that ``speak_draft`` would do is applied here.
+    """
+    draft = await draft_panelist(data, speak_role=speak_role, step=step)
+    if draft.dialogue_example_index is not None:
+        data.dialogue_example_index = draft.dialogue_example_index
+    emotion = set_role_emotion(data, speak_role, draft.emotion)
+    return PanelistLine(
+        role=speak_role, text=draft.speech, next_role=draft.next_role, emotion=emotion
+    )
+
+
 async def speak_one_panelist(
     session: AgentSession,
     data: TalkShowData,
@@ -106,7 +128,7 @@ async def run_panel_round(
             step=f"speech_{role}",
         )
 
-    append_role(data, listen, PANEL_HOST_CLOSE)
+    append_role(data, listen, PANEL_HOST_CLOSE, appraise=False)
     await speak_panel_line(
         session,
         data,

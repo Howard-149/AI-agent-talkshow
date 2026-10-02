@@ -367,7 +367,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
 | `config/scenarios/panel_fixed.yaml` | Legacy fixed Ryan → Amy |
 
-Turn modes: **`host_moderated`** (hand-raise + FIFO; orchestrated by `agent/show_graph` LangGraph, actuators in `agent/floor/host_floor.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
+Turn modes: **`host_moderated`** (hand-raise + FIFO; the `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals in parallel with TTS; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
 
 ---
 

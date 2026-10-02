@@ -8,7 +8,7 @@ import time
 
 from agent.adapters.response_parser import parse_host_speech
 from agent.config import load_persona_name
-from agent.emotion import normalize_emotion
+from agent.emotion import emotion_source, get_role_emotion, normalize_emotion
 from agent.floor.floor_parser import strip_speech_control_tags
 from agent.floor.turn_controller import TurnController
 from agent.multi_agent.types import AgentDraft
@@ -29,6 +29,12 @@ class PersonaWorker:
 
     async def draft(self, data: TalkShowData, *, step: str) -> AgentDraft:
         role = self.role
+        # Legacy (non-graph) turn modes appraise in the background; make sure this
+        # persona's own pending appraisal has landed before its prompt is built.
+        # The show graph joins appraisals before the next line, so this is a no-op there.
+        from agent.emotion.appraisal import await_pending_appraisal
+
+        await await_pending_appraisal(data, role)
         controller = TurnController(data.scenario, data)
         panel_roles = controller.panel_speaker_roles()
         name = load_persona_name(role)
@@ -92,11 +98,17 @@ class PersonaWorker:
             prompt,
             system_prompt=system_prompt,
             history_messages=hist,
+            raw=True,  # parse [next] from the full output, not the stripped reply
         )
         model_latency_s = time.monotonic() - t0
 
         parsed = parse_host_speech(raw)
-        emotion = normalize_emotion(parsed.emotion)
+        # PAD mode: mood comes from listeners' appraisals, not the speaker's own tag;
+        # read the current label without mutating shared state (drafts may go unspoken).
+        if emotion_source() == "llm":
+            emotion = normalize_emotion(parsed.emotion)
+        else:
+            emotion = get_role_emotion(data, role)
         speech = strip_speech_control_tags(parsed.reply.strip())
         if not speech:
             logger.warning("empty panel draft for role=%s", role)
@@ -126,6 +138,7 @@ class PersonaWorker:
                 reply_len=len(speech),
                 next_tag=next_role,
                 emotion=emotion,
+                raw=(raw or "")[:1500],
                 model_latency_s=round(model_latency_s, 3),
                 dialogue_library=dlg.library if dlg and dlg.library else None,
                 dialogue_pick=dlg.pick if dlg and dlg.library else None,

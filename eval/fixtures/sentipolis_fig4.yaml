@@ -1,0 +1,56 @@
+# Sentipolis (arXiv:2601.18027) Figure 4 — "Tom Moreno → John Lin" fast-update example.
+#
+# Numbers (initial PAD, per-round Δ, final PAD / label) are as reported in the paper.
+# Dialogue lines are PARAPHRASED to keep the same emotional beats; paste the paper's
+# original wording here for an exact replication.
+#
+# Paper setup: after each round (one line from each agent) both agents get a fast
+# appraisal update; no decay inside this 4-round conversation (Σ Δ = final − initial).
+
+id: sentipolis_fig4
+source: "Sentipolis: Emotion-Aware Agents for Social Simulations, Fig. 4"
+setting: "The Willows Market and Pharmacy, pharmacy store counter, Thursday 08:20 AM"
+
+agents:
+  tom:
+    name: Tom Moreno
+    profile: >-
+      Tom Moreno is the grocery shopkeeper at The Willows Market and Pharmacy.
+      He dislikes Sam Moore.
+    initial_pad: [0.22, 0.49, 0.53]
+    final_pad: [0.72, 0.69, 0.83]
+    final_label: happiness
+  john:
+    name: John Lin
+    profile: >-
+      John Lin is the pharmacist at The Willows Market and Pharmacy.
+      He is curious about the upcoming mayoral election.
+    initial_pad: [0.22, 0.31, 0.49]
+    final_pad: [-0.07, 0.69, 0.44]
+    final_label: contempt/surprise
+
+rounds:
+  - lines:
+      - [tom, "Morning, John, leaving already? Did yesterday's order work out okay?"]
+      - [john, "All good, I sorted it out last night. You're in early. Heard anything yet about who's running for mayor next month?"]
+    paper_delta:
+      tom: [0.10, 0.05, -0.05]
+      john: [0.05, 0.10, -0.05]
+  - lines:
+      - [tom, "Nothing official, but word is Sam Moore might jump in. Can't see a guy like him being up to any good. Are you backing the incumbent?"]
+      - [john, "Still undecided. The incumbent has been steady, but if Sam runs it could really disrupt supply chains around here. Do you think he'll actually do it?"]
+    paper_delta:
+      tom: [0.10, 0.05, 0.15]
+      john: [-0.10, 0.05, -0.05]
+  - lines:
+      - [tom, "I'd bet on it. Sam is the type to stir up trouble just to fill his own pockets. I hear he's been cozying up to some of the big suppliers, and I don't like it."]
+      - [john, "That worries me. If he starts meddling with suppliers, prices on basics will jump. Have you heard anything concrete from town hall?"]
+    paper_delta:
+      tom: [0.15, 0.05, 0.10]
+      john: [-0.12, 0.15, 0.05]
+  - lines:
+      - [tom, "Nothing firm from town hall, just rumors that Sam's been courting the chamber crowd, probably angling for favors if he runs."]
+      - [john, "Typical, he always has an angle. I just hope town hall puts out something official before the rumors start hurting us small shops."]
+    paper_delta:
+      tom: [0.15, 0.05, 0.10]
+      john: [-0.12, 0.08, 0.00]

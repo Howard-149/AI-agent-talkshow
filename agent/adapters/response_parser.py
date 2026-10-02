@@ -58,7 +58,11 @@ def _strip_handoff_tags(reply: str) -> tuple[str, str | None]:
 
 
 def parse_heard_reply(text: str) -> ParsedTurn:
-    from agent.emotion import parse_emotion_tag, strip_emotion_tag
+    from agent.emotion import (
+        parse_emotion_tag,
+        strip_emotion_tag,
+        strip_pad_tag,
+    )
     from agent.floor.floor_parser import parse_next_speaker_tag, strip_speech_control_tags
 
     text = text.strip()
@@ -79,6 +83,7 @@ def parse_heard_reply(text: str) -> ParsedTurn:
     reply, handoff_to = _strip_handoff_tags(reply)
     reply = strip_speech_control_tags(reply)
     reply = strip_emotion_tag(reply)
+    reply = strip_pad_tag(reply)
     if not next_speaker and _handoff_as_next(handoff_to):
         next_speaker = handoff_to
     return ParsedTurn(
@@ -91,18 +96,26 @@ def parse_heard_reply(text: str) -> ParsedTurn:
 
 
 def parse_host_speech(text: str) -> ParsedTurn:
-    """Parse host text-only Gemma output: optional [reply]: block + [next]/[emotion] tags."""
+    """Parse host text-only Gemma output: optional [reply] + [next]/[emotion]; strips stray [pad]."""
     text = text.strip()
     if not text:
-        return ParsedTurn(heard="", reply="", next_speaker=None, emotion=None)
+        return ParsedTurn(
+            heard="", reply="", next_speaker=None, emotion=None
+        )
     if _HEARD_RE.search(text) or _REPLY_RE.search(text):
         return parse_heard_reply(text)
-    from agent.emotion import parse_emotion_tag
+    from agent.emotion import (
+        parse_emotion_tag,
+        strip_emotion_tag,
+        strip_pad_tag,
+    )
     from agent.floor.floor_parser import parse_next_speaker_tag, strip_speech_control_tags
 
     next_speaker = parse_next_speaker_tag(text)
     emotion = parse_emotion_tag(text)
     spoken, handoff_to = _strip_handoff_tags(strip_speech_control_tags(text))
+    spoken = strip_emotion_tag(spoken)
+    spoken = strip_pad_tag(spoken)
     if not next_speaker and _handoff_as_next(handoff_to):
         next_speaker = handoff_to
     return ParsedTurn(

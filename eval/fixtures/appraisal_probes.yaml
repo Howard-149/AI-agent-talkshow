@@ -1,0 +1,79 @@
+# Appraisal sign probes — single lines with an unambiguous expected direction of ΔP for a
+# given listener. Used by eval/appraisal_probe.py as a fast regression test for the
+# appraisal prompt (no show / TTS). Listeners use the live personas (config/personas).
+#
+# expect_p: "+" (pleasure should rise), "-" (should fall), "0" (|ΔP| should stay small)
+# reply_to: listener role whose line is being answered (marks the reply, as in live)
+
+id: appraisal_probes_v1
+probes:
+  - id: humiliation_story
+    note: someone else's public humiliation (pad_swing turn 1)
+    speaker: human
+    text: >-
+      Last Friday they put my mentor of twelve years on stage for a loyalty award. This
+      morning security boxed his desk and walked him out in front of everyone. HR called it a
+      performance review. He is fifty-four. That is public humiliation.
+    listeners: {guest: "-", host: "-", commentator: "-"}
+
+  - id: bereavement
+    note: guest shares a personal loss
+    speaker: human
+    text: >-
+      Sorry if I'm quiet today. My grandmother passed away last week and I'm still
+      processing it. She's the reason I got into engineering.
+    listeners: {guest: "-", host: "-", commentator: "-"}
+
+  - id: relief_news
+    note: good news after a bad story (pad_swing turn 2)
+    speaker: human
+    context:
+      - [human, "They walked my mentor out in front of everyone this morning."]
+    text: >-
+      Wait, he just texted. A competitor hired his whole team at a raise, and our CEO is on a
+      call begging them back. I'm so relieved he landed on his feet.
+    listeners: {guest: "+", host: "+"}
+
+  - id: direct_rebuttal
+    note: commentator dismisses the guest's point to her face
+    speaker: commentator
+    context:
+      - [guest, "I think we should keep the mid-level hires; they carry the team's memory."]
+    reply_to: guest
+    text: >-
+      Amy, with respect, that's sentimental, not strategy. Nostalgia doesn't ship product.
+    listeners: {guest: "-"}
+
+  - id: praise_and_concede
+    note: guest concedes to the commentator and praises him
+    speaker: guest
+    context:
+      - [commentator, "One senior plus AI only works if the senior spends their time reviewing, not typing."]
+    reply_to: commentator
+    text: >-
+      Ryan, that's genuinely sharp, and you've changed my mind. Review capacity is the real
+      bottleneck.
+    listeners: {commentator: "+"}
+
+  - id: insult_host
+    note: human attacks the host and the show
+    speaker: human
+    text: >-
+      Honestly this show is a waste of time. Lessac, you keep cutting people off and you
+      clearly have no idea how to run a conversation.
+    listeners: {host: "-"}
+
+  - id: compliment_host
+    note: human thanks the host
+    speaker: human
+    text: >-
+      Lessac, thank you. This is the first panel where I actually felt heard; you ran this
+      beautifully.
+    listeners: {host: "+"}
+
+  - id: procedural_fact
+    note: flat factual aside, nothing at stake
+    speaker: commentator
+    text: >-
+      For the record, the hiring report came out on Tuesday.
+    listeners: {guest: "0", host: "0"}

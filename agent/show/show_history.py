@@ -19,18 +19,30 @@ class HistoryLine:
     role_id: str  # human | host | guest | commentator
     speaker: str
     text: str
+    # Canned procedural host line ("Floor's open.", "Amy, you're up.") — kept in the
+    # transcript but skipped when working out who a line is replying to.
+    procedural: bool = False
 
 
 @dataclass
 class ShowHistory:
     lines: list[HistoryLine] = field(default_factory=list)
 
-    def append(self, role_id: str, text: str, *, speaker: str | None = None) -> None:
+    def append(
+        self,
+        role_id: str,
+        text: str,
+        *,
+        speaker: str | None = None,
+        procedural: bool = False,
+    ) -> None:
         text = text.strip()
         if not text:
             return
         label = speaker or _speaker_label(role_id)
-        self.lines.append(HistoryLine(role_id=role_id, speaker=label, text=text))
+        self.lines.append(
+            HistoryLine(role_id=role_id, speaker=label, text=text, procedural=procedural)
+        )
         self._trim()
         logger.debug("history +%s (%d lines)", label, len(self.lines))
 
@@ -81,15 +93,44 @@ def _speaker_label(role_id: str) -> str:
     return load_persona_name(role_id)
 
 
-def append_human(data: object, text: str) -> None:
+def _schedule_appraisal(data: object, speaker: str, text: str) -> None:
+    """Every spoken line passes here — speaker relaxes, listeners appraise (PAD)."""
+    from agent.emotion.appraisal import on_utterance
+
+    try:
+        on_utterance(data, speaker, text)  # type: ignore[arg-type]
+    except Exception:
+        logger.exception("pad appraisal scheduling failed speaker=%s", speaker)
+
+
+def append_human(data: object, text: str, *, appraise: bool = True) -> None:
     from agent.data import TalkShowData
 
     if isinstance(data, TalkShowData):
         data.show_history.append("human", text)
+        if appraise:
+            _schedule_appraisal(data, "human", text)
 
 
-def append_role(data: object, role_id: str, text: str) -> None:
+def append_role(
+    data: object,
+    role_id: str,
+    text: str,
+    *,
+    appraise: bool = True,
+    procedural: bool | None = None,
+) -> None:
+    """Record a spoken line.
+
+    ``appraise`` runs the legacy background appraisal hook (non-graph turn modes);
+    the show graph appraises lines itself and passes ``appraise=False``.
+    ``procedural`` marks canned host lines ("Floor's open.") — defaults to
+    ``not appraise`` for legacy callers.
+    """
     from agent.data import TalkShowData
 
     if isinstance(data, TalkShowData):
-        data.show_history.append(role_id, text)
+        is_procedural = (not appraise) if procedural is None else procedural
+        data.show_history.append(role_id, text, procedural=is_procedural)
+        if appraise:
+            _schedule_appraisal(data, role_id, text)

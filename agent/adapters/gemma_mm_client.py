@@ -170,8 +170,16 @@ class GemmaMMClient:
         *,
         system_prompt: str | None = None,
         history_messages: list[dict[str, Any]] | None = None,
+        raw: bool = False,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
-        """Text-only turn with optional prior conversation as chat messages."""
+        """Text-only turn with optional prior conversation as chat messages.
+
+        ``raw=True`` returns the model output untouched so callers can parse
+        control tags ([next]/[pad]/…). Otherwise a [reply]-formatted answer is
+        reduced to its spoken reply, which strips those tags.
+        """
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(
             system,
@@ -181,8 +189,8 @@ class GemmaMMClient:
         payload: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "max_tokens": self._cfg.max_tokens,
-            "temperature": 0.45,
+            "max_tokens": max_tokens or self._cfg.max_tokens,
+            "temperature": 0.45 if temperature is None else temperature,
         }
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
@@ -207,6 +215,8 @@ class GemmaMMClient:
         if not isinstance(content, str):
             content = str(content)
         text = content.strip()
+        if raw:
+            return text
         for marker in ("[reply]:", "[heard]:"):
             if marker.lower() in text.lower():
                 parsed = parse_heard_reply(text)

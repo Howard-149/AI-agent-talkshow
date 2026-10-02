@@ -22,3 +22,10 @@ sbatch deploy/slurm-talkshow-3gpu.sh
 Scripts use `--partition=preempt` and `--qos=preempt_qos`.
 
 Expected: floor behavior unchanged; only orchestration is LangGraph.
+
+# 4) Ghost session — no laptop mic (same running worker + room)
+#    python -m eval.ghost_session
+#    python -m eval.ghost_session --opening-only
+#    Laptop recording of the real UI:
+#    python -m eval.ghost_session --record --start-frontend
+#    See eval/ghost_session/README.md

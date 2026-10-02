@@ -19,6 +19,7 @@ class ControlEvent:
     topic: str = ""
     reason: str = ""
     locale: str = ""
+    text: str = ""
 
 
 def parse_control_payload(raw: bytes) -> ControlEvent | None:
@@ -41,6 +42,11 @@ def parse_control_payload(raw: bytes) -> ControlEvent | None:
         return ControlEvent(
             type=ev_type,
             locale=str(data.get("locale", "") or "").strip(),
+        )
+    if ev_type == "ghost_human_turn":
+        return ControlEvent(
+            type=ev_type,
+            text=str(data.get("text", "") or "").strip(),
         )
     logger.debug("control_events: unknown type=%s", ev_type)
     return None

@@ -1,93 +1,172 @@
-"""LiveKit runner — drives LangGraph floor plans and executes Commands."""
+"""Entry points that run one show beat through the LangGraph show graph."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from livekit.agents import AgentSession
+from agent.show_graph.actuators import Actuators, LiveActuators
+from agent.show_graph.graph import show_app
+from agent.show_graph.state import Entry, HumanEvent, base_state
 
-from agent.data import TalkShowData
-from agent.floor import TurnController
-from agent.floor.floor_control import apply_floor_next, consume_floor_next, is_direct_next, peek_floor_next
-from agent.session.session_lifecycle import should_stop_session_work
-from agent.show_graph.actuators import execute_command
-from agent.show_graph.graph import plan_moderation_step, plan_panel_step
-from agent.show_graph.state import ShowState, base_state
+if TYPE_CHECKING:
+    from livekit.agents import AgentSession
+
+    from agent.data import TalkShowData
+    from agent.floor import TurnController
 
 logger = logging.getLogger(__name__)
 
-
-def _participants(controller: TurnController) -> list[str]:
-    listen = controller.listen_role()
-    panel = controller.panel_speaker_roles()
-    return list(dict.fromkeys([listen, *panel, "human"]))
+# Each spoken line takes ~5 supersteps; a 12-turn round plus moderation needs ~100.
+RECURSION_LIMIT = 1000
 
 
-def _sync_from_data(state: ShowState, data: TalkShowData) -> None:
-    state["queue"] = data.hand_raise_queue.roles()
-    state["panel_priority"] = list(data.panel_priority)
-    state["active_role"] = data.active_role
-    state["role_emotion"] = dict(getattr(data, "role_emotion", {}) or {})
-
-
-def _state_from_session(
-    data: TalkShowData,
-    controller: TurnController,
+async def run_beat(
+    act: Actuators,
     *,
-    phase: str,
+    entry: Entry,
     trigger: str,
+    panel_roles: list[str],
+    listen_role: str,
+    human_event: HumanEvent | None = None,
     skip_open_floor: bool = False,
-    depth: int = 0,
-    spoken_roles: set[str] | None = None,
-    turn_idx: int = 0,
-) -> ShowState:
-    max_depth = int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8"))
-    max_turns = int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12"))
-    panel_roles = controller.panel_speaker_roles()
-    listen = controller.listen_role()
-    return base_state(
-        phase=phase,  # type: ignore[arg-type]
+    spoken_roles: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run the graph once; returns the final ShowState. Works with any Actuators."""
+    state = base_state(
+        entry=entry,
         trigger=trigger,
         panel_roles=panel_roles,
-        listen_role=listen,
-        participants=_participants(controller),
+        listen_role=listen_role,
+        human_event=human_event,
         skip_open_floor=skip_open_floor,
-        depth=depth,
-        max_depth=max_depth,
-        max_turns=max_turns,
-        turn_idx=turn_idx,
-        active_role=data.active_role,
-        floor_next=peek_floor_next(data) or "",
-        queue=data.hand_raise_queue.roles(),
-        panel_priority=list(data.panel_priority),
-        role_emotion=dict(getattr(data, "role_emotion", {}) or {}),
-        spoken_roles=list(spoken_roles or ()),
+        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12")),
+        max_moderations=int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8")),
+        spoken_roles=spoken_roles,
+        **act.snapshot(),
     )
+    config = {"configurable": {"act": act}, "recursion_limit": RECURSION_LIMIT}
+    return await show_app().ainvoke(state, config)
 
 
-async def _run_commands(
-    state: ShowState,
+async def run_show_beat(
     session: AgentSession,
     data: TalkShowData,
     controller: TurnController,
-    spoken: set[str],
-) -> dict[str, Any]:
-    merged: dict[str, Any] = {}
-    for command in list(state.get("pending_commands") or []):
-        if should_stop_session_work(data, session):
-            merged["stopped"] = True
-            break
-        part = await execute_command(
-            command, session, data, controller, spoken_roles=spoken
+    *,
+    entry: Entry,
+    trigger: str,
+    human_event: HumanEvent | None = None,
+    skip_open_floor: bool = False,
+    spoken_roles: set[str] | None = None,
+    claimed: bool = False,
+) -> str | None:
+    """Run one beat on the live session. Returns ``human`` / ``close`` / None.
+
+    ``panel_chain_running`` marks a beat in progress; ``claimed=True`` means the
+    caller already set it (and this call releases it).
+    """
+    from agent.session.session_lifecycle import should_stop_session_work
+
+    act = LiveActuators(session, data, controller)
+    owns_busy = claimed or not data.panel_chain_running
+    data.panel_chain_running = True
+    if should_stop_session_work(data, session):
+        if owns_busy:
+            data.panel_chain_running = False
+        return None
+    act.log("show_beat_start", entry=entry, trigger=trigger, active_role=data.active_role)
+    try:
+        final = await run_beat(
+            act,
+            entry=entry,
+            trigger=trigger,
+            panel_roles=controller.panel_speaker_roles(),
+            listen_role=controller.listen_role(),
+            human_event=human_event,
+            skip_open_floor=skip_open_floor,
+            spoken_roles=sorted(spoken_roles or ()),
         )
-        merged.update(part)
-    state["pending_commands"] = []
-    state["barrier"] = False
-    _sync_from_data(state, data)
-    state["spoken_roles"] = list(spoken)
-    return merged
+    except RuntimeError as exc:
+        if "isn't running" in str(exc):
+            logger.info("show beat stopped — session no longer running")
+            return None
+        raise
+    finally:
+        if owns_busy:
+            data.panel_chain_running = False
+    outcome = final.get("outcome") or None
+    act.log(
+        "show_beat_done",
+        entry=entry,
+        trigger=trigger,
+        outcome=outcome,
+        turns=final.get("turn_idx", 0),
+        moderations=final.get("moderations", 0),
+        lines=len(final.get("spoken") or []),
+        appraisals=len(final.get("appraisals") or []),
+        stopped=bool(final.get("stopped")),
+    )
+    return outcome
+
+
+async def submit_human_turn(
+    session: AgentSession,
+    data: TalkShowData,
+    controller: TurnController,
+    event: HumanEvent,
+    *,
+    background: bool,
+) -> bool:
+    """Hand a finished human turn to the graph (host reply → panel round).
+
+    ``background=True`` (mic path) returns immediately so the STT can hand its
+    transcript back to LiveKit; the ghost path awaits the whole beat.
+    """
+    if data.panel_chain_running:
+        logger.info("human turn ignored — show beat already running")
+        if data.turn_log is not None:
+            data.turn_log.log("human_turn_skip", reason="beat_running", room=data.room_name)
+        return False
+    data.panel_chain_running = True  # claim before scheduling: no double start
+
+    async def _run() -> None:
+        listen = controller.listen_role()
+        try:
+            if data.turn_log is not None:
+                data.turn_log.log(
+                    "panel_start",
+                    floor_next=data.floor_next_speaker or "host",
+                    room=data.room_name,
+                    active_role=data.active_role,
+                )
+            await run_show_beat(
+                session, data, controller, entry="human", trigger="after_human",
+                human_event=event, claimed=True,
+            )
+            if data.active_role != listen:
+                from agent.session.session_handoff import switch_to_role
+
+                await switch_to_role(session, data, listen, reason="panel_wait_human")
+            if data.turn_log is not None:
+                data.turn_log.log("panel_done", room=data.room_name, active_role=data.active_role)
+        except Exception:
+            logger.exception("show beat (human turn) failed")
+        finally:
+            data.panel_chain_running = False
+            data.panel_followup_pending = False
+            data.touch_activity()
+
+    if background:
+        asyncio.create_task(_run(), name="show_beat:human")
+    else:
+        await _run()
+    return True
+
+
+# --- compatibility entry points (callers outside the graph) ----------------
 
 
 async def run_host_moderation_from_queue(
@@ -100,63 +179,16 @@ async def run_host_moderation_from_queue(
     depth: int = 0,
     spoken_roles: set[str] | None = None,
 ) -> str | None:
-    """
-    LangGraph-orchestrated host moderation beat.
-    Returns granted role id, ``human``, ``close``, or None.
-    """
-    if should_stop_session_work(data, session):
-        return None
-
-    spoken = set(spoken_roles or ())
-    state = _state_from_session(
+    """Host takes the floor and moderates until the human gets it back (or close)."""
+    return await run_show_beat(
+        session,
         data,
         controller,
-        phase="mod_start",
+        entry="moderate",
         trigger=trigger,
         skip_open_floor=skip_open_floor,
-        depth=depth,
-        spoken_roles=spoken,
+        spoken_roles=spoken_roles,
     )
-
-    while True:
-        if should_stop_session_work(data, session):
-            return None
-        _sync_from_data(state, data)
-        state = plan_moderation_step(state)
-        result = await _run_commands(state, session, data, controller, spoken)
-
-        if result.get("stopped"):
-            return None
-
-        if "next_role" in result:
-            state["next_role"] = result.get("next_role") or ""
-            state["grant_reason"] = result.get("grant_reason") or ""
-
-        if result.get("nest_pending"):
-            nested = await run_host_moderation_from_queue(
-                session,
-                data,
-                controller,
-                trigger=f"after_{trigger}",
-                depth=depth + 1,
-                spoken_roles=spoken,
-            )
-            if nested in ("human", "close"):
-                return nested
-            granted = state.get("outcome") or ""
-            if granted and is_direct_next(granted, data.scenario):
-                return granted
-            return nested
-
-        if state["phase"] == "done":
-            outcome = state.get("outcome") or ""
-            if outcome == "close":
-                return "close"
-            if outcome == "human":
-                return "human"
-            if outcome and is_direct_next(outcome, data.scenario):
-                return outcome
-            return outcome or None
 
 
 async def run_host_moderated_panel(
@@ -164,64 +196,5 @@ async def run_host_moderated_panel(
     data: TalkShowData,
     controller: TurnController,
 ) -> None:
-    """LangGraph-orchestrated panel loop (parity with legacy host_floor)."""
-    spoken: set[str] = set()
-    state = _state_from_session(
-        data,
-        controller,
-        phase="panel_start",
-        trigger="after_human",
-        spoken_roles=spoken,
-    )
-    state = plan_panel_step(state)  # panel_start → panel_consume
-
-    while True:
-        if should_stop_session_work(data, session):
-            return
-
-        if state["phase"] == "panel_consume":
-            consumed = consume_floor_next(data)
-            state["floor_next"] = consumed or ""
-            state["pending_commands"] = []
-            state["barrier"] = False
-            _sync_from_data(state, data)
-            state = plan_panel_step(state)
-
-        if state["phase"] == "panel_moderate":
-            apply_floor_next(data, state.get("floor_next") or "host")
-            outcome = await run_host_moderation_from_queue(
-                session,
-                data,
-                controller,
-                trigger=state.get("trigger") or f"turn_{state['turn_idx']}",
-                spoken_roles=spoken,
-            )
-            state["outcome"] = outcome or ""
-            state["spoken_roles"] = list(spoken)
-            state["phase"] = "panel_after_moderate"
-            state["pending_commands"] = []
-            state["barrier"] = False
-            state = plan_panel_step(state)
-            continue
-
-        if state["phase"] == "panel_close":
-            state = plan_panel_step(state)
-            await _run_commands(state, session, data, controller, spoken)
-            return
-
-        if state["phase"] == "done":
-            await _run_commands(state, session, data, controller, spoken)
-            return
-
-        # Barrier (e.g. direct panelist speak or grant_human)
-        result = await _run_commands(state, session, data, controller, spoken)
-        if result.get("stopped"):
-            return
-        if state["phase"] == "done":
-            return
-        # Direct grant path stays on panel_consume for next consume
-        if state["phase"] != "panel_consume":
-            logger.warning(
-                "show_graph panel unexpected phase=%s after barrier", state["phase"]
-            )
-            return
+    """Panel round routed by the current [next] floor tag."""
+    await run_show_beat(session, data, controller, entry="panel", trigger="after_human")

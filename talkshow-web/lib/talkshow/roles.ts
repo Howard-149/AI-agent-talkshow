@@ -89,6 +89,21 @@ export function parseUiEvent(raw: Uint8Array): UiEvent | null {
   }
 }
 
+export function isGhostViewer(identity: string, metadata?: string): boolean {
+  if ((identity || '').startsWith('ghost-viewer')) {
+    return true;
+  }
+  if (!metadata) {
+    return false;
+  }
+  try {
+    const meta = JSON.parse(metadata) as { ghostViewer?: boolean };
+    return Boolean(meta?.ghostViewer);
+  } catch {
+    return false;
+  }
+}
+
 export function parseAgentMetadata(raw: string | undefined): AgentParticipantMetadata | null {
   if (!raw) return null;
   try {

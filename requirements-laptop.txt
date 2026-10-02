@@ -1,3 +1,5 @@
 # Laptop — LiveKit token helper (api/tokens.py). No vLLM / Piper / agent worker.
 livekit-api>=0.8.0
 python-dotenv>=1.0.0
+# Ghost session + --record (optional):
+#   pip install livekit playwright pyyaml && playwright install chromium

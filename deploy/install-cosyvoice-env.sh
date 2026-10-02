@@ -7,11 +7,11 @@
 #   COSYVOICE_INSTALL_ACCEL=0 bash deploy/install-cosyvoice-env.sh   # base only
 #
 # Expects CosyVoice cloned at COSYVOICE_ROOT (default /data/user_data/$USER/CosyVoice).
-# Creates/uses conda env `cosyvoice` (Python 3.10 — CosyVoice upstream default).
+# Creates/uses conda env `cosyvoice_vllm` (Python 3.10 — matches slurm-talkshow-3gpu.sh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_NAME="${COSYVOICE_CONDA_ENV:-cosyvoice}"
+ENV_NAME="${COSYVOICE_CONDA_ENV:-cosyvoice_vllm}"
 COSY_ROOT="${COSYVOICE_ROOT:-/data/user_data/${USER}/CosyVoice}"
 INFERENCE_REQ="${ROOT}/deploy/cosyvoice-requirements-inference.txt"
 INSTALL_ACCEL="${COSYVOICE_INSTALL_ACCEL:-1}"

@@ -38,7 +38,8 @@ from agent.session.session_lifecycle import should_stop_session_work
 from agent.show.show_history import append_role
 from agent.session.session_handoff import speak_panel_line
 from agent.floor import TurnController
-from agent.floor.host_direct_call import host_direct_call_when_no_raises
+from agent.floor.host_direct_call import plan_host_direct_call
+from agent.show_graph.state import FloorPick
 from agent.ui.ui_events import (
     emit_floor_grant,
     emit_floor_pending,
@@ -57,7 +58,7 @@ def _eligible_panel_raises(
     ]
 
 
-async def _run_hand_raise_round(
+async def run_hand_raise_round(
     session: AgentSession,
     data: TalkShowData,
     controller: TurnController,
@@ -65,13 +66,13 @@ async def _run_hand_raise_round(
     panel_roles: list[str],
     spoken_roles: set[str],
     turn_idx: int,
-) -> tuple[str | None, str]:
+) -> FloorPick:
     """
     Pick next speaker: FIFO queue (human UI + AI poll).
     Poll only when queue is empty; wait 10s only when still empty after poll.
     """
     if should_stop_session_work(data, session):
-        return None, ""
+        return FloorPick(None, "")
     await emit_floor_pending(active=True)
     try:
         if not data.hand_raise_queue.roles():
@@ -134,7 +135,7 @@ async def _run_hand_raise_round(
             pause = float(os.environ.get("TALKSHOW_HAND_RAISE_GRANT_PAUSE_SEC", "1"))
             if pause > 0:
                 if should_stop_session_work(data, session):
-                    return None, ""
+                    return FloorPick(None, "")
                 logger.info(
                     "hand raise grant pause sec=%.2f queue=%s",
                     pause,
@@ -149,14 +150,15 @@ async def _run_hand_raise_round(
                     )
                 await asyncio.sleep(pause)
                 if should_stop_session_work(data, session):
-                    return None, ""
-            return await resolve_next_speaker(
+                    return FloorPick(None, "")
+            role, reason = await resolve_next_speaker(
                 data,
                 panel_roles=panel_roles,
                 spoken_roles=spoken_roles,
             )
+            return FloorPick(role, reason)
 
-        return await host_direct_call_when_no_raises(
+        role, reason, line = await plan_host_direct_call(
             session,
             data,
             controller,
@@ -164,6 +166,7 @@ async def _run_hand_raise_round(
             spoken_roles=spoken_roles,
             trigger=f"no_raises_{turn_idx}",
         )
+        return FloorPick(role, reason, line)
     finally:
         await emit_floor_pending(active=False)
 
@@ -187,6 +190,7 @@ or
         prompt,
         system_prompt=panelist_hand_raise_system(role),
         history_messages=hist,
+        raw=True,  # parse [raise]/[topic] from the full output
     )
     result = parse_hand_raise(role, text)
     logger.info(
@@ -284,6 +288,7 @@ Output ONLY:
         prompt,
         system_prompt=system,
         history_messages=hist,
+        raw=True,  # parse [next] from the full output, not the stripped reply
     )
     parsed = parse_floor_decision(text)
     if parsed and parsed.next_role in set(panel_roles) | {"close", "human"}:
@@ -397,7 +402,7 @@ async def host_speak_session_welcome(
     line = texts.get(primary) or canned["en"]
     listen = controller.listen_role()
     # History stays English for shared transcript / prompts.
-    append_role(data, listen, canned["en"])
+    append_role(data, listen, canned["en"], appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -454,7 +459,7 @@ async def host_speak_open_floor(
     """Host opens hand-raise moderation before panelists are polled."""
     listen = controller.listen_role()
     line = host_open_floor_line()
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -476,7 +481,7 @@ async def host_introduce_speaker(
     listen = controller.listen_role()
     name = load_persona_name(role)
     line = host_intro_speaker_line(name)
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,
@@ -525,7 +530,7 @@ async def grant_human_floor(
     """End panel beat — human speaks via mic."""
     listen = controller.listen_role()
     line = host_human_floor_line(topic=data.human_hand_topic or None)
-    append_role(data, listen, line)
+    append_role(data, listen, line, appraise=False)
     await speak_panel_line(
         session,
         data,

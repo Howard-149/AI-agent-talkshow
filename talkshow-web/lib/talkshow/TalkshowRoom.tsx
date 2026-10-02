@@ -45,6 +45,7 @@ export function TalkshowRoom(props: {
   singlePeerConnection?: boolean;
   userChoices?: TalkshowConnectChoices;
   locale?: TalkshowLocale;
+  recordMode?: boolean;
 }) {
   const keyProvider = useMemo(() => new ExternalE2EEKeyProvider(), []);
   const { worker, e2eePassphrase } = useSetupE2EE();
@@ -212,10 +213,10 @@ export function TalkshowRoom(props: {
             onLeave={() => router.push('/')}
           />
         ) : (
-          <TalkshowView viewerLocale={viewerLocale} />
+          <TalkshowView viewerLocale={viewerLocale} recordMode={props.recordMode} />
         )}
-        <StartMediaButton label="Click to enable playback" />
-        <DebugMode logLevel={LogLevel.debug} />
+        {!props.recordMode && <StartMediaButton label="Click to enable playback" />}
+        {!props.recordMode && <DebugMode logLevel={LogLevel.debug} />}
       </div>
     </RoomContext.Provider>
   );
