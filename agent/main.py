@@ -75,6 +75,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     init_avatar_bridge(turn_log=turn_log)
     dlg = scenario.dialogue
+    from agent.telemetry.run_meta import run_metadata
+
     turn_log.log(
         "session_start",
         room=ctx.room.name,
@@ -83,6 +85,7 @@ async def entrypoint(ctx: JobContext) -> None:
         turn_mode=scenario.turn_control.mode,
         dialogue_library=dlg.library if dlg else None,
         dialogue_pick=dlg.pick if dlg else None,
+        **run_metadata(),
     )
     controller = TurnController(scenario, data)
     data.ensure_panel_priority(
@@ -196,9 +199,30 @@ async def entrypoint(ctx: JobContext) -> None:
 
         handle.add_done_callback(_on_playout_done)
 
+    def _state_name(state: object) -> str:
+        return str(state).lower().rsplit(".", 1)[-1]
+
+    @session.on("user_state_changed")
+    def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
+        # speaking → listening = VAD end of human speech (start of endpointing).
+        turn_log.log(
+            "user_state",
+            state=_state_name(getattr(ev, "new_state", "")),
+            old_state=_state_name(getattr(ev, "old_state", "")),
+            room=ctx.room.name,
+        )
+
     @session.on("agent_state_changed")
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
         new_state = getattr(ev, "new_state", None)
+        # speaking ↔ other = first / last audio frame of each playout (avatar or not).
+        turn_log.log(
+            "agent_state",
+            state=_state_name(new_state),
+            old_state=_state_name(getattr(ev, "old_state", "")),
+            active_role=data.active_role,
+            room=ctx.room.name,
+        )
         if _is_speaking_state(new_state):
             pending = data.pop_pending_speech_ui()
             if pending:

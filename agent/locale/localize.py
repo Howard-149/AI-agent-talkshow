@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from agent.locale.viewer_locales import DEFAULT_LOCALE, SUPPORTED_LOCALES, normalize_locale
@@ -59,12 +60,21 @@ async def translate_text(
         f"Target language: {lang_name}\n\n"
         f"{text}"
     )
+    t0 = time.monotonic()
     try:
         out = await data.runtime.gemma_client.complete_text(
             user,
             system_prompt=_TRANSLATE_SYSTEM,
             history_messages=None,
         )
+        if getattr(data, "turn_log", None) is not None:
+            data.turn_log.log(
+                "translate_done",
+                target=target,
+                chars=len(text),
+                model_latency_s=round(time.monotonic() - t0, 3),
+                room=data.room_name,
+            )
         out = (out or "").strip()
         # Strip accidental wrapping quotes
         if len(out) >= 2 and out[0] == out[-1] and out[0] in "\"'「」":

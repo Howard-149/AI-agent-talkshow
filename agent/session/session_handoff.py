@@ -563,11 +563,21 @@ async def speak_panel_line(
         logger.info("speak_panel_line skipped — session inactive step=%s", step)
         return
 
+    turn_log = getattr(data, "turn_log", None)
+    if turn_log is not None:
+        # Line boundaries label agent_state speaking intervals (eval/gap_breakdown.py).
+        turn_log.log(
+            "line_start",
+            role=speak_role,
+            step=step,
+            chars=len(text),
+            room=data.room_name,
+        )
+
     if speak_role != data.active_role:
         await switch_to_role(session, data, speak_role, reason=f"panel:{step}")
 
     bridge = get_avatar_bridge()
-    turn_log = getattr(data, "turn_log", None)
     use_lk_video = lk_video_enabled()
 
     needed = frozenset(getattr(data, "needed_locales", None) or {DEFAULT_LOCALE})
@@ -708,6 +718,13 @@ async def speak_panel_line(
             raise
     finally:
         data.speak_line_busy = False
+        if turn_log is not None:
+            turn_log.log(
+                "line_end",
+                role=speak_role,
+                step=step,
+                room=data.room_name,
+            )
         _flush_deferred_panel_followup(data)
 
 
