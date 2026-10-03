@@ -64,6 +64,9 @@ class TalkShowData:
     role_pad_neighbors: dict[str, list[str]] = field(default_factory=dict)
     # In-flight separate PAD appraisal per listener role (latest task; chained).
     pending_appraisals: dict[str, Any] = field(default_factory=dict, repr=False)
+    # Long-lived show graph driver (agent.show_graph.session.ShowSession) when the
+    # session graph is running; None → one-shot beats.
+    show_session: Any = field(default=None, repr=False)
     # Host reply after human STT — spoken via speak_panel_line (not StoredReplyLLM+TTS).
     pending_host_speak: str = ""
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS

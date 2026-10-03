@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-import operator
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, TypedDict
 
-Entry = Literal["human", "moderate", "panel"]
+# "session": the long-lived graph that waits for events between beats.
+Entry = Literal["human", "moderate", "panel", "session"]
+
+# Writing RESET to an accumulating channel clears it (start of a new beat).
+RESET = "__reset__"
+
+
+def accumulate(left: list[Any] | None, right: list[Any] | str) -> list[Any]:
+    """List reducer for fan-in channels that a new beat can clear with ``RESET``."""
+    if right == RESET:
+        return []
+    return list(left or []) + list(right)
 
 LineKind = Literal[
+    "welcome",  # canned: session opening
     "host_reply",  # host answers the human (graph entry "human")
     "open_floor",  # canned: "Floor's open — anyone want to jump in?"
     "intro",  # canned: "Amy, the floor is yours."
@@ -98,13 +109,18 @@ class ShowState(TypedDict, total=False):
     outcome: str  # "human" | "close" | "" — how the beat ended
     stopped: bool
 
+    # Session graph only: completed beats and how the last one ended.
+    session: bool
+    beats: int
+    last_outcome: str
+
     # Mirrors of LiveKit-side state for inspection / future checkpointing.
     role_emotion: dict[str, str]
     role_pad: dict[str, tuple[float, float, float]]
 
     # Fan-in channels written by parallel branches (Send).
-    spoken: Annotated[list[str], operator.add]
-    appraisals: Annotated[list[dict[str, Any]], operator.add]
+    spoken: Annotated[list[str], accumulate]
+    appraisals: Annotated[list[dict[str, Any]], accumulate]
 
 
 def base_state(
@@ -146,4 +162,28 @@ def base_state(
         "role_pad": dict(role_pad or {}),
         "spoken": [],
         "appraisals": [],
+        "session": entry == "session",
+        "beats": 0,
+        "last_outcome": "",
+    }
+
+
+def beat_reset() -> dict[str, Any]:
+    """Per-beat fields cleared when the session graph starts the next beat."""
+    return {
+        "human_event": None,
+        "line": None,
+        "extra_utterances": [],
+        "after": "",
+        "next_role": "",
+        "grant_reason": "",
+        "skip_open_floor": False,
+        "skip_intro": False,
+        "turn_idx": 0,
+        "moderations": 0,
+        "spoken_roles": [],
+        "outcome": "",
+        "stopped": False,
+        "spoken": RESET,
+        "appraisals": RESET,
     }

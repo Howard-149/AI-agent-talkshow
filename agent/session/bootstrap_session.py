@@ -59,7 +59,12 @@ async def bootstrap_after_connect(
             logger.warning("Gemma MM warm raised: %s", exc)
 
         if controller.is_panel_mode():
-            await run_session_opening(session, data, controller, room=ctx.room)
+            from agent.show_graph.runner import open_show_session
+
+            # Host-moderated: the long-lived show graph owns the opening and every
+            # later beat; otherwise (or TALKSHOW_SHOW_SESSION_GRAPH=0) legacy opening.
+            if not await open_show_session(session, data, controller, room=ctx.room):
+                await run_session_opening(session, data, controller, room=ctx.room)
             await flush_pending_ui_events()
 
         data.touch_activity()

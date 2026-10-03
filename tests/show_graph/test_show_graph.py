@@ -66,6 +66,8 @@ class FakeActuators:
 
     # human turn
     async def commit_human_turn(self, event):
+        # Like the real commit: after a human turn the host moderates next.
+        self.floor_next = "host"
         self.history.append(("human", event["heard"], False))
         return event.get("reply", "Great question — panel?"), Utterance("human", event["heard"])
 

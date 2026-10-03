@@ -373,16 +373,9 @@ async def _grant_panelist_turn(
     )
 
 
-async def host_speak_session_welcome(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-) -> None:
-    """Opening beat — welcome only; no topic, no direct call-outs."""
-    from agent.locale.viewer_locales import (
-        primary_delivery_locale,
-        recompute_needed_locales,
-    )
+def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
+    """Canonical (English) welcome text + per-locale delivery texts for the opening."""
+    from agent.locale.viewer_locales import recompute_needed_locales
     from agent.panel.panel_context import session_welcome_texts
 
     try:
@@ -398,16 +391,28 @@ async def host_speak_session_welcome(
     texts = {loc: canned[loc] for loc in needed if loc in canned}
     if not texts:
         texts = {"en": canned["en"]}
+    return canned["en"], texts
+
+
+async def host_speak_session_welcome(
+    session: AgentSession,
+    data: TalkShowData,
+    controller: TurnController,
+) -> None:
+    """Opening beat — welcome only; no topic, no direct call-outs."""
+    from agent.locale.viewer_locales import primary_delivery_locale
+
+    canonical, texts = session_welcome_line(data)
+    needed = frozenset(getattr(data, "needed_locales", None) or {"en"})
     primary = primary_delivery_locale(needed)
-    line = texts.get(primary) or canned["en"]
     listen = controller.listen_role()
     # History stays English for shared transcript / prompts.
-    append_role(data, listen, canned["en"], appraise=False)
+    append_role(data, listen, canonical, appraise=False)
     await speak_panel_line(
         session,
         data,
         speak_role=listen,
-        text=canned["en"],
+        text=canonical,
         step="session_welcome",
         texts=texts,
     )
@@ -416,7 +421,7 @@ async def host_speak_session_welcome(
         "session_welcome spoken primary=%s needed=%s line=%.60r",
         primary,
         sorted(needed),
-        line,
+        texts.get(primary) or canonical,
     )
 
 

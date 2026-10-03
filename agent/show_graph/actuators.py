@@ -191,7 +191,9 @@ class LiveActuators:
         from agent.ui.ui_events import emit_floor_grant
 
         kind = line.get("kind")
-        if kind == "panelist":
+        if kind == "welcome":
+            apply_floor_next(self.data, "host")
+        elif kind == "panelist":
             apply_floor_next(self.data, line.get("next_tag") or "host")
         elif kind == "direct_call" and line.get("target"):
             await dequeue_hand_raise(self.data, line["target"])

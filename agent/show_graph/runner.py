@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 from agent.show_graph.actuators import Actuators, LiveActuators
@@ -132,6 +133,13 @@ async def submit_human_turn(
         return False
     data.panel_chain_running = True  # claim before scheduling: no double start
 
+    show = _live_session(data)
+    if show is not None:
+        fut = show.post("human", event=event)
+        if not background:
+            await fut
+        return True
+
     async def _run() -> None:
         listen = controller.listen_role()
         try:
@@ -180,6 +188,10 @@ async def run_host_moderation_from_queue(
     spoken_roles: set[str] | None = None,
 ) -> str | None:
     """Host takes the floor and moderates until the human gets it back (or close)."""
+    show = _live_session(data)
+    if show is not None:
+        result = await show.post("moderate", trigger=trigger, skip_open_floor=skip_open_floor)
+        return (result or {}).get("last_outcome") or None
     return await run_show_beat(
         session,
         data,
@@ -198,3 +210,130 @@ async def run_host_moderated_panel(
 ) -> None:
     """Panel round routed by the current [next] floor tag."""
     await run_show_beat(session, data, controller, entry="panel", trigger="after_human")
+
+
+# --- long-lived session graph (phase 3) --------------------------------------
+
+
+def session_graph_enabled() -> bool:
+    """``TALKSHOW_SHOW_SESSION_GRAPH=0`` falls back to one graph invocation per beat."""
+    return os.environ.get("TALKSHOW_SHOW_SESSION_GRAPH", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _live_session(data: TalkShowData) -> Any:
+    show = getattr(data, "show_session", None)
+    return show if show is not None and show.running else None
+
+
+class LiveSessionHooks:
+    """LiveKit-side bookkeeping around each session-graph beat."""
+
+    def __init__(self, session: AgentSession, data: TalkShowData, controller: TurnController) -> None:
+        self.session = session
+        self.data = data
+        self.controller = controller
+
+    def _log(self, event: str, **fields: Any) -> None:
+        if self.data.turn_log is not None:
+            self.data.turn_log.log(event, room=self.data.room_name, **fields)
+
+    async def before_beat(self, event: dict[str, Any]) -> None:
+        self.data.panel_chain_running = True
+        if event["kind"] == "human":
+            self._log(
+                "panel_start",
+                floor_next=self.data.floor_next_speaker or "host",
+                active_role=self.data.active_role,
+            )
+        self._log(
+            "show_beat_start",
+            entry=event["kind"],
+            trigger=event.get("trigger") or event["kind"],
+            active_role=self.data.active_role,
+            graph="session",
+        )
+
+    async def after_beat(self, event: dict[str, Any], result: dict[str, Any] | None) -> None:
+        r = result or {}
+        try:
+            if event["kind"] == "human":
+                listen = self.controller.listen_role()
+                if self.data.active_role != listen:
+                    from agent.session.session_handoff import switch_to_role
+
+                    await switch_to_role(self.session, self.data, listen, reason="panel_wait_human")
+                self._log("panel_done", active_role=self.data.active_role)
+        except Exception:
+            logger.exception("show session after_beat failed")
+        finally:
+            self._log(
+                "show_beat_done",
+                entry=event["kind"],
+                trigger=event.get("trigger") or event["kind"],
+                outcome=r.get("last_outcome") or None,
+                turns=r.get("turn_idx", 0),
+                moderations=r.get("moderations", 0),
+                lines=len(r.get("spoken") or []),
+                appraisals=len(r.get("appraisals") or []),
+                stopped=bool(r.get("stopped")),
+                beat=r.get("beats", 0),
+                ok=result is not None,
+                graph="session",
+            )
+            self.data.panel_chain_running = False
+            self.data.panel_followup_pending = False
+            self.data.touch_activity()
+
+
+def start_show_session(
+    session: AgentSession, data: TalkShowData, controller: TurnController
+) -> Any:
+    """Start the session graph for host-moderated shows (idempotent)."""
+    from agent.show_graph.session import ShowSession
+
+    existing = getattr(data, "show_session", None)
+    if existing is not None and existing.running:
+        return existing
+    show = ShowSession(
+        LiveActuators(session, data, controller),
+        panel_roles=controller.panel_speaker_roles(),
+        listen_role=controller.listen_role(),
+        session_id=f"{data.room_name or 'room'}:{int(time.time())}",
+        hooks=LiveSessionHooks(session, data, controller),
+        shutdown=data.shutdown_event,
+        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12")),
+        max_moderations=int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8")),
+    )
+    data.show_session = show
+    show.start()
+    logger.info("show session graph started id=%s", show._session_id)
+    return show
+
+
+async def open_show_session(
+    session: AgentSession, data: TalkShowData, controller: TurnController, *, room: Any = None
+) -> bool:
+    """Start the session graph and run its opening beat (welcome → moderation).
+
+    Returns False when the session graph is off or not applicable (caller falls back).
+    """
+    if not (session_graph_enabled() and controller.is_host_moderated_mode()):
+        return False
+    show = start_show_session(session, data, controller)
+    if data.silent_handoff or os.environ.get("TALKSHOW_SKIP_GREETING", "").lower() in (
+        "1", "true", "yes",
+    ):
+        return True
+    if room is not None:
+        from agent.locale.viewer_locales import recompute_needed_locales, wait_for_remote_humans
+
+        await wait_for_remote_humans(room)
+        needed = recompute_needed_locales(data, room)
+        logger.info("session opening locales=%s", sorted(needed))
+    from agent.floor.host_floor import session_welcome_line
+
+    text, texts = session_welcome_line(data)
+    await show.post("opening", text=text, texts=texts)
+    return True

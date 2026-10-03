@@ -17,10 +17,11 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command, Send
+from langgraph.graph import END
+from langgraph.types import Command, Send, interrupt
 
 from agent.show_graph.actuators import Actuators
-from agent.show_graph.state import LineSpec, ShowState
+from agent.show_graph.state import LineSpec, ShowState, beat_reset
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,64 @@ def _say(line: LineSpec, after: str, **update: Any) -> Command:
 
 
 def route_entry(state: ShowState) -> str:
-    return {"human": "human_turn", "moderate": "moderate"}.get(
+    return {"human": "human_turn", "moderate": "moderate", "session": "wait_event"}.get(
         state.get("entry", "panel"), "panel_consume"
     )
+
+
+# --- session graph: wait for the next event between beats -------------------
+
+
+async def wait_event(state: ShowState, config: RunnableConfig) -> Command:
+    """Pause the session graph until the driver resumes it with an event.
+
+    Events (dicts with ``kind``):
+      opening  {text, texts}            welcome line, then moderate (session_start)
+      human    {event: HumanEvent}      host reply + panel round
+      moderate {trigger, skip_open_floor} host takes the floor (idle, …)
+      panel    {trigger}                route on the current [next] tag
+      stop                              end the session graph
+    """
+    # Nothing may run before interrupt(): the node re-executes on resume.
+    ev = interrupt({"waiting": True, "beats": state.get("beats", 0)})
+    kind = (ev or {}).get("kind", "")
+    if kind == "stop":
+        return Command(goto=END, update={"stopped": True})
+    beat = beat_reset()
+    if kind == "human":
+        return Command(
+            goto="human_turn",
+            update={**beat, "entry": "human", "trigger": "after_human",
+                    "human_event": ev.get("event") or {}},
+        )
+    if kind == "moderate":
+        return Command(
+            goto="moderate",
+            update={**beat, "entry": "moderate",
+                    "trigger": ev.get("trigger") or "host_moderate",
+                    "skip_open_floor": bool(ev.get("skip_open_floor"))},
+        )
+    if kind == "panel":
+        return Command(
+            goto="panel_consume",
+            update={**beat, "entry": "panel", "trigger": ev.get("trigger") or "panel"},
+        )
+    if kind == "opening":
+        line: LineSpec = {
+            "role": state["listen_role"],
+            "text": ev.get("text") or "",
+            "step": "session_welcome",
+            "kind": "welcome",
+            "procedural": True,
+            "texts": ev.get("texts") or {},
+        }
+        return Command(
+            goto="prepare_speak",
+            update={**beat, "entry": "moderate", "trigger": "session_start",
+                    "skip_open_floor": True, "line": line, "after": "moderate"},
+        )
+    logger.warning("show session: unknown event kind=%r — ignored", kind)
+    return Command(goto="wait_event")
 
 
 async def human_turn(state: ShowState, config: RunnableConfig) -> Command:
@@ -254,5 +310,12 @@ async def after_speak(state: ShowState, config: RunnableConfig) -> Command:
     return Command(goto=after, update=update)
 
 
-async def finish(state: ShowState, config: RunnableConfig) -> dict[str, Any]:
-    return {}
+async def finish(state: ShowState, config: RunnableConfig) -> Command:
+    """End of a beat: one-shot runs end; the session graph waits for the next event."""
+    if state.get("session"):
+        return Command(
+            goto="wait_event",
+            update={"beats": state.get("beats", 0) + 1,
+                    "last_outcome": state.get("outcome") or ""},
+        )
+    return Command(goto=END)
