@@ -69,7 +69,7 @@ Output exactly:
 [reply]: <spoken host line naming them>
 [next]: {tag_opts}
 {mood_output_block()}"""
-    hist = data.show_history.prior_messages()
+    hist = data.show_history.prior_messages(perspective=controller.listen_role())
     system = load_persona_instructions("host", panel_mode=controller.is_panel_mode())
     raw = await data.runtime.gemma_client.complete_text(
         prompt,

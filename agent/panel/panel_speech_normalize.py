@@ -16,6 +16,10 @@ def normalize_panelist_speech(
 ) -> str:
     """
     Fix third-person self-reference and wrong openers to panelists who have not spoken yet.
+
+    (A rule that rewrote "Lessac, …" openers into "Human guest — …" was removed: with
+    speaker-perspective history, panelists address the host when answering the host,
+    and the prompt forbids crediting the host with the guest's points.)
     """
     from agent.show.show_history import ShowHistory
 
@@ -89,28 +93,5 @@ def normalize_panelist_speech(
     t = re.sub(rf"\bI think\s+{re.escape(name)}\s+", "I ", t, flags=re.I)
     t = re.sub(rf"\b{re.escape(name)}\s+has\b", "I have", t, flags=re.I)
     t = re.sub(rf"\b{re.escape(name)}\s+had\b", "I had", t, flags=re.I)
-
-    host_name = load_persona_name("host")
-    if (
-        isinstance(history, ShowHistory)
-        and history.latest_human_text()
-        and name.lower() != host_name.lower()
-    ):
-        # Retarget replies that name the host for a claim the guest actually made.
-        m_you = re.match(
-            rf"^{re.escape(host_name)},?\s+you(?:'re|'re|\s+are)\s+(.+)$",
-            t,
-            flags=re.I,
-        )
-        if m_you:
-            t = f"Human guest, you're {m_you.group(1).strip()}"
-        else:
-            m_host = re.match(
-                rf"^{re.escape(host_name)},?\s+(.+)$",
-                t,
-                flags=re.I,
-            )
-            if m_host:
-                t = f"Human guest — {m_host.group(1).strip()}"
 
     return t.strip() or text.strip()

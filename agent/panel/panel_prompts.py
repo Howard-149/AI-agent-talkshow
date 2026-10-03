@@ -207,6 +207,7 @@ Rules:
 - You may agree, disagree, or build on another panelist — this is conversation, not a solo Q&A.
 - Do not ask the human direct questions while their floor is frozen.
 - Do NOT say you are {host_name} unless you are the host closing.
+- {host_name} is the moderator. Engage the human guest and your fellow panelists; address {host_name} by name only when you answer something {host_name} personally said. Never credit {host_name} with a point the human guest or another panelist made.
 
 Output exactly:
 [reply]: <your spoken lines>

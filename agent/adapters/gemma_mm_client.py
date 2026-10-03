@@ -98,11 +98,17 @@ class GemmaMMClient:
     ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
         if history_messages:
-            messages.extend(history_messages)
-        if isinstance(tail_user, str):
-            messages.append({"role": "user", "content": tail_user})
-        else:
-            messages.append({"role": "user", "content": tail_user})
+            messages.extend(dict(m) for m in history_messages)
+        last = messages[-1]
+        if last["role"] == "user" and isinstance(last.get("content"), str):
+            # History ended with other speakers' lines: fold the instruction into that
+            # user turn so roles keep alternating.
+            if isinstance(tail_user, str):
+                last["content"] = f"{last['content']}\n\n{tail_user}"
+            else:
+                last["content"] = [{"type": "text", "text": last["content"]}, *tail_user]
+            return messages
+        messages.append({"role": "user", "content": tail_user})
         return messages
 
     async def complete_from_wav(

@@ -39,7 +39,7 @@ class PersonaWorker:
         panel_roles = controller.panel_speaker_roles()
         name = load_persona_name(role)
         host_name = load_persona_name("host")
-        hist = data.show_history.prior_messages()
+        hist = data.show_history.prior_messages(perspective=role)
         latest_human = data.show_history.latest_human_text()
         history_version = len(data.show_history.lines)
 

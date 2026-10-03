@@ -202,7 +202,7 @@ class GemmaAudioSTT(stt.STT):
                 panel_turn=panel_turn,
             )
 
-        hist = data.show_history.prior_messages()
+        hist = data.show_history.prior_messages(perspective=ctrl.listen_role())
         t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
             wav, user_text=user_hint, history_messages=hist

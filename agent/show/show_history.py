@@ -60,31 +60,52 @@ class ShowHistory:
     def role_has_spoken(self, role_id: str) -> bool:
         return any(line.role_id == role_id for line in self.lines)
 
-    def prior_messages(self) -> list[dict[str, Any]]:
-        """All lines so far — fed to Gemma before the current user turn."""
-        from agent.panel.panel_context import role_label
+    def prior_messages(self, perspective: str | None = None) -> list[dict[str, Any]]:
+        """All lines so far as chat messages, fed to Gemma before the current turn.
+
+        ``perspective`` = the role about to speak. Its own earlier lines become
+        unlabelled ``assistant`` turns; everyone else's lines become labelled
+        ``user`` turns ("Ryan (Commentator): …"). Consecutive same-role messages
+        are merged so turns alternate. Without a perspective (or with
+        ``TALKSHOW_HISTORY_FORMAT=legacy``) every AI line is a labelled
+        ``assistant`` turn — which led models to answer *as* another panelist
+        ("Amy (Guest): …") and to copy the label prefix.
+        """
+        legacy = os.environ.get("TALKSHOW_HISTORY_FORMAT", "").strip().lower() == "legacy"
+        if perspective is None or legacy:
+            return self._legacy_messages()
 
         msgs: list[dict[str, Any]] = []
         for line in self.lines:
-            if line.role_id == "human":
-                msgs.append(
-                    {
-                        "role": "user",
-                        "content": f"{HUMAN_LABEL}: {line.text}",
-                    }
-                )
+            if line.role_id == perspective:
+                role, content = "assistant", line.text
             else:
-                if line.role_id == "host":
-                    tag = f"{line.speaker} (host)"
-                else:
-                    tag = f"{line.speaker} ({role_label(line.role_id)})"
-                msgs.append(
-                    {
-                        "role": "assistant",
-                        "content": f"{tag}: {line.text}",
-                    }
-                )
+                role, content = "user", f"{_line_label(line)}: {line.text}"
+            if msgs and msgs[-1]["role"] == role:
+                msgs[-1]["content"] += "\n" + content
+            else:
+                msgs.append({"role": role, "content": content})
         return msgs
+
+    def _legacy_messages(self) -> list[dict[str, Any]]:
+        msgs: list[dict[str, Any]] = []
+        for line in self.lines:
+            if line.role_id == "human":
+                msgs.append({"role": "user", "content": f"{HUMAN_LABEL}: {line.text}"})
+            else:
+                msgs.append({"role": "assistant", "content": f"{_line_label(line)}: {line.text}"})
+        return msgs
+
+
+def _line_label(line: HistoryLine) -> str:
+    """Transcript label: "Human guest", "Lessac (host)", "Ryan (Commentator)"."""
+    if line.role_id == "human":
+        return HUMAN_LABEL
+    if line.role_id == "host":
+        return f"{line.speaker} (host)"
+    from agent.panel.panel_context import role_label
+
+    return f"{line.speaker} ({role_label(line.role_id)})"
 
 
 def _speaker_label(role_id: str) -> str:

@@ -173,7 +173,7 @@ async def run_hand_raise_round(
 
 async def _poll_one_hand_raise(data: TalkShowData, role: str) -> HandRaiseResult:
     name = load_persona_name(role)
-    hist = data.show_history.prior_messages()
+    hist = data.show_history.prior_messages(perspective=role)
     prompt = f"""Panel floor check — you are {name}.
 
 Read the transcript. Do you want to raise your hand to speak next?
@@ -280,7 +280,7 @@ Output ONLY:
 [next]: {next_opts}
 [reason]: one short sentence (optional)
 """
-    hist = data.show_history.prior_messages()
+    hist = data.show_history.prior_messages(perspective="host")
     from agent.config import load_persona_instructions
 
     system = load_persona_instructions("host", panel_mode=True)

@@ -96,7 +96,7 @@ async def _run_ghost_human_turn_locked(
 
     await await_pending_appraisal(data, "host")
     user_hint = f"{host_text_user_hint(heard)}\n\n{mood_prompt_block(data, 'host')}"
-    hist = data.show_history.prior_messages()
+    hist = data.show_history.prior_messages(perspective=controller.listen_role())
     t0 = time.monotonic()
     raw = await data.runtime.gemma_client.complete_text(
         user_hint,
