@@ -191,6 +191,7 @@ or
         system_prompt=panelist_hand_raise_system(role),
         history_messages=hist,
         raw=True,  # parse [raise]/[topic] from the full output
+        output_role=role,
     )
     result = parse_hand_raise(role, text)
     logger.info(
@@ -289,6 +290,7 @@ Output ONLY:
         system_prompt=system,
         history_messages=hist,
         raw=True,  # parse [next] from the full output, not the stripped reply
+        output_role="host",
     )
     parsed = parse_floor_decision(text)
     if parsed and parsed.next_role in set(panel_roles) | {"close", "human"}:
@@ -378,13 +380,14 @@ def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
     from agent.locale.viewer_locales import recompute_needed_locales
     from agent.panel.panel_context import session_welcome_texts
 
-    try:
-        from livekit.agents.job import get_job_context
+    if session is not None:
+        try:
+            from livekit.agents.job import get_job_context
 
-        room = get_job_context().room
-        recompute_needed_locales(data, room)
-    except Exception:
-        logger.exception("session_welcome: could not recompute locales from room")
+            room = get_job_context().room
+            recompute_needed_locales(data, room)
+        except Exception:
+            logger.exception("session_welcome: could not recompute locales from room")
 
     needed = frozenset(getattr(data, "needed_locales", None) or {"en"})
     canned = session_welcome_texts(data.scenario)

@@ -98,6 +98,43 @@ python -m eval.ghost_session
 python -m eval.ghost_session --record --start-frontend
 ```
 
+### 4. Optional - text-only mode (Babel)
+
+Run the talk show without a microphone, LiveKit room, TTS, or avatars. This uses one GPU for vLLM and runs the host-moderated panel in the background.
+
+On Babel, set `TALKSHOW_TEXT_ONLY=1` in the repo-root `.env`, then submit the text-only job:
+
+```bash
+cd ~/AI-agent-talkshow
+mkdir -p slurm-logs
+sbatch deploy/slurm-talkshow-1gpu.sh
+```
+
+The job starts vLLM and waits for its health endpoint before starting the text-session manager. Find the job ID in the `sbatch` response or with `squeue -u "$USER"`. Once the manager is ready, start a session from another Babel login-node terminal:
+
+```bash
+cd ~/AI-agent-talkshow
+python cli/text_session_control.py start --job <jobid>
+```
+
+Session controls:
+
+```bash
+python cli/text_session_control.py status --job <jobid>
+python cli/text_session_control.py stop --job <jobid>
+python cli/text_session_control.py restart --job <jobid>
+```
+
+`stop` stops the current text session but leaves the SLURM job and vLLM running. To stop the whole job, run `scancel <jobid>`.
+
+Logs:
+
+- `slurm-logs/slurm-talkshow-text-<jobid>.{out,err}`
+- `logs/slurm-text-<jobid>/{vllm,agent}.log`
+- `logs/model-outputs/session-*.log` — model responses labeled with each persona's display name
+
+No frontend or token is needed. To return to the regular voice mode, use the 3-GPU workflow above and set `TALKSHOW_TEXT_ONLY=0` in `.env`.
+
 ---
 
 ## Teammate setup — laptop (one-time)

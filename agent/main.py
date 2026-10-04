@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.bootstrap import ensure_cluster_runtime_env
+from agent.config import text_only_enabled
 
 ensure_cluster_runtime_env()
 
@@ -316,4 +317,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(server)
+    if text_only_enabled():
+        from agent.session.text_session import main as text_session_main
+        asyncio.run(text_session_main())
+    else:
+        cli.run_app(server)

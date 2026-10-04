@@ -25,7 +25,7 @@ from agent.adapters.avatar_video import (
 )
 from agent.adapters.tts_synthesize import synthesize_pcm_for_config
 from agent.agents.factory import build_agent
-from agent.config import LocaleTTSConfig, load_persona_tts
+from agent.config import LocaleTTSConfig, load_persona_tts, load_persona_name
 from agent.data import TalkShowData
 from agent.ui.participant_display import set_agent_display_name
 from agent.session.speak_chunks import avatar_chunk_stream_enabled, split_speak_sentences
@@ -44,7 +44,7 @@ async def wait_for_session_agent(session: AgentSession) -> None:
 
 
 async def switch_to_role(
-    session: AgentSession,
+    session: AgentSession | None,
     data: TalkShowData,
     role: str,
     *,
@@ -59,6 +59,11 @@ async def switch_to_role(
     try:
         ctrl.record_handoff(to_role=role, reason=reason)
         ctrl.apply_persona_for_role(role)
+        
+        if session is None:
+            logger.info("text handoff role=%s reason=%s", role, reason)
+            return
+            
         await set_agent_display_name(role)
         session.update_agent(build_agent(role, data))
         await wait_for_session_agent(session)
@@ -557,6 +562,26 @@ async def speak_panel_line(
 
     text = strip_speech_control_tags(text.strip())
     if not text:
+        return
+    
+    # use stdout when session is None (text-only mode)
+    if session is None:
+        if speak_role != data.active_role:
+            await switch_to_role(None, data, speak_role, reason=f"panel:{step}")
+
+        name = load_persona_name(speak_role)
+        print(f"\n{name}: {text}", flush=True)
+
+        turn_log = getattr(data, "turn_log", None)
+        if turn_log is not None:
+            turn_log.log(
+                "text_speech",
+                role=speak_role,
+                step=step,
+                text=text,
+                room=data.room_name,
+            )
+
         return
 
     if not session_is_active(session) or data.shutdown_event.is_set():

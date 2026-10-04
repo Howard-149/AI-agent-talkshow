@@ -98,6 +98,7 @@ class PersonaWorker:
             prompt,
             system_prompt=system_prompt,
             history_messages=hist,
+            output_role=role,
             raw=True,  # parse [next] from the full output, not the stripped reply
         )
         model_latency_s = time.monotonic() - t0

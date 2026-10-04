@@ -7,7 +7,7 @@ import json
 import logging
 from collections import deque
 
-from agent.config import ScenarioConfig, load_persona_name
+from agent.config import ScenarioConfig, load_persona_name, text_only_enabled
 from agent.panel.panel_roster import panel_roster_entries
 from agent.ui.room_connect import wait_for_local_participant
 
@@ -86,6 +86,9 @@ async def flush_pending_ui_events(*, max_wait_sec: float = 15.0) -> None:
 
 async def publish_ui_event(event_type: str, **fields: object) -> None:
     """Broadcast panel state to talkshow-web (and any client on UI_TOPIC)."""
+    if text_only_enabled():
+        return
+    
     payload = json.dumps({"type": event_type, **fields}, ensure_ascii=False).encode(
         "utf-8"
     )

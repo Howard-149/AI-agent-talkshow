@@ -41,7 +41,7 @@ async def draft_panelist(
 
 
 async def speak_draft(
-    session: AgentSession,
+    session: AgentSession | None,
     data: TalkShowData,
     draft: AgentDraft,
     *,
@@ -95,7 +95,7 @@ async def generate_panelist_line(
 
 
 async def speak_one_panelist(
-    session: AgentSession,
+    session: AgentSession | None,
     data: TalkShowData,
     *,
     speak_role: str,
@@ -107,7 +107,7 @@ async def speak_one_panelist(
 
 
 async def run_panel_round(
-    session: AgentSession,
+    session: AgentSession | None,
     data: TalkShowData,
     controller: TurnController,
 ) -> None:
