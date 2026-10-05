@@ -510,6 +510,17 @@ restart_service() {
   esac
 }
 
+# Latency A/B: with TALKSHOW_ARMS_FILE set, run ghost-session arms instead of the
+# supervised agent. deploy/ghost-arms.sh restarts only the agent per arm (models stay
+# loaded) and the job ends when the arms are done.
+if [[ -n "${TALKSHOW_ARMS_FILE:-}" ]]; then
+  ctl_event "running ghost arms from ${TALKSHOW_ARMS_FILE}"
+  ( export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"; bash deploy/ghost-arms.sh "${TALKSHOW_ARMS_FILE}" ) 2>&1 | tee "${LOG_DIR}/arms.log"
+  rc="${PIPESTATUS[0]}"
+  ctl_event "ghost arms finished rc=${rc}"
+  exit "${rc}"
+fi
+
 echo "Starting agent.main …"
 start_agent
 while true; do
