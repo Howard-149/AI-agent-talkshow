@@ -51,6 +51,11 @@ def avatar_synth_mode() -> str:
     return "stream"
 
 
+def avatar_denoising_steps() -> int:
+    """DyStream denoising steps per frame (default 5); fewer render faster at some quality cost."""
+    return max(1, int(os.environ.get("TALKSHOW_AVATAR_STEPS", "5")))
+
+
 def avatar_preroll_frames() -> int:
     """Minimum preroll floor (dynamic target is at least this)."""
     return max(1, int(os.environ.get("TALKSHOW_AVATAR_PREROLL_FRAMES", "8")))
@@ -255,6 +260,7 @@ class AvatarBridge:
                 for kind, payload in run_dystream_synthesize_stream(
                     portrait=portrait_path,
                     audio_wav=wav_path,
+                    denoising_steps=avatar_denoising_steps(),
                     cache_key=role,
                 ):
                     if kind == "meta":
@@ -440,6 +446,7 @@ class AvatarBridge:
                 gen_fps=gen_fps,
                 pcm_duration_sec=round(pcm_duration_sec, 3),
                 synth="stream",
+                steps=avatar_denoising_steps(),
             )
         logger.info(
             "avatar stream preroll ready role=%s slot=%s ttff_ms=%d preroll_ms=%d "
@@ -486,6 +493,7 @@ class AvatarBridge:
             portrait=portrait_path,
             audio_wav=wav_path,
             output_mp4=mp4_path,
+            denoising_steps=avatar_denoising_steps(),
         )
         bake_ms = round(bake_sec * 1000)
         url = avatar_clip_public_url(mp4_path.name)
@@ -497,6 +505,7 @@ class AvatarBridge:
                 slot=slot,
                 avatar_bake_ms=bake_ms,
                 avatar_video_compose_ms=bake_ms,
+                steps=avatar_denoising_steps(),
                 url=url,
                 synth="mp4",
             )
