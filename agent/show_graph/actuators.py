@@ -45,6 +45,7 @@ class Actuators(Protocol):
     def consume_floor_next(self) -> str: ...
     def queue_roles(self) -> list[str]: ...
     async def return_to_host(self, trigger: str) -> None: ...
+    def prefetch_hand_raise_poll(self) -> None: ...
     async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine: ...
@@ -68,6 +69,7 @@ class LiveActuators:
         self.session = session
         self.data = data
         self.controller = controller
+        self._prefetched_poll: asyncio.Task | None = None
 
     # --- session / logging -------------------------------------------------
 
@@ -227,9 +229,23 @@ class LiveActuators:
 
         await return_floor_to_host(self.session, self.data, self.controller, trigger=trigger)
 
+    def prefetch_hand_raise_poll(self) -> None:
+        """Start the hand-raise poll now, while the open-floor line plays (opt-in)."""
+        from agent.floor.host_floor import poll_during_open_floor_enabled, poll_panel_hand_raises
+
+        if not poll_during_open_floor_enabled() or self.data.hand_raise_queue.roles():
+            return
+        if self._prefetched_poll is not None:
+            self._prefetched_poll.cancel()
+        self._prefetched_poll = asyncio.create_task(
+            poll_panel_hand_raises(self.data, self.controller.panel_speaker_roles()),
+            name="hand_raise_poll:prefetch",
+        )
+
     async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick:
         from agent.floor.host_floor import run_hand_raise_round
 
+        prefetched, self._prefetched_poll = self._prefetched_poll, None
         return await run_hand_raise_round(
             self.session,
             self.data,
@@ -237,6 +253,7 @@ class LiveActuators:
             panel_roles=self.controller.panel_speaker_roles(),
             spoken_roles=set(spoken_roles),
             turn_idx=turn_idx,
+            prefetched_poll=prefetched,
         )
 
     async def grant_panelist(self, role: str, reason: str) -> None:

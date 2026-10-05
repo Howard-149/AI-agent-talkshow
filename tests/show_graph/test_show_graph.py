@@ -115,6 +115,9 @@ class FakeActuators:
     async def return_to_host(self, trigger: str) -> None:
         self._ev("return_to_host", trigger)
 
+    def prefetch_hand_raise_poll(self) -> None:
+        self._ev("prefetch_poll", None)
+
     async def hand_raise_round(self, turn_idx, spoken_roles) -> FloorPick:
         self._ev("hand_raise", turn_idx)
         self.queue = []
@@ -242,6 +245,17 @@ class ModerationTests(unittest.TestCase):
         final = run(act, entry="moderate", trigger="session_start", skip_open_floor=True)
         self.assertEqual([k for k, _ in act.kinds("speak")], ["grant_human"])
         self.assertEqual(final["outcome"], "human")
+
+    def test_poll_prefetch_starts_before_the_open_floor_line(self) -> None:
+        act = FakeActuators(picks=[FloorPick("human", "queue_fifo")])
+        run(act, entry="moderate", trigger="idle_wait")
+        order = [e.kind for e in act.events if e.kind in ("prefetch_poll", "speak", "hand_raise")]
+        self.assertEqual(order[:3], ["prefetch_poll", "speak", "hand_raise"])
+
+    def test_no_prefetch_when_the_open_floor_line_is_skipped(self) -> None:
+        act = FakeActuators(queue=["guest"], picks=[FloorPick("human", "queue_fifo")])
+        run(act, entry="moderate", trigger="idle_wait")
+        self.assertEqual(act.kinds("prefetch_poll"), [])
 
     def test_nobody_picked_ends_beat(self) -> None:
         act = FakeActuators(picks=[FloorPick(None, "")])

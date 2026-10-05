@@ -48,6 +48,12 @@ from agent.ui.ui_events import (
 logger = logging.getLogger(__name__)
 
 
+def poll_during_open_floor_enabled() -> bool:
+    """Start the hand-raise poll while the open-floor line plays (opt-in)."""
+    raw = os.environ.get("TALKSHOW_POLL_DURING_OPEN_FLOOR", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def _eligible_panel_raises(
     data: TalkShowData, panel_roles: list[str], spoken_roles: set[str]
 ) -> list[str]:
@@ -66,18 +72,26 @@ async def run_hand_raise_round(
     panel_roles: list[str],
     spoken_roles: set[str],
     turn_idx: int,
+    prefetched_poll: asyncio.Task | None = None,
 ) -> FloorPick:
     """
     Pick next speaker: FIFO queue (human UI + AI poll).
     Poll only when queue is empty; wait 10s only when still empty after poll.
+    ``prefetched_poll`` = a poll already started during the open-floor line.
     """
     if should_stop_session_work(data, session):
+        if prefetched_poll is not None:
+            prefetched_poll.cancel()
         return FloorPick(None, "")
     await emit_floor_pending(active=True)
     try:
         if not data.hand_raise_queue.roles():
             t0 = time.monotonic()
-            poll = await poll_panel_hand_raises(data, panel_roles)
+            if prefetched_poll is not None:
+                poll = await prefetched_poll
+            else:
+                poll = await poll_panel_hand_raises(data, panel_roles)
+            # With a prefetched poll this is only the wait left after the open-floor line.
             poll_latency_s = time.monotonic() - t0
             await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
             winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
@@ -98,11 +112,14 @@ async def run_hand_raise_round(
                     yes_roles=yes_roles,
                     had_tie=had_tie,
                     poll_latency_s=round(poll_latency_s, 3),
+                    poll_prefetched=prefetched_poll is not None,
                     panel_priority=list(data.panel_priority),
                     room=data.room_name,
                     queue=data.hand_raise_queue.roles(),
                 )
         else:
+            if prefetched_poll is not None:
+                prefetched_poll.cancel()
             logger.info(
                 "hand_raise poll skip queue=%s",
                 data.hand_raise_queue.roles(),
