@@ -9,12 +9,11 @@
 #SBATCH --gpus=3
 #SBATCH --mem=128G
 #SBATCH --time=16:00:00
-#SBATCH --chdir=/home/hsuanhal/AI-agent-talkshow
 # Absolute paths — relative slurm-logs/ fails when that dir is missing in submit cwd.
-#SBATCH --output=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.out
-#SBATCH --error=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.err
+#SBATCH --output=/home/%u/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.out
+#SBATCH --error=/home/%u/AI-agent-talkshow/slurm-logs/slurm-talkshow-%j.err
 #SBATCH --mail-type=END
-#SBATCH --mail-user=hsuanhal@andrew.cmu.edu
+# %u = submitting user. Mail: add --mail-user=<you>@andrew.cmu.edu when submitting.
 #
 # 3-GPU talkshow on preempt (requires --gpus=3):
 #

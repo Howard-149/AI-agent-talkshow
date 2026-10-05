@@ -9,11 +9,10 @@
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --time=00:30:00
-#SBATCH --chdir=/home/hsuanhal/AI-agent-talkshow
-#SBATCH --output=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-show-graph-%j.out
-#SBATCH --error=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-show-graph-%j.err
+#SBATCH --output=/home/%u/AI-agent-talkshow/slurm-logs/slurm-show-graph-%j.out
+#SBATCH --error=/home/%u/AI-agent-talkshow/slurm-logs/slurm-show-graph-%j.err
 #SBATCH --mail-type=END
-#SBATCH --mail-user=hsuanhal@andrew.cmu.edu
+# %u = submitting user. Mail: add --mail-user=<you>@andrew.cmu.edu when submitting.
 #
 # LangGraph floor planner parity tests (no LiveKit).
 # Requests 1 GPU (cluster policy: no CPU-only preempt jobs).
