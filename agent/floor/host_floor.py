@@ -76,7 +76,7 @@ async def run_hand_raise_round(
 ) -> FloorPick:
     """
     Pick next speaker: FIFO queue (human UI + AI poll).
-    Poll only when queue is empty; wait 10s only when still empty after poll.
+    Poll only when queue is empty; wait (5 s by default) only when still empty after poll.
     ``prefetched_poll`` = a poll already started during the open-floor line.
     """
     if should_stop_session_work(data, session):
