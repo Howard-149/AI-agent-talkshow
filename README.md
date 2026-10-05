@@ -74,6 +74,8 @@ If host RAM OOMs while models load: `TALKSHOW_STAGGER_START=1 sbatch --export=AL
 
 After **agent code** changes: push / sync → `scancel` the old job (or let it finish) → `sbatch` again. Frontend-only changes stay on the laptop (`pnpm dev`).
 
+**Sharing a LiveKit project.** Without `TALKSHOW_AGENT_NAME`, every unnamed worker in the project (anyone's) can take any new room. Set the same `TALKSHOW_AGENT_NAME` in the Babel and laptop `.env` to get explicit dispatch.
+
 Sidecar install and `.env` keys: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
 
 ### 2. Laptop — frontend + token

@@ -100,9 +100,14 @@ def mint_ghost_token(
             )
         )
         .with_ttl(timedelta(seconds=ttl_sec))
-        .to_jwt()
     )
-    return url, token
+    # Must match the worker's TALKSHOW_AGENT_NAME, or the room gets no agent.
+    agent_name = os.environ.get("TALKSHOW_AGENT_NAME", "").strip()
+    if agent_name:
+        token = token.with_room_config(
+            api.RoomConfiguration(agents=[api.RoomAgentDispatch(agent_name=agent_name)])
+        )
+    return url, token.to_jwt()
 
 
 def _decode_ui_event(raw: bytes | str | dict[str, Any]) -> dict[str, Any] | None:
