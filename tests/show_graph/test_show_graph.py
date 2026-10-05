@@ -126,8 +126,11 @@ class FakeActuators:
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
+    def start_panelist_draft(self, role: str, step: str) -> None:
+        self._ev("draft_ahead", (role, step))
+
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
-        self._ev("generate", role)
+        self._ev("generate", (role, step))
         tag = self.tags.get(role, ["host"]).pop(0) if self.tags.get(role) else "host"
         return PanelistLine(role=role, text=f"{role} says something", next_role=tag, emotion="Neutral")
 
@@ -256,6 +259,26 @@ class ModerationTests(unittest.TestCase):
         act = FakeActuators(queue=["guest"], picks=[FloorPick("human", "queue_fifo")])
         run(act, entry="moderate", trigger="idle_wait")
         self.assertEqual(act.kinds("prefetch_poll"), [])
+
+    def test_draft_ahead_starts_with_the_intro_for_the_line_it_drafts(self) -> None:
+        act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
+        run(act, entry="moderate", trigger="idle_wait")
+        order = [e.kind for e in act.events if e.kind in ("draft_ahead", "speak", "generate")]
+        self.assertEqual(order[:4], ["speak", "draft_ahead", "speak", "generate"])  # open floor, draft, intro, line
+        self.assertEqual(act.kinds("draft_ahead"), [g for g in act.kinds("generate")])
+
+    def test_no_draft_ahead_for_chained_or_direct_call_lines(self) -> None:
+        act = FakeActuators(
+            floor=["host"],
+            picks=[
+                FloorPick("guest", "host_direct_no_raises", host_line="Amy, what do you think?"),
+                FloorPick("human", "x"),
+            ],
+            tags={"guest": ["commentator"]},
+        )
+        run(act, entry="panel")
+        self.assertEqual(act.kinds("draft_ahead"), [])
+        self.assertEqual(len(act.kinds("generate")), 2)
 
     def test_nobody_picked_ends_beat(self) -> None:
         act = FakeActuators(picks=[FloorPick(None, "")])

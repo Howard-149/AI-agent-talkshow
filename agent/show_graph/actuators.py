@@ -48,6 +48,7 @@ class Actuators(Protocol):
     def prefetch_hand_raise_poll(self) -> None: ...
     async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
+    def start_panelist_draft(self, role: str, step: str) -> None: ...
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine: ...
 
     # --- canned host lines
@@ -70,6 +71,8 @@ class LiveActuators:
         self.data = data
         self.controller = controller
         self._prefetched_poll: asyncio.Task | None = None
+        # (role, step, transcript signature, draft task) started while the intro plays.
+        self._draft_ahead: tuple[str, str, tuple[int, str], asyncio.Task] | None = None
 
     # --- session / logging -------------------------------------------------
 
@@ -263,9 +266,48 @@ class LiveActuators:
         await emit_floor_grant(role, reason=reason)
         await dequeue_hand_raise(self.data, role)
 
-    async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
-        from agent.panel.panel_speech import generate_panelist_line
+    def _transcript_signature(self) -> tuple[int, str]:
+        lines = self.data.show_history.lines
+        return len(lines), (lines[-1].text if lines else "")
 
+    def start_panelist_draft(self, role: str, step: str) -> None:
+        """Start drafting ``role``'s line now, while the host's intro plays (opt-in)."""
+        from agent.panel.panel_speech import draft_ahead_enabled, draft_panelist
+
+        if not draft_ahead_enabled():
+            return
+        if self._draft_ahead is not None:
+            self._draft_ahead[3].cancel()
+        task = asyncio.create_task(
+            draft_panelist(self.data, speak_role=role, step=step), name=f"draft_ahead:{role}"
+        )
+        self._draft_ahead = (role, step, self._transcript_signature(), task)
+
+    async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
+        from agent.panel.panel_speech import generate_panelist_line, panelist_line_from_draft
+
+        pending, self._draft_ahead = self._draft_ahead, None
+        if pending is not None:
+            p_role, p_step, signature, task = pending
+            # Use the early draft only if it is for this line and nothing was said since.
+            if (p_role, p_step) == (role, step) and signature == self._transcript_signature():
+                t0 = asyncio.get_running_loop().time()
+                try:
+                    draft = await task
+                except Exception:
+                    logger.exception("draft ahead failed role=%s — drafting live", role)
+                    self.log("draft_ahead_dropped", role=role, step=step, reason="error")
+                else:
+                    self.log(
+                        "draft_ahead_used",
+                        role=role,
+                        step=step,
+                        wait_s=round(asyncio.get_running_loop().time() - t0, 3),
+                    )
+                    return panelist_line_from_draft(self.data, draft)
+            else:
+                task.cancel()
+                self.log("draft_ahead_dropped", role=role, step=step, reason="stale")
         return await generate_panelist_line(self.session, self.data, speak_role=role, step=step)
 
     # --- canned host lines ---------------------------------------------------
