@@ -98,19 +98,31 @@ if [[ -n "${SLURM_CVD}" ]]; then
   export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
 fi
 
-# Avatar off (TALKSHOW_AVATAR_ENABLED unset/0) → skip DyStream; 2 GPUs are enough:
+# Avatar off (TALKSHOW_AVATAR_ENABLED unset/0) on 2 GPUs → skip DyStream:
 #   sbatch --gpus=2 deploy/slurm-talkshow-3gpu.sh
+# On 3 GPUs DyStream starts either way (TALKSHOW_DYSTREAM_START=auto), so the agent can
+# switch the avatar on/off with a restart (deploy/talkshow-ctl.sh) instead of a resubmit.
 case "${TALKSHOW_AVATAR_ENABLED:-0}" in
   1|true|yes|on) AVATAR_ON=1 ;;
   *) AVATAR_ON=0 ;;
 esac
-echo "avatar=${AVATAR_ON} (TALKSHOW_AVATAR_ENABLED=${TALKSHOW_AVATAR_ENABLED:-<unset>})"
+IFS=',' read -r -a _SLURM_GPUS <<< "${SLURM_CVD}"
+case "${TALKSHOW_DYSTREAM_START:-auto}" in
+  1|true|yes|on) DYSTREAM_ON=1 ;;
+  0|false|no|off) DYSTREAM_ON=0 ;;
+  *) DYSTREAM_ON=$((AVATAR_ON == 1 || ${#_SLURM_GPUS[@]} >= 3 ? 1 : 0)) ;;
+esac
+if [[ "${AVATAR_ON}" == "1" && "${DYSTREAM_ON}" != "1" ]]; then
+  echo "FATAL: TALKSHOW_AVATAR_ENABLED=1 needs DyStream (TALKSHOW_DYSTREAM_START=${TALKSHOW_DYSTREAM_START:-auto})" >&2
+  exit 1
+fi
+echo "avatar=${AVATAR_ON} (TALKSHOW_AVATAR_ENABLED=${TALKSHOW_AVATAR_ENABLED:-<unset>}) dystream=${DYSTREAM_ON}"
 
 # Intended slots WITHIN the SLURM allocation (indices into CUDA_VISIBLE_DEVICES).
 # Prefer .env; fall back to 0/1/2 only when unset.
 export VLLM_CUDA_DEVICE="${VLLM_CUDA_DEVICE:-0}"
 export DYSTREAM_CUDA_DEVICE="${DYSTREAM_CUDA_DEVICE:-1}"
-if [[ "${AVATAR_ON}" == "1" ]]; then
+if [[ "${DYSTREAM_ON}" == "1" ]]; then
   export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-2}"
 else
   export COSYVOICE_CUDA_DEVICE="${COSYVOICE_CUDA_DEVICE:-1}"
@@ -131,11 +143,11 @@ conda activate "${ENV_TALKSHOW}"
 echo "agent/vLLM env=${ENV_TALKSHOW} python=$(command -v python) $(python -V 2>&1)"
 
 # Fill *_PYTHON from conda envs when .env left them unset.
-if [[ "${AVATAR_ON}" == "1" && -z "${DYSTREAM_PYTHON:-}" ]]; then
+if [[ "${DYSTREAM_ON}" == "1" && -z "${DYSTREAM_PYTHON:-}" ]]; then
   DYSTREAM_PYTHON="$(conda_env_python "${ENV_DYSTREAM}")" \
     || { echo "FATAL: no python for conda env ${ENV_DYSTREAM}; set DYSTREAM_PYTHON in .env" >&2; exit 1; }
 fi
-[[ "${AVATAR_ON}" == "1" ]] || DYSTREAM_PYTHON="${DYSTREAM_PYTHON:-<avatar-off>}"
+[[ "${DYSTREAM_ON}" == "1" ]] || DYSTREAM_PYTHON="${DYSTREAM_PYTHON:-<dystream-off>}"
 if [[ -z "${COSYVOICE_PYTHON:-}" ]]; then
   COSYVOICE_PYTHON="$(conda_env_python "${ENV_COSYVOICE}")" \
     || { echo "FATAL: no python for conda env ${ENV_COSYVOICE}; set COSYVOICE_PYTHON in .env" >&2; exit 1; }
@@ -161,7 +173,7 @@ if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   exit 1
 fi
 IFS=',' read -r -a ALLOC_GPUS <<< "${CUDA_VISIBLE_DEVICES}"
-NEED_GPUS=$((AVATAR_ON == 1 ? 3 : 2))
+NEED_GPUS=$((DYSTREAM_ON == 1 ? 3 : 2))
 if ((${#ALLOC_GPUS[@]} < NEED_GPUS)); then
   echo "FATAL: need ${NEED_GPUS} GPUs; got ${#ALLOC_GPUS[@]} (${CUDA_VISIBLE_DEVICES})" >&2
   exit 1
@@ -169,7 +181,7 @@ fi
 
 # Catch .env foot-guns that force CosyVoice onto DyStream's slot.
 if [[ "${VLLM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]] \
-  || { [[ "${AVATAR_ON}" == "1" ]] && {
+  || { [[ "${DYSTREAM_ON}" == "1" ]] && {
     [[ "${DYSTREAM_CUDA_DEVICE}" == "${COSYVOICE_CUDA_DEVICE}" ]] \
       || [[ "${VLLM_CUDA_DEVICE}" == "${DYSTREAM_CUDA_DEVICE}" ]]; }; }; then
   echo "FATAL: GPU slots must be distinct:" >&2
@@ -298,7 +310,7 @@ report_gpu_bind() {
     nvidia-smi --query-compute-apps=gpu_uuid,gpu_bus_id,pid,process_name,used_gpu_memory --format=csv 2>/dev/null || true
   } | tee -a "${GPU_BIND_LOG}"
 
-  if [[ "${AVATAR_ON}" != "1" ]]; then
+  if [[ "${DYSTREAM_ON}" != "1" ]]; then
     cvd_d="off"
   fi
   if [[ -z "${cvd_v}" || -z "${cvd_d}" || -z "${cvd_c}" ]]; then
@@ -361,23 +373,168 @@ if [[ "${TALKSHOW_STAGGER_START:-0}" == "1" ]]; then
   echo "TALKSHOW_STAGGER_START=1 — vLLM first, then DyStream+CosyVoice"
   start_vllm
   wait_http "vLLM" "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" "" 900 "${VLLM_PID}" "${LOG_DIR}/vllm.log"
-  [[ "${AVATAR_ON}" == "1" ]] && start_dystream
+  [[ "${DYSTREAM_ON}" == "1" ]] && start_dystream
   start_cosyvoice
 else
-  echo "Parallel start: vLLM + CosyVoice$([[ "${AVATAR_ON}" == "1" ]] && echo " + DyStream") (128G mem; set TALKSHOW_STAGGER_START=1 if OOM)"
+  echo "Parallel start: vLLM + CosyVoice$([[ "${DYSTREAM_ON}" == "1" ]] && echo " + DyStream") (128G mem; set TALKSHOW_STAGGER_START=1 if OOM)"
   start_vllm
-  [[ "${AVATAR_ON}" == "1" ]] && start_dystream
+  [[ "${DYSTREAM_ON}" == "1" ]] && start_dystream
   start_cosyvoice
 fi
 
 wait_http "vLLM" "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" "" 900 "${VLLM_PID}" "${LOG_DIR}/vllm.log"
-if [[ "${AVATAR_ON}" == "1" ]]; then
+if [[ "${DYSTREAM_ON}" == "1" ]]; then
   wait_http "DyStream" "${DYSTREAM_SIDECAR_URL:-http://127.0.0.1:8766}/health" "models_warmed" 900 "${DYSTREAM_PID}" "${LOG_DIR}/dystream.log"
 fi
 wait_http "CosyVoice" "${COSYVOICE_SIDECAR_URL:-http://127.0.0.1:8767}/health" "" 900 "${COSYVOICE_PID}" "${LOG_DIR}/cosyvoice.log"
 
 report_gpu_bind
 
+# ---------------------------------------------------------------------------
+# Supervisor: the models above stay loaded while the agent (or one sidecar) restarts.
+#   deploy/talkshow-ctl.sh restart agent       # new code / .env, ~20 s, no resubmit
+#   deploy/talkshow-ctl.sh restart cosyvoice   # sidecar code change; reloads that model
+# Requests are files in ${LOG_DIR}/control/ (home is shared, so no srun is needed).
+# ---------------------------------------------------------------------------
+CTL_DIR="${LOG_DIR}/control"
+mkdir -p "${CTL_DIR}"
+rm -f "${CTL_DIR}"/restart-*  # stale requests from before a requeue
+EVENTS_LOG="${CTL_DIR}/events.log"
+
+ctl_event() {
+  echo "$(date -Is) $*" | tee -a "${EVENTS_LOG}"
+}
+
+code_version() {
+  local rev
+  rev="$(git -C "${ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  git -C "${ROOT}" diff --quiet HEAD -- 2>/dev/null || rev="${rev}-dirty"
+  echo "${rev}"
+}
+
+# Every process under a wrapper pid (run-*.sh → python → vLLM EngineCore …).
+descendants() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    descendants "${child}"
+    echo "${child}"
+  done
+}
+
+stop_tree() {
+  local root="$1" pids p alive
+  [[ -n "${root}" ]] || return 0
+  pids="$(descendants "${root}") ${root}"
+  # shellcheck disable=SC2086
+  kill -TERM ${pids} 2>/dev/null || true
+  for _ in $(seq 1 30); do
+    alive=0
+    for p in ${pids}; do
+      kill -0 "${p}" 2>/dev/null && alive=1
+    done
+    ((alive)) || break
+    sleep 1
+  done
+  # shellcheck disable=SC2086
+  kill -KILL ${pids} 2>/dev/null || true
+  wait "${root}" 2>/dev/null || true
+  local keep=() p2
+  for p2 in "${PIDS[@]}"; do
+    [[ "${p2}" == "${root}" ]] || keep+=("${p2}")
+  done
+  PIDS=("${keep[@]}")
+}
+
+start_agent() {
+  (
+    # Fresh .env on every start: agent-only settings (TALKSHOW_AVATAR_ENABLED,
+    # TALKSHOW_PAD_*, TALKSHOW_HAND_RAISE_*, …) change with a restart.
+    if [[ -f "${ROOT}/.env" ]]; then
+      set -a
+      # shellcheck disable=SC1091
+      source "${ROOT}/.env"
+      set +a
+    fi
+    export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
+    case "${TALKSHOW_AVATAR_ENABLED:-0}" in
+      1|true|yes|on)
+        [[ "${DYSTREAM_ON}" == "1" ]] \
+          || echo "WARN: TALKSHOW_AVATAR_ENABLED=1 but DyStream is not running in this job" >&2
+        ;;
+    esac
+    python -m agent.main dev 2>&1 | tee -a "${LOG_DIR}/agent.log"
+  ) &
+  AGENT_PID=$!
+  PIDS+=("${AGENT_PID}")
+  ctl_event "agent started pid=${AGENT_PID} code=$(code_version)"
+}
+
+# start_* truncate <svc>.log; keep the previous run's log next to it.
+keep_log() {
+  local log="${LOG_DIR}/$1.log"
+  [[ -f "${log}" ]] && mv "${log}" "${LOG_DIR}/$1-$(date +%Y%m%d-%H%M%S).log"
+  return 0
+}
+
+restart_service() {
+  case "$1" in
+    agent)
+      stop_tree "${AGENT_PID:-}"
+      start_agent
+      ;;
+    cosyvoice)
+      stop_tree "${COSYVOICE_PID:-}"
+      keep_log cosyvoice
+      start_cosyvoice
+      wait_http "CosyVoice" "${COSYVOICE_SIDECAR_URL:-http://127.0.0.1:8767}/health" "" 900 "${COSYVOICE_PID}" "${LOG_DIR}/cosyvoice.log"
+      ;;
+    dystream)
+      if [[ "${DYSTREAM_ON}" != "1" ]]; then
+        ctl_event "DyStream is not running in this job; ignoring restart"
+        return 0
+      fi
+      stop_tree "${DYSTREAM_PID:-}"
+      keep_log dystream
+      start_dystream
+      wait_http "DyStream" "${DYSTREAM_SIDECAR_URL:-http://127.0.0.1:8766}/health" "models_warmed" 900 "${DYSTREAM_PID}" "${LOG_DIR}/dystream.log"
+      ;;
+    vllm)
+      stop_tree "${VLLM_PID:-}"
+      keep_log vllm
+      start_vllm
+      wait_http "vLLM" "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" "" 900 "${VLLM_PID}" "${LOG_DIR}/vllm.log"
+      ;;
+    *)
+      ctl_event "unknown service '$1' (agent|cosyvoice|dystream|vllm)"
+      ;;
+  esac
+}
+
 echo "Starting agent.main …"
-export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
-python -m agent.main dev 2>&1 | tee "${LOG_DIR}/agent.log"
+start_agent
+while true; do
+  for req in "${CTL_DIR}"/restart-*; do
+    [[ -e "${req}" ]] || continue
+    svc="${req##*/restart-}"
+    rm -f "${req}"
+    ctl_event "restart ${svc}: requested"
+    restart_service "${svc}" || { ctl_event "restart ${svc}: FAILED"; exit 1; }
+    ctl_event "restart ${svc}: done"
+  done
+  if ! kill -0 "${AGENT_PID}" 2>/dev/null; then
+    ctl_event "agent exited unexpectedly; restarting in 10 s (see ${LOG_DIR}/agent.log)"
+    sleep 10
+    start_agent
+  fi
+  # A dead sidecar is reported once and left for `talkshow-ctl.sh restart <svc>`.
+  for svc_pid in "vllm:${VLLM_PID:-}" "cosyvoice:${COSYVOICE_PID:-}" "dystream:${DYSTREAM_PID:-}"; do
+    svc="${svc_pid%%:*}"
+    pid="${svc_pid#*:}"
+    [[ -n "${pid}" ]] || continue
+    if ! kill -0 "${pid}" 2>/dev/null && [[ "${REPORTED_DEAD:-}" != *" ${pid} "* ]]; then
+      ctl_event "${svc} pid=${pid} died; see ${LOG_DIR}/${svc}.log, then: deploy/talkshow-ctl.sh restart ${svc}"
+      REPORTED_DEAD="${REPORTED_DEAD:- } ${pid} "
+    fi
+  done
+  sleep 2
+done

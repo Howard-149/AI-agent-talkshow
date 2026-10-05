@@ -15,6 +15,7 @@ squeue -u $USER                                   # find the old job id
 scancel <old-jobid>
 sbatch deploy/slurm-talkshow-3gpu.sh              # add --exclude=<node> to skip a bad node
 grep "registered worker" slurm-logs/slurm-talkshow-<jobid>.out   # ready when this prints
+deploy/talkshow-ctl.sh restart agent              # after a code / .env change: no resubmit
 
 # 2. Laptop: run a ghost session against it
 python -m eval.ghost_session                                               # smoke.yaml (polite debate)

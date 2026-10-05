@@ -72,7 +72,7 @@ If host RAM OOMs while models load: `TALKSHOW_STAGGER_START=1 sbatch --export=AL
 | Laptop `.env` | `NEXT_PUBLIC_DYSTREAM_ENABLED=0` |
 | Submit | `sbatch --gpus=2 deploy/slurm-talkshow-3gpu.sh` |
 
-After **agent code** changes: push / sync → `scancel` the old job (or let it finish) → `sbatch` again. Frontend-only changes stay on the laptop (`pnpm dev`).
+After **agent code** or agent `.env` changes: push / sync, then `deploy/talkshow-ctl.sh restart agent` (about 20 s; vLLM, CosyVoice and DyStream stay loaded, `.env` is re-read). Sidecar code: `deploy/talkshow-ctl.sh restart cosyvoice` (or `dystream`, `vllm`). Resubmit only for GPU layout changes. On 3 GPUs DyStream always starts, so `TALKSHOW_AVATAR_ENABLED` switches with an agent restart. Frontend-only changes stay on the laptop (`pnpm dev`).
 
 **Sharing a LiveKit project.** Without `TALKSHOW_AGENT_NAME`, every unnamed worker in the project (anyone's) can take any new room. Set the same `TALKSHOW_AGENT_NAME` in the Babel and laptop `.env` to get explicit dispatch.
 
@@ -349,7 +349,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | Start the show stack | Babel login | `sbatch deploy/slurm-talkshow-3gpu.sh` |
 | UI / panel / transcript | Laptop | `cd talkshow-web && pnpm dev` |
 | Mint token | Laptop | `python api/tokens.py --room talkshow-dev --identity <you>` |
-| Edit agent logic | Git + Babel | edit `agent/`, push / `sync-to-babel.sh`, resubmit the 3-GPU job |
+| Edit agent logic | Git + Babel | edit `agent/`, push / `sync-to-babel.sh`, `deploy/talkshow-ctl.sh restart agent` |
 | Ghost session (no mic) | Babel | `python -m eval.ghost_session` |
 | Record ghost frontend | Laptop | `python -m eval.ghost_session --record` |
 | Change persona text | Git | `config/personas/*.yaml` |
