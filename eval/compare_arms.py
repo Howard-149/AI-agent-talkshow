@@ -45,6 +45,7 @@ class ArmStats:
     handover_parts: list[dict[str, float]] = field(default_factory=list)
     gap_a: list[float] = field(default_factory=list)
     mid_line: list[float] = field(default_factory=list)
+    gen_fps: list[float] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
@@ -96,6 +97,8 @@ def add_session(arm: ArmStats, path: Path) -> None:
         e = r["event"]
         if e in ("canned_cache_hit", "canned_cache_miss", "draft_ahead_used", "draft_ahead_dropped", "hand_raise_wait_start"):
             arm.counts[e] += 1
+        elif e == "avatar_bake" and r.get("gen_fps"):
+            arm.gen_fps.append(float(r["gen_fps"]))
         elif e == "hand_raise_poll":
             arm.counts["poll"] += 1
             arm.counts["poll_prefetched"] += bool(r.get("poll_prefetched"))
@@ -154,11 +157,12 @@ def main() -> None:
         table.append((a, parts, total))
 
     print("\n== Show level (medians)")
-    print(f"{'arm':<10}  {'dead%':>6}  {'handover':>9}  {'silent':>7}  {'gapA':>6}  {'mid-line':>8}")
+    print(f"{'arm':<10}  {'dead%':>6}  {'handover':>9}  {'silent':>7}  {'gapA':>6}  {'mid-line':>8}  {'avatar fps':>10}")
     for a in arms:
         print(
             f"{a.name:<10}  {fmt(med(a.dead_pct), 0):>6}  {fmt(med(a.handover_total), 1):>9}  "
-            f"{fmt(med(a.handover_silent), 1):>7}  {fmt(med(a.gap_a), 2):>6}  {fmt(med(a.mid_line), 2):>8}"
+            f"{fmt(med(a.handover_silent), 1):>7}  {fmt(med(a.gap_a), 2):>6}  {fmt(med(a.mid_line), 2):>8}  "
+            f"{fmt(med(a.gen_fps), 1):>10}"
         )
 
     print("\n== Did each flag engage? (event counts)")
@@ -172,12 +176,13 @@ def main() -> None:
         with args.csv.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["arm", "sessions", "handovers", "silent_per_handover_s", *CAUSES,
-                        "dead_pct_median", "handover_median_s", "handover_silent_median_s", "gap_a_median_s", *keys])
+                        "dead_pct_median", "handover_median_s", "handover_silent_median_s", "gap_a_median_s",
+                        "avatar_fps_median", *keys])
             for a, parts, total in table:
                 w.writerow([a.name, len(a.sessions), len(a.handover_parts), round(total, 3),
                             *[round(parts[c], 3) for c in CAUSES], round(med(a.dead_pct), 1),
                             round(med(a.handover_total), 2), round(med(a.handover_silent), 2),
-                            round(med(a.gap_a), 2), *[a.counts.get(k, 0) for k in keys]])
+                            round(med(a.gap_a), 2), round(med(a.gen_fps), 1), *[a.counts.get(k, 0) for k in keys]])
         print(f"\nwrote {args.csv}")
 
 
