@@ -20,6 +20,7 @@ eval/results/
 .cursor/
 docs/
 scripts/
+!eval/ghost_session/scripts/
 avatar/assets/portraits/*.png
 avatar/assets/loops/*
 !avatar/assets/loops/README.md
