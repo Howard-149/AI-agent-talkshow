@@ -148,6 +148,7 @@ class LiveActuators:
         return appraisal_listeners(self.data, speaker)
 
     async def speak(self, line: LineSpec) -> None:
+        from agent.session.canned_cache import CANNED_KINDS
         from agent.session.session_handoff import speak_panel_line
 
         await speak_panel_line(
@@ -157,6 +158,7 @@ class LiveActuators:
             text=line["text"],
             step=line.get("step") or line.get("kind") or "line",
             texts=line.get("texts"),
+            canned=line.get("kind") in CANNED_KINDS,
         )
 
     async def appraise(self, utt: Utterance, listener: str) -> dict[str, Any]:
