@@ -61,6 +61,9 @@ async def warm(locales: list[str], *, force: bool = False) -> int:
         load_persona_tts,
         load_scenario,
     )
+    # agent.agents first: session_handoff and agents.host import each other, and the
+    # cycle only resolves in this order (as in agent.main).
+    import agent.agents  # noqa: F401
     from agent.panel.panel_context import panel_speaker_roles, session_welcome_texts
     from agent.panel.panel_speech import PANEL_HOST_CLOSE
     from avatar.paths import resolve_avatar_asset_path
