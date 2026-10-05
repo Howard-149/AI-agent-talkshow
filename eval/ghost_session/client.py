@@ -110,6 +110,13 @@ def mint_ghost_token(
     return url, token.to_jwt()
 
 
+def default_room() -> str:
+    """A new room per run: a reused room name can keep the previous (agent-less) room
+    alive, and a shared name collides with other users' ghosts (DuplicateIdentity)."""
+    base = os.environ.get("TALKSHOW_ROOM", "").strip()
+    return base or f"talkshow-ghost-{int(time.time())}"
+
+
 def _decode_ui_event(raw: bytes | str | dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(raw, dict):
         return raw
@@ -381,8 +388,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--room",
-        default=os.environ.get("TALKSHOW_ROOM", "talkshow-dev"),
-        help="LiveKit room (must match the running agent worker)",
+        default=None,
+        help="LiveKit room (default: TALKSHOW_ROOM, else a new talkshow-ghost-<epoch> room)",
     )
     parser.add_argument(
         "--script",
@@ -468,6 +475,8 @@ def main(argv: list[str] | None = None) -> int:
         print(summarize_session(args.summarize))
         return 0
 
+    if args.room is None:
+        args.room = default_room()
     script = load_script(args.script)
     if args.locale:
         script.locale = args.locale
