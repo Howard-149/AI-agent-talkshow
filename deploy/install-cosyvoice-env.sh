@@ -54,6 +54,8 @@ fi
 
 conda activate "${ENV_NAME}"
 
+# Aliyun mirror can be very slow.
+# If downloads crawl, use default PyPI instead:  PIP_MIRROR=()
 PIP_MIRROR=(-i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com)
 
 pip install --upgrade "pip" "setuptools>=69,<81" wheel packaging "${PIP_MIRROR[@]}"

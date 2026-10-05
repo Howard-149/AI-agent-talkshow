@@ -34,6 +34,9 @@ onnxruntime-gpu[cuda,cudnn]>=1.20.0
 
 # vLLM + Gemma audio-in (CUDA 12.9 / Babel L40S)
 torch==2.11.0
+# transformers 5.15+ makes Gemma 4 head_dim per-layer; vLLM 0.21 then fails with
+# AmbiguousGlobalPerLayerAttributeError on config.head_dim.
+transformers>=4.56,<5.15
 https://github.com/vllm-project/vllm/releases/download/v0.21.0/vllm-0.21.0+cu129-cp38-abi3-manylinux_2_34_x86_64.whl
 av>=12.0.0
 scipy>=1.11.0
