@@ -4,6 +4,34 @@ Join LiveKit as a **silent human**, let the real worker run welcome + TTS + DySt
 
 This is an integration harness, not a pytest. The Babel stack (agent worker, vLLM, TTS, optional DyStream) must already be running.
 
+## Common commands
+
+Typical loop: start the Babel stack, run the ghost from the laptop, then read the logs on Babel.
+
+```bash
+# 1. Babel login node: (re)start the stack (vLLM + CosyVoice + DyStream + agent worker)
+cd ~/AI-agent-talkshow
+squeue -u $USER                                   # find the old job id
+scancel <old-jobid>
+sbatch deploy/slurm-talkshow-3gpu.sh              # add --exclude=<node> to skip a bad node
+grep "registered worker" slurm-logs/slurm-talkshow-<jobid>.out   # ready when this prints
+
+# 2. Laptop: run a ghost session against it
+python -m eval.ghost_session                                               # smoke.yaml (polite debate)
+python -m eval.ghost_session --script eval/ghost_session/scripts/pad_swing.yaml   # emotion swing
+python -m eval.ghost_session --record --start-frontend \
+    --script eval/ghost_session/scripts/pad_swing.yaml                     # + MP4 in logs/ghost-recordings/
+
+# 3. Babel: read the newest session log
+python -m eval.ghost_session --summarize logs/session-<id>.jsonl   # turn-by-turn recap
+python eval/pad_report.py --last 1                                 # [pad] compliance + PAD trajectory
+python eval/gap_breakdown.py logs/session-<id>.jsonl               # where dead air goes (LLM / TTS / avatar)
+tail -f slurm-logs/slurm-talkshow-<jobid>.out                      # live worker log
+```
+
+Scripts: `scripts/smoke.yaml` (hiring-freeze debate, PAD stays near 0) and
+`scripts/pad_swing.yaml` (public humiliation → relief; exercises negative and recovering emotion).
+
 ## What it covers
 
 | Path | Real / skipped |
