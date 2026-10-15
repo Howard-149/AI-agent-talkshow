@@ -152,8 +152,11 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
     if act.should_stop():
         return _finish(stopped=True)
     if state.get("moderations", 0) >= state.get("max_moderations", 8):
-        logger.info("show_graph: moderation cap reached")
-        return _finish()
+        # Hand the floor back to the human instead of ending the beat with nobody
+        # holding it (nothing else re-opens the floor while the session idles).
+        logger.info("show_graph: moderation cap reached — floor back to the human")
+        act.log("moderation_cap", moderations=state.get("moderations", 0))
+        return Command(goto="grant_human", update={"grant_reason": "moderation_cap"})
     trigger = state.get("trigger") or "host_moderate"
     await act.return_to_host(trigger)
     queue = act.queue_roles()

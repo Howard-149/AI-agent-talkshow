@@ -281,6 +281,9 @@ class LimitTests(unittest.TestCase):
             final = run(act, entry="moderate", trigger="idle_wait")
         self.assertEqual(final["moderations"], 3)
         self.assertEqual(len(act.kinds("hand_raise")), 3)
+        # The cap hands the floor back to the human instead of going silent.
+        self.assertEqual(act.kinds("speak")[-1][0], "grant_human")
+        self.assertEqual(final["outcome"], "human")
 
     def test_session_stop_ends_without_more_speech(self) -> None:
         act = FakeActuators(
