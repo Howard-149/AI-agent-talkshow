@@ -180,6 +180,29 @@ class SessionRobustnessTests(unittest.TestCase):
         self.assertEqual(ok["last_outcome"], "human")
         self.assertEqual(show.beats, 1)
 
+    def test_beat_failing_during_shutdown_stops_quietly(self) -> None:
+        class Closing(FakeActuators):
+            async def generate_panelist_line(self, role, step):
+                raise RuntimeError("AgentSession is closing, cannot use say()")
+
+        class ClosingHooks(RecordingHooks):
+            def shutting_down(self) -> bool:
+                return True
+
+        async def go() -> tuple[Any, Any, ShowSession]:
+            act = Closing(picks=[FloorPick("guest", "queue_fifo")] * 4)
+            show = _session(act, hooks=ClosingHooks())
+            show.start()
+            first = show.post("moderate", trigger="a")
+            queued = show.post("moderate", trigger="b")
+            return await first, await queued, show
+
+        first, queued, show = asyncio.run(go())
+        self.assertIsNone(first)
+        self.assertIsNone(queued)  # released, not run against a dead session
+        self.assertFalse(show.running)
+        self.assertEqual(show.beats, 0)
+
     def test_checkpoint_types_allowed_in_strict_mode(self) -> None:
         async def go() -> dict[str, Any]:
             act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])

@@ -172,7 +172,15 @@ class ShowSession:
                         await self._boot()
                     else:
                         self.beats += 1
-                except Exception:
+                except Exception as exc:
+                    if self._shutting_down():
+                        # e.g. AgentSession.say() after the last human left: not a
+                        # beat failure, and restarting would only fail again.
+                        logger.info(
+                            "show session beat interrupted by shutdown kind=%s (%s)",
+                            event["kind"], exc,
+                        )
+                        break
                     logger.exception("show session beat failed kind=%s — restarting graph", event["kind"])
                     await self._boot()
                 finally:
@@ -196,6 +204,13 @@ class ShowSession:
                         logger.exception("after_beat for dropped event failed")
                 if fut is not None and not fut.done():
                     fut.set_result(None)
+
+    def _shutting_down(self) -> bool:
+        check = getattr(self._hooks, "shutting_down", None)
+        try:
+            return bool(check()) if check is not None else False
+        except Exception:
+            return False
 
     async def _resume(self, event: dict[str, Any]) -> dict[str, Any] | None:
         return await self._app.ainvoke(Command(resume=event), self._config, durability="exit")
