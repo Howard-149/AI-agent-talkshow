@@ -14,6 +14,7 @@ import httpx
 
 from agent.adapters.response_parser import ParsedTurn, parse_heard_reply
 from agent.config import LocaleLLMConfig
+from agent.telemetry.model_output_logger import ModelOutputLogger
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ class GemmaMMClient:
         self._system_prompt = system_prompt
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
         self._mm_warmed = False
+        self._output_logger: ModelOutputLogger | None = None
+
+    def set_output_logger(self, output_logger: ModelOutputLogger) -> None:
+        self._output_logger = output_logger
 
     @property
     def active_persona_id(self) -> str:
@@ -117,6 +122,7 @@ class GemmaMMClient:
         *,
         user_text: str | None = None,
         history_messages: list[dict[str, Any]] | None = None,
+        output_role: str | None = None,
     ) -> ParsedTurn:
         b64 = base64.standard_b64encode(wav_bytes).decode("ascii")
         audio_url = f"data:audio/wav;base64,{b64}"
@@ -167,6 +173,8 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
+        if self._output_logger is not None and output_role is not None:
+            self._output_logger.log(output_role, content)
 
         return parse_heard_reply(content)
 
@@ -179,6 +187,7 @@ class GemmaMMClient:
         raw: bool = False,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        output_role: str | None = None,
     ) -> str:
         """Text-only turn with optional prior conversation as chat messages.
 
@@ -220,6 +229,8 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
+        if self._output_logger is not None and output_role is not None:
+            self._output_logger.log(output_role, content)
         text = content.strip()
         if raw:
             return text
