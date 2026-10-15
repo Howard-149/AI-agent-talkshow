@@ -1,12 +1,20 @@
 import { randomString } from '@/lib/client-utils';
 import { getLiveKitURL } from '@/lib/getLiveKitURL';
 import { ConnectionDetails } from '@/lib/types';
-import { AccessToken, AccessTokenOptions, VideoGrant } from 'livekit-server-sdk';
+import {
+  AccessToken,
+  AccessTokenOptions,
+  RoomAgentDispatch,
+  RoomConfiguration,
+  VideoGrant,
+} from 'livekit-server-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
+// Must match the worker's TALKSHOW_AGENT_NAME (same repo-root .env), or the room gets no agent.
+const AGENT_NAME = (process.env.TALKSHOW_AGENT_NAME ?? '').trim();
 
 const COOKIE_KEY = 'random-participant-postfix';
 
@@ -96,6 +104,11 @@ function createParticipantToken(userInfo: AccessTokenOptions, roomName: string) 
     canSubscribe: true,
   };
   at.addGrant(grant);
+  if (AGENT_NAME) {
+    at.roomConfig = new RoomConfiguration({
+      agents: [new RoomAgentDispatch({ agentName: AGENT_NAME })],
+    });
+  }
   return at.toJwt();
 }
 

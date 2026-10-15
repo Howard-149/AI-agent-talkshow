@@ -48,6 +48,12 @@ from agent.ui.ui_events import (
 logger = logging.getLogger(__name__)
 
 
+def poll_during_open_floor_enabled() -> bool:
+    """Start the hand-raise poll while the open-floor line plays (opt-in)."""
+    raw = os.environ.get("TALKSHOW_POLL_DURING_OPEN_FLOOR", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def _eligible_panel_raises(
     data: TalkShowData, panel_roles: list[str], spoken_roles: set[str]
 ) -> list[str]:
@@ -67,24 +73,30 @@ async def run_hand_raise_round(
     spoken_roles: set[str],
     turn_idx: int,
     human_must_go: bool = False,
+    prefetched_poll: asyncio.Task | None = None,
 ) -> FloorPick:
     """
     Pick next speaker. Hand raises (human UI + AI poll) are collected either way;
     the LLM host decides (phase 4) unless ``TALKSHOW_HOST_DECIDE=fifo``, in which
-    case the FIFO queue does. Poll only when the queue is empty.
+    case the FIFO queue does. Poll only when the queue is empty; in FIFO mode wait
+    (5 s by default) only when still empty after the poll.
+    ``prefetched_poll`` = a poll already started during the open-floor line.
     """
     from agent.floor.host_decide import llm_host_enabled
 
     if should_stop_session_work(data, session):
+        if prefetched_poll is not None:
+            prefetched_poll.cancel()
         return FloorPick(None, "")
     if llm_host_enabled():
         return await _run_llm_host_round(
             session, data, controller,
             panel_roles=panel_roles, spoken_roles=spoken_roles, human_must_go=human_must_go,
+            prefetched_poll=prefetched_poll,
         )
     await emit_floor_pending(active=True)
     try:
-        await _poll_into_queue(data, panel_roles)
+        await _poll_into_queue(data, panel_roles, prefetched_poll)
 
         if not data.hand_raise_queue.roles():
             await wait_for_hand_raises(data, panel_roles=panel_roles)
@@ -142,9 +154,15 @@ async def run_hand_raise_round(
         await emit_floor_pending(active=False)
 
 
-async def _poll_into_queue(data: TalkShowData, panel_roles: list[str]) -> None:
+async def _poll_into_queue(
+    data: TalkShowData,
+    panel_roles: list[str],
+    prefetched_poll: asyncio.Task | None = None,
+) -> None:
     """Poll the panel for hand raises unless the queue already has someone."""
     if data.hand_raise_queue.roles():
+        if prefetched_poll is not None:
+            prefetched_poll.cancel()
         logger.info("hand_raise poll skip queue=%s", data.hand_raise_queue.roles())
         if data.turn_log:
             data.turn_log.log(
@@ -155,7 +173,11 @@ async def _poll_into_queue(data: TalkShowData, panel_roles: list[str]) -> None:
             )
         return
     t0 = time.monotonic()
-    poll = await poll_panel_hand_raises(data, panel_roles)
+    if prefetched_poll is not None:
+        poll = await prefetched_poll
+    else:
+        poll = await poll_panel_hand_raises(data, panel_roles)
+    # With a prefetched poll this is only the wait left after the open-floor line.
     poll_latency_s = time.monotonic() - t0
     await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
     winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
@@ -176,6 +198,7 @@ async def _poll_into_queue(data: TalkShowData, panel_roles: list[str]) -> None:
             yes_roles=yes_roles,
             had_tie=had_tie,
             poll_latency_s=round(poll_latency_s, 3),
+            poll_prefetched=prefetched_poll is not None,
             panel_priority=list(data.panel_priority),
             room=data.room_name,
             queue=data.hand_raise_queue.roles(),
@@ -190,13 +213,14 @@ async def _run_llm_host_round(
     panel_roles: list[str],
     spoken_roles: set[str],
     human_must_go: bool,
+    prefetched_poll: asyncio.Task | None = None,
 ) -> FloorPick:
     """Collect raises, then the LLM host picks (FIFO queue on any failure)."""
     from agent.floor.host_decide import host_decide
 
     await emit_floor_pending(active=True)
     try:
-        await _poll_into_queue(data, panel_roles)
+        await _poll_into_queue(data, panel_roles, prefetched_poll)
         if should_stop_session_work(data, session):
             return FloorPick(None, "")
         decision = await host_decide(
@@ -237,6 +261,7 @@ or
         system_prompt=panelist_hand_raise_system(role),
         history_messages=hist,
         raw=True,  # parse [raise]/[topic] from the full output
+        output_role=role,
     )
     result = parse_hand_raise(role, text)
     logger.info(
@@ -335,6 +360,7 @@ Output ONLY:
         system_prompt=system,
         history_messages=hist,
         raw=True,  # parse [next] from the full output, not the stripped reply
+        output_role="host",
     )
     parsed = parse_floor_decision(text)
     if parsed and parsed.next_role in set(panel_roles) | {"close", "human"}:
@@ -424,13 +450,14 @@ def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
     from agent.locale.viewer_locales import recompute_needed_locales
     from agent.panel.panel_context import session_welcome_texts
 
-    try:
-        from livekit.agents.job import get_job_context
+    if session is not None:
+        try:
+            from livekit.agents.job import get_job_context
 
-        room = get_job_context().room
-        recompute_needed_locales(data, room)
-    except Exception:
-        logger.exception("session_welcome: could not recompute locales from room")
+            room = get_job_context().room
+            recompute_needed_locales(data, room)
+        except Exception:
+            logger.exception("session_welcome: could not recompute locales from room")
 
     needed = frozenset(getattr(data, "needed_locales", None) or {"en"})
     canned = session_welcome_texts(data.scenario)

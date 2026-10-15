@@ -25,7 +25,7 @@ from agent.adapters.avatar_video import (
 )
 from agent.adapters.tts_synthesize import synthesize_pcm_for_config
 from agent.agents.factory import build_agent
-from agent.config import LocaleTTSConfig, load_persona_tts
+from agent.config import LocaleTTSConfig, load_persona_tts, load_persona_name
 from agent.data import TalkShowData
 from agent.ui.participant_display import set_agent_display_name
 from agent.session.speak_chunks import avatar_chunk_stream_enabled, split_speak_sentences
@@ -44,7 +44,7 @@ async def wait_for_session_agent(session: AgentSession) -> None:
 
 
 async def switch_to_role(
-    session: AgentSession,
+    session: AgentSession | None,
     data: TalkShowData,
     role: str,
     *,
@@ -59,6 +59,11 @@ async def switch_to_role(
     try:
         ctrl.record_handoff(to_role=role, reason=reason)
         ctrl.apply_persona_for_role(role)
+        
+        if session is None:
+            logger.info("text handoff role=%s reason=%s", role, reason)
+            return
+            
         await set_agent_display_name(role)
         session.update_agent(build_agent(role, data))
         await wait_for_session_agent(session)
@@ -298,6 +303,91 @@ async def _play_prepared_chunk(
         )
         return
     await _play_audio()
+
+
+async def _speak_canned(
+    session: AgentSession,
+    data: TalkShowData,
+    *,
+    bridge: AvatarBridge | None,
+    use_lk_video: bool,
+    speak_role: str,
+    step: str,
+    locale: str,
+    text: str,
+    ui_text: str,
+    texts: dict[str, str],
+    turn_log: object | None,
+) -> bool:
+    """Play a pre-rendered canned line. False → not cached; render it live."""
+    from agent.config import load_persona_avatar
+    from agent.session import canned_cache as cc
+    from agent.ui.ui_events import emit_avatar_clip
+    from avatar.paths import resolve_avatar_asset_path
+
+    t0 = time.monotonic()
+    portrait = None
+    if bridge is not None:
+        if not use_lk_video:
+            return False  # legacy HTTP clip transport: not cached
+        av = load_persona_avatar(speak_role)
+        if av.dystream_enabled and av.portrait:
+            portrait = resolve_avatar_asset_path(av.portrait)
+    tts_cfg = load_persona_tts(speak_role, data.runtime.config, locale=locale)
+    width, height = cc.video_size()
+    key = cc.clip_key(
+        role=speak_role,
+        locale=locale,
+        text=text,
+        voice=cc.voice_identity(tts_cfg, role=speak_role, locale=locale),
+        portrait=portrait,
+        width=width,
+        height=height,
+    )
+    clip = await asyncio.to_thread(cc.load, key)
+    video_pub = get_avatar_video_publisher(locale) if portrait is not None else None
+    if clip is None or (portrait is not None and (video_pub is None or not clip.frames_jpeg)):
+        if turn_log is not None:
+            turn_log.log("canned_cache_miss", role=speak_role, step=step, locale=locale, key=key, room=data.room_name)
+        return False
+
+    frames: list[bytes] | None = None
+    if video_pub is not None:
+        frames = await asyncio.to_thread(cc.decode_frames, clip.frames_jpeg, clip.width, clip.height)
+        try:
+            from livekit.agents.job import get_job_context
+
+            await video_pub.bind_room(get_job_context().room)
+        except Exception:
+            logger.exception("canned line video bind failed locale=%s", locale)
+        await emit_avatar_clip(speak_role, transport="livekit", step=step)
+    if turn_log is not None:
+        turn_log.log(
+            "canned_cache_hit",
+            role=speak_role,
+            step=step,
+            locale=locale,
+            key=key,
+            load_ms=round((time.monotonic() - t0) * 1000),
+            frames=len(frames or ()),
+            pcm_duration_sec=round(clip.duration_sec, 3),
+            room=data.room_name,
+        )
+    queue_speech_ui(data, speak_role, ui_text, step=step, texts=texts)
+    chunk = _PreparedChunk(
+        text=text,
+        pcm=clip.pcm,
+        sample_rate=clip.sample_rate,
+        clip_path=None,
+        bake_ms=0,
+        frames=frames,
+        fps=clip.fps,
+        duration_sec=clip.duration_sec,
+        url=None,
+        tts_ms=0,
+    )
+    await _play_prepared_chunk(session, chunk, video_pub=video_pub, use_lk_video=video_pub is not None)
+    return True
 
 
 async def _speak_avatar_chunked(
@@ -541,6 +631,7 @@ async def speak_panel_line(
     text: str,
     step: str,
     texts: dict[str, str] | None = None,
+    canned: bool = False,
 ) -> None:
     """Speak any show line via Piper (+ DyStream when avatar sync is on).
 
@@ -548,6 +639,8 @@ async def speak_panel_line(
     ``data.needed_locales`` only — one human language ⇒ one TTS/avatar path.
 
     Optional ``texts`` skips Gemma translate (canned lines such as session welcome).
+    ``canned`` marks a fixed host line: with TALKSHOW_PRERENDER_CANNED=1 it plays
+    from the pre-rendered cache when one viewer locale is needed and it is cached.
     """
     from agent.adapters.locale_audio import get_locale_audio_publisher
     from agent.floor.floor_parser import strip_speech_control_tags
@@ -557,6 +650,26 @@ async def speak_panel_line(
 
     text = strip_speech_control_tags(text.strip())
     if not text:
+        return
+    
+    # use stdout when session is None (text-only mode)
+    if session is None:
+        if speak_role != data.active_role:
+            await switch_to_role(None, data, speak_role, reason=f"panel:{step}")
+
+        name = load_persona_name(speak_role)
+        print(f"\n{name}: {text}", flush=True)
+
+        turn_log = getattr(data, "turn_log", None)
+        if turn_log is not None:
+            turn_log.log(
+                "text_speech",
+                role=speak_role,
+                step=step,
+                text=text,
+                room=data.room_name,
+            )
+
         return
 
     if not session_is_active(session) or data.shutdown_event.is_set():
@@ -612,6 +725,29 @@ async def speak_panel_line(
 
     data.speak_line_busy = True
     try:
+        from agent.session.canned_cache import prerender_enabled
+
+        if canned and len(needed) == 1 and prerender_enabled():
+            try:
+                if await _speak_canned(
+                    session,
+                    data,
+                    bridge=bridge,
+                    use_lk_video=use_lk_video,
+                    speak_role=speak_role,
+                    step=step,
+                    locale=primary,
+                    text=primary_text,
+                    ui_text=ui_canonical,
+                    texts=texts,
+                    turn_log=turn_log,
+                ):
+                    return
+            except RuntimeError as exc:
+                if "isn't running" in str(exc):
+                    logger.info("speak_panel_line aborted — session stopped step=%s", step)
+                    return
+                raise
         if bridge is not None:
             try:
                 primary_tts = load_persona_tts(

@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.bootstrap import ensure_cluster_runtime_env
+from agent.config import text_only_enabled
 
 ensure_cluster_runtime_env()
 
@@ -58,8 +59,14 @@ def prewarm(proc: JobProcess) -> None:
 
 server.setup_fnc = prewarm
 
+# Set → explicit dispatch: only tokens that request this agent get a job (api/tokens.py,
+# eval/ghost_session, talkshow-web read the same .env). Unset → every new room in the
+# LiveKit project is dispatched to any unnamed worker, including other users' workers.
+_agent_name = os.environ.get("TALKSHOW_AGENT_NAME", "").strip()
+logger.info("agent dispatch: %s", f"explicit agent_name={_agent_name}" if _agent_name else "automatic")
 
-@server.rtc_session()
+
+@server.rtc_session(agent_name=_agent_name)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
 
@@ -316,4 +323,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(server)
+    if text_only_enabled():
+        from agent.session.text_session import main as text_session_main
+        asyncio.run(text_session_main())
+    else:
+        cli.run_app(server)

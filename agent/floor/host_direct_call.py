@@ -76,6 +76,7 @@ Output exactly:
         system_prompt=system,
         history_messages=hist,
         raw=True,
+        output_role="host",
     )
     parsed = parse_host_speech(raw)
     emotion = apply_mood_from_parsed(
