@@ -36,6 +36,9 @@ class FakeActuators:
         speak_s: float = 0.0,
         appraise_s: float = 0.0,
         stop_after_lines: int | None = None,
+        llm: bool = False,
+        keep_queue: bool = False,
+        human_raises_after: int | None = None,
     ) -> None:
         self.floor = list(floor or [])
         self.picks = list(picks or [])
@@ -44,6 +47,9 @@ class FakeActuators:
         self.speak_s = speak_s
         self.appraise_s = appraise_s
         self.stop_after_lines = stop_after_lines
+        self.llm = llm
+        self.keep_queue = keep_queue
+        self.human_raises_after = human_raises_after
         self.events: list[Event] = []
         self.history: list[tuple[str, str, bool]] = []
         self.floor_next = ""
@@ -115,16 +121,23 @@ class FakeActuators:
     async def return_to_host(self, trigger: str) -> None:
         self._ev("return_to_host", trigger)
 
-    async def hand_raise_round(self, turn_idx, spoken_roles) -> FloorPick:
+    async def hand_raise_round(self, turn_idx, spoken_roles, *, human_must_go=False) -> FloorPick:
         self._ev("hand_raise", turn_idx)
-        self.queue = []
+        self._ev("must_go", human_must_go)
+        if not self.keep_queue:
+            self.queue = []
         return self.picks.pop(0) if self.picks else FloorPick(None, "")
+
+    def llm_host(self) -> bool:
+        return self.llm
 
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
         self._ev("generate", role)
+        if self.human_raises_after is not None and len(self.kinds("generate")) == self.human_raises_after:
+            self.queue = ["human"]
         tag = self.tags.get(role, ["host"]).pop(0) if self.tags.get(role) else "host"
         return PanelistLine(role=role, text=f"{role} says something", next_role=tag, emotion="Neutral")
 
@@ -293,6 +306,77 @@ class LimitTests(unittest.TestCase):
         final = run(act, human_event=HUMAN)
         self.assertEqual(len(act.kinds("speak")), 2)
         self.assertTrue(final["stopped"])
+
+
+class LlmHostTests(unittest.TestCase):
+    def test_llm_host_lines_replace_canned_ones(self) -> None:
+        act = FakeActuators(
+            llm=True,
+            picks=[
+                FloorPick("guest", "host_llm", "Amy, does that match what you saw?"),
+                FloorPick("human", "host_llm", "Let's go back to our guest on that."),
+            ],
+        )
+        final = run(act, human_event=HUMAN)
+        self.assertEqual(
+            act.kinds("speak"),
+            [
+                ("host_reply", "host"),
+                ("direct_call", "host"),  # no canned "Floor's open" / intro
+                ("panelist", "guest"),
+                ("grant_human", "host"),
+            ],
+        )
+        self.assertEqual(final["outcome"], "human")
+        # The host's own lines are appraised (not procedural); the canned ones would not be.
+        host_lines = [(t, proc) for r, t, proc in act.history if r == "host"]
+        self.assertIn(("Let's go back to our guest on that.", False), host_lines)
+        self.assertIn(("Amy, does that match what you saw?", False), host_lines)
+
+    def test_raised_human_waits_at_most_one_panelist(self) -> None:
+        # The human raises while the first panelist speaks: the host may let one
+        # more panelist go, then must hand over.
+        act = FakeActuators(
+            llm=True,
+            keep_queue=True,
+            human_raises_after=1,
+            picks=[
+                FloorPick("guest", "host_llm", "Amy, what do you make of it?"),
+                FloorPick("commentator", "host_llm", "Ryan, quickly first."),
+                FloorPick("human", "host_llm", "Over to you."),
+            ],
+        )
+        final = run(act, entry="moderate", trigger="idle_wait")
+        self.assertEqual(act.kinds("must_go"), [False, False, True])
+        self.assertEqual(final["outcome"], "human")
+
+    def test_raised_human_goes_first_at_the_start_of_a_beat(self) -> None:
+        act = FakeActuators(
+            llm=True, keep_queue=True, queue=["human"],
+            picks=[FloorPick("human", "host_llm", "You had something to add?")],
+        )
+        final = run(act, entry="moderate", trigger="opening")
+        self.assertEqual(act.kinds("must_go"), [True])
+        self.assertEqual(final["outcome"], "human")
+
+    def test_panel_answers_first_after_a_human_turn(self) -> None:
+        # Hand still up right after the human spoke: one panelist responds first.
+        act = FakeActuators(
+            llm=True, keep_queue=True, queue=["human"],
+            picks=[FloorPick("guest", "host_llm", "Amy, your take?"),
+                   FloorPick("human", "host_llm", "Back to you.")],
+        )
+        final = run(act, human_event=HUMAN)
+        self.assertEqual(act.kinds("must_go"), [False, True])
+        self.assertEqual(final["outcome"], "human")
+
+    def test_fifo_mode_keeps_canned_lines(self) -> None:
+        act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
+        run(act, entry="moderate", trigger="idle_wait")
+        kinds = [k for k, _ in act.kinds("speak")]
+        self.assertEqual(kinds[:3], ["open_floor", "intro", "panelist"])
+        grant = [(t, proc) for r, t, proc in act.history if t == "Back to you."]
+        self.assertEqual(grant, [("Back to you.", True)])
 
 
 if __name__ == "__main__":

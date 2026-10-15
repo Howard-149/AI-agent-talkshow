@@ -23,7 +23,7 @@ LineKind = Literal[
     "host_reply",  # host answers the human (graph entry "human")
     "open_floor",  # canned: "Floor's open — anyone want to jump in?"
     "intro",  # canned: "Amy, the floor is yours."
-    "direct_call",  # host names a panelist when nobody raised (LLM line)
+    "direct_call",  # host names a panelist (LLM line: no raises, or the LLM host's pick)
     "panelist",  # panelist line (LLM)
     "grant_human",  # canned: hand the mic back to the human
     "close",  # canned: wrap the panel round
@@ -36,8 +36,8 @@ class FloorPick:
 
     role: str | None
     reason: str
-    # Set when nobody raised and the host calls on someone directly: the line the
-    # graph must speak (as a host line, appraised) before that panelist.
+    # The host's own LLM line for this pick (spoken and appraised): calling on a
+    # panelist when nobody raised, or the LLM host's line for any decision.
     host_line: str | None = None
 
 
@@ -97,6 +97,8 @@ class ShowState(TypedDict, total=False):
 
     next_role: str  # panelist the floor goes to next
     grant_reason: str
+    host_line: str  # LLM host line for grant_human / close (else the canned line)
+    human_passes: int  # panelist picks made while the human's hand was up
     skip_open_floor: bool
     skip_intro: bool
 
@@ -149,6 +151,8 @@ def base_state(
         "after": "",
         "next_role": "",
         "grant_reason": "",
+        "host_line": "",
+        "human_passes": 0,
         "skip_open_floor": skip_open_floor,
         "skip_intro": False,
         "turn_idx": 0,
@@ -177,6 +181,8 @@ def beat_reset() -> dict[str, Any]:
         "after": "",
         "next_role": "",
         "grant_reason": "",
+        "host_line": "",
+        "human_passes": 0,
         "skip_open_floor": False,
         "skip_intro": False,
         "turn_idx": 0,

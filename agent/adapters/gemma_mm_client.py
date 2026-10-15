@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
 import time
@@ -228,3 +229,57 @@ class GemmaMMClient:
                 parsed = parse_heard_reply(text)
                 return parsed.reply or text
         return text
+
+    async def complete_tools(
+        self,
+        user_text: str,
+        *,
+        tools: list[dict[str, Any]],
+        system_prompt: str | None = None,
+        history_messages: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] = "required",
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[str, list[tuple[str, dict[str, Any]]]]:
+        """Text turn with OpenAI-style tools → (content, [(tool name, arguments)]).
+
+        ``tool_choice="required"`` makes vLLM constrain the output to a tool call.
+        Unparsable arguments come back as ``{}``.
+        """
+        system = system_prompt if system_prompt is not None else self._system_prompt
+        messages = self._build_messages(
+            system,
+            history_messages=history_messages,
+            tail_user=user_text,
+        )
+        payload: dict[str, Any] = {
+            "model": self._cfg.model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": tool_choice,
+            "max_tokens": max_tokens or self._cfg.max_tokens,
+            "temperature": 0.45 if temperature is None else temperature,
+        }
+        url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
+        resp = await self._http.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            logger.error(
+                "Gemma tools HTTP %s model=%s body=%.500s",
+                resp.status_code,
+                self._cfg.model,
+                resp.text,
+            )
+        resp.raise_for_status()
+        message = resp.json()["choices"][0]["message"]
+        calls: list[tuple[str, dict[str, Any]]] = []
+        for call in message.get("tool_calls") or []:
+            fn = call.get("function") or {}
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = {}
+            calls.append((str(fn.get("name") or ""), args if isinstance(args, dict) else {}))
+        return str(message.get("content") or "").strip(), calls

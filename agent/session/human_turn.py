@@ -139,6 +139,11 @@ async def commit_human_turn(
 
     if graph:
         append_human(data, heard, appraise=False)
+        # Speaking uses up the human's raise; a raise left over from before the grant
+        # (e.g. a re-raise racing it) must not hand the floor straight back.
+        from agent.floor.hand_raise_ui import dequeue_hand_raise
+
+        await dequeue_hand_raise(data, "human")
     else:
         append_human(data, heard)
         append_role(data, "host", reply)

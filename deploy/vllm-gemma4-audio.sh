@@ -27,6 +27,12 @@ mkdir -p "${LOG_DIR}"
 : "${VLLM_CUDA_DEVICE:=0}"
 talkshow_pin_cuda_device "${VLLM_CUDA_DEVICE}"
 
+# Native tool calling for the LLM host (agent/floor/host_decide.py). VLLM_TOOL_PARSER= disables.
+TOOL_ARGS=()
+if [[ -n "${VLLM_TOOL_PARSER-gemma4}" ]]; then
+  TOOL_ARGS=(--enable-auto-tool-choice --tool-call-parser "${VLLM_TOOL_PARSER-gemma4}")
+fi
+
 echo "vLLM log → ${LOG_FILE}"
 echo "  model=${MODEL}"
 echo "  served-model-name=${SERVED_NAME}"
@@ -37,4 +43,5 @@ vllm serve "$MODEL" \
   --port "$PORT" \
   --max-model-len 8192 \
   --limit-mm-per-prompt '{"image": 4, "audio": 1}' \
+  "${TOOL_ARGS[@]}" \
   2>&1 | tee -a "${LOG_FILE}"

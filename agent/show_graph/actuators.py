@@ -45,7 +45,10 @@ class Actuators(Protocol):
     def consume_floor_next(self) -> str: ...
     def queue_roles(self) -> list[str]: ...
     async def return_to_host(self, trigger: str) -> None: ...
-    async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick: ...
+    async def hand_raise_round(
+        self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
+    ) -> FloorPick: ...
+    def llm_host(self) -> bool: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine: ...
 
@@ -225,7 +228,9 @@ class LiveActuators:
 
         await return_floor_to_host(self.session, self.data, self.controller, trigger=trigger)
 
-    async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick:
+    async def hand_raise_round(
+        self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
+    ) -> FloorPick:
         from agent.floor.host_floor import run_hand_raise_round
 
         return await run_hand_raise_round(
@@ -235,7 +240,13 @@ class LiveActuators:
             panel_roles=self.controller.panel_speaker_roles(),
             spoken_roles=set(spoken_roles),
             turn_idx=turn_idx,
+            human_must_go=human_must_go,
         )
+
+    def llm_host(self) -> bool:
+        from agent.floor.host_decide import llm_host_enabled
+
+        return llm_host_enabled()
 
     async def grant_panelist(self, role: str, reason: str) -> None:
         from agent.floor.hand_raise_ui import dequeue_hand_raise
