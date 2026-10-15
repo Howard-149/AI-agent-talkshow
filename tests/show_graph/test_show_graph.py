@@ -115,6 +115,9 @@ class FakeActuators:
     async def return_to_host(self, trigger: str) -> None:
         self._ev("return_to_host", trigger)
 
+    def prefetch_hand_raise_poll(self) -> None:
+        self._ev("prefetch_poll", None)
+
     async def hand_raise_round(self, turn_idx, spoken_roles) -> FloorPick:
         self._ev("hand_raise", turn_idx)
         self.queue = []
@@ -123,8 +126,11 @@ class FakeActuators:
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
+    def start_panelist_draft(self, role: str, step: str) -> None:
+        self._ev("draft_ahead", (role, step))
+
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
-        self._ev("generate", role)
+        self._ev("generate", (role, step))
         tag = self.tags.get(role, ["host"]).pop(0) if self.tags.get(role) else "host"
         return PanelistLine(role=role, text=f"{role} says something", next_role=tag, emotion="Neutral")
 
@@ -242,6 +248,37 @@ class ModerationTests(unittest.TestCase):
         final = run(act, entry="moderate", trigger="session_start", skip_open_floor=True)
         self.assertEqual([k for k, _ in act.kinds("speak")], ["grant_human"])
         self.assertEqual(final["outcome"], "human")
+
+    def test_poll_prefetch_starts_before_the_open_floor_line(self) -> None:
+        act = FakeActuators(picks=[FloorPick("human", "queue_fifo")])
+        run(act, entry="moderate", trigger="idle_wait")
+        order = [e.kind for e in act.events if e.kind in ("prefetch_poll", "speak", "hand_raise")]
+        self.assertEqual(order[:3], ["prefetch_poll", "speak", "hand_raise"])
+
+    def test_no_prefetch_when_the_open_floor_line_is_skipped(self) -> None:
+        act = FakeActuators(queue=["guest"], picks=[FloorPick("human", "queue_fifo")])
+        run(act, entry="moderate", trigger="idle_wait")
+        self.assertEqual(act.kinds("prefetch_poll"), [])
+
+    def test_draft_ahead_starts_with_the_intro_for_the_line_it_drafts(self) -> None:
+        act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
+        run(act, entry="moderate", trigger="idle_wait")
+        order = [e.kind for e in act.events if e.kind in ("draft_ahead", "speak", "generate")]
+        self.assertEqual(order[:4], ["speak", "draft_ahead", "speak", "generate"])  # open floor, draft, intro, line
+        self.assertEqual(act.kinds("draft_ahead"), [g for g in act.kinds("generate")])
+
+    def test_no_draft_ahead_for_chained_or_direct_call_lines(self) -> None:
+        act = FakeActuators(
+            floor=["host"],
+            picks=[
+                FloorPick("guest", "host_direct_no_raises", host_line="Amy, what do you think?"),
+                FloorPick("human", "x"),
+            ],
+            tags={"guest": ["commentator"]},
+        )
+        run(act, entry="panel")
+        self.assertEqual(act.kinds("draft_ahead"), [])
+        self.assertEqual(len(act.kinds("generate")), 2)
 
     def test_nobody_picked_ends_beat(self) -> None:
         act = FakeActuators(picks=[FloorPick(None, "")])

@@ -15,6 +15,7 @@ squeue -u $USER                                   # find the old job id
 scancel <old-jobid>
 sbatch deploy/slurm-talkshow-3gpu.sh              # add --exclude=<node> to skip a bad node
 grep "registered worker" slurm-logs/slurm-talkshow-<jobid>.out   # ready when this prints
+deploy/talkshow-ctl.sh restart agent              # after a code / .env change: no resubmit
 
 # 2. Laptop: run a ghost session against it
 python -m eval.ghost_session                                               # smoke.yaml (polite debate)
@@ -47,7 +48,7 @@ Opening-only (`--opening-only`) stops after welcome + human floor grant. Default
 
 ## Run (Babel, recommended)
 
-Worker already up (`python -m agent.main dev`). Use the same room name (default `talkshow-dev`).
+Worker already up (`python -m agent.main dev`). Each run uses a new room (`talkshow-ghost-<epoch>`) unless `--room` or `TALKSHOW_ROOM` is set: a reused name can hit the empty room LiveKit keeps open after the last session (no agent), and a shared name collides with other users' ghosts (`DuplicateIdentity`). If the worker sets `TALKSHOW_AGENT_NAME`, set the same value where the ghost runs.
 
 ```bash
 conda activate talkshow
@@ -72,7 +73,7 @@ Needs the RTC SDK (not in `requirements-laptop.txt`):
 
 ```bash
 pip install livekit pyyaml
-python -m eval.ghost_session --room talkshow-dev
+python -m eval.ghost_session            # new room per run; needs the Babel TALKSHOW_AGENT_NAME if set
 ```
 
 JSONL still lands on Babel (`LOG_DIR`). Summarize there.

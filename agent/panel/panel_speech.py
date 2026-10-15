@@ -7,6 +7,7 @@ this module only owns what happens once a draft actually gets the floor.
 from __future__ import annotations
 
 import logging
+import os
 
 from livekit.agents import AgentSession
 
@@ -73,6 +74,22 @@ async def speak_draft(
     return draft.next_role
 
 
+def draft_ahead_enabled() -> bool:
+    """Draft the next panelist's line while the host's intro plays (opt-in)."""
+    raw = os.environ.get("TALKSHOW_DRAFT_AHEAD", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def panelist_line_from_draft(data: TalkShowData, draft: AgentDraft) -> PanelistLine:
+    """Apply the bookkeeping ``speak_draft`` would do to a draft that will be spoken."""
+    if draft.dialogue_example_index is not None:
+        data.dialogue_example_index = draft.dialogue_example_index
+    emotion = set_role_emotion(data, draft.role, draft.emotion)
+    return PanelistLine(
+        role=draft.role, text=draft.speech, next_role=draft.next_role, emotion=emotion
+    )
+
+
 async def generate_panelist_line(
     session: AgentSession,
     data: TalkShowData,
@@ -86,12 +103,7 @@ async def generate_panelist_line(
     draft-side bookkeeping that ``speak_draft`` would do is applied here.
     """
     draft = await draft_panelist(data, speak_role=speak_role, step=step)
-    if draft.dialogue_example_index is not None:
-        data.dialogue_example_index = draft.dialogue_example_index
-    emotion = set_role_emotion(data, speak_role, draft.emotion)
-    return PanelistLine(
-        role=speak_role, text=draft.speech, next_role=draft.next_role, emotion=emotion
-    )
+    return panelist_line_from_draft(data, draft)
 
 
 async def speak_one_panelist(

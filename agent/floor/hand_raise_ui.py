@@ -115,7 +115,7 @@ async def wait_for_hand_raises(
     Call only when ``data.hand_raise_queue.roles()`` is empty.
     """
     if wait_sec is None:
-        wait_sec = float(os.environ.get("TALKSHOW_HAND_RAISE_WAIT_SEC", "10"))
+        wait_sec = float(os.environ.get("TALKSHOW_HAND_RAISE_WAIT_SEC", "5"))
     if wait_sec <= 0:
         return
 

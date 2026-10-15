@@ -58,8 +58,14 @@ def prewarm(proc: JobProcess) -> None:
 
 server.setup_fnc = prewarm
 
+# Set → explicit dispatch: only tokens that request this agent get a job (api/tokens.py,
+# eval/ghost_session, talkshow-web read the same .env). Unset → every new room in the
+# LiveKit project is dispatched to any unnamed worker, including other users' workers.
+_agent_name = os.environ.get("TALKSHOW_AGENT_NAME", "").strip()
+logger.info("agent dispatch: %s", f"explicit agent_name={_agent_name}" if _agent_name else "automatic")
 
-@server.rtc_session()
+
+@server.rtc_session(agent_name=_agent_name)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
 
