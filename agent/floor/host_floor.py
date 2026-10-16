@@ -450,11 +450,14 @@ def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
     from agent.locale.viewer_locales import recompute_needed_locales
     from agent.panel.panel_context import session_welcome_texts
 
-    if session is not None:
-        try:
-            from livekit.agents.job import get_job_context
+    try:
+        from livekit.agents.job import get_job_context
 
-            room = get_job_context().room
+        room = get_job_context().room
+    except Exception:  # text-only mode: no LiveKit job / room
+        room = None
+    if room is not None:
+        try:
             recompute_needed_locales(data, room)
         except Exception:
             logger.exception("session_welcome: could not recompute locales from room")
