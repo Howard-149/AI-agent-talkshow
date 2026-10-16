@@ -27,7 +27,7 @@ class HostDecideTests(unittest.TestCase):
         self.assertEqual(names(tools), [CALL_ON, TO_HUMAN, CLOSE])
         enum = tools[0]["function"]["parameters"]["properties"]["panelist"]["enum"]
         self.assertEqual(enum, ["Ryan", "Amy"])
-        # A human who already waited a turn: handing back is the only option.
+        # A raised human hand: handing back is the only option.
         self.assertEqual(names(build_tools(["Ryan", "Amy"], human_must_go=True)), [TO_HUMAN])
 
     def test_prompt(self) -> None:

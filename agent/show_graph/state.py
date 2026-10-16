@@ -98,7 +98,6 @@ class ShowState(TypedDict, total=False):
     next_role: str  # panelist the floor goes to next
     grant_reason: str
     host_line: str  # LLM host line for grant_human / close (else the canned line)
-    human_passes: int  # panelist picks made while the human's hand was up
     skip_open_floor: bool
     skip_intro: bool
 
@@ -152,7 +151,6 @@ def base_state(
         "next_role": "",
         "grant_reason": "",
         "host_line": "",
-        "human_passes": 0,
         "skip_open_floor": skip_open_floor,
         "skip_intro": False,
         "turn_idx": 0,
@@ -182,7 +180,6 @@ def beat_reset() -> dict[str, Any]:
         "next_role": "",
         "grant_reason": "",
         "host_line": "",
-        "human_passes": 0,
         "skip_open_floor": False,
         "skip_intro": False,
         "turn_idx": 0,

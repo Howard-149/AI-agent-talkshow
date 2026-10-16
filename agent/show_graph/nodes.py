@@ -183,16 +183,15 @@ async def hand_raise(state: ShowState, config: RunnableConfig) -> Command:
     """Poll / FIFO queue / host decision → who speaks next."""
     act = _act(config)
     turn_idx = state.get("turn_idx", 0)
-    # A raised human hand waits at most one more panelist turn — and none at the
-    # first pick of an opening / idle beat (no panel point to finish yet). After the
-    # human just spoke, the panel answers first. Enforced here, not left to the LLM.
+    # A raised human hand gets the next pick — except at the first pick right after
+    # the human spoke, where one panelist answers them first. Enforced here, not left
+    # to the LLM host.
     human_up = "human" in act.queue_roles()
-    passes = state.get("human_passes", 0)
-    fresh = turn_idx == 0 and state.get("entry") != "human"
+    just_spoke = turn_idx == 0 and state.get("entry") == "human"
     pick = await act.hand_raise_round(
         turn_idx,
         list(state.get("spoken_roles") or []),
-        human_must_go=human_up and (passes >= 1 or fresh),
+        human_must_go=human_up and not just_spoke,
     )
     moderations = state.get("moderations", 0) + 1
     if act.should_stop():
@@ -200,12 +199,7 @@ async def hand_raise(state: ShowState, config: RunnableConfig) -> Command:
     role = pick.role or ""
     trigger = state.get("trigger") or "host_moderate"
     if role in state["panel_roles"]:
-        update = {
-            "next_role": role,
-            "grant_reason": pick.reason,
-            "moderations": moderations,
-            "human_passes": passes + 1 if human_up else passes,
-        }
+        update = {"next_role": role, "grant_reason": pick.reason, "moderations": moderations}
         if pick.host_line:
             # The host's own call-out is the intro (and is appraised).
             line: LineSpec = {

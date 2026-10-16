@@ -3,8 +3,8 @@
 One tool-calling request per moderation: the host chooses ``call_on_panelist``,
 ``give_floor_to_human`` or ``close_round`` and writes the line it says on the way
 (spoken and appraised like any host line). Hand raises are inputs to the decision,
-not the decision. A human who raised a hand waits at most one more panelist turn:
-after that only ``give_floor_to_human`` is offered. Any failure returns None and the
+not the decision. A raised human hand gets the next pick (only ``give_floor_to_human``
+is offered), except right after the human spoke, when one panelist answers first. Any failure returns None and the
 caller falls back to the FIFO hand-raise queue.
 
 ``TALKSHOW_HOST_DECIDE=fifo`` turns the LLM host off.
@@ -120,16 +120,15 @@ def render_decide_prompt(
     mood_block = f"\n{mood.strip()}\n" if mood.strip() else ""
     if human_must_go:
         task = (
-            f"The human guest raised a hand and has already waited a turn. Give them the floor now "
-            f"with {TO_HUMAN}; your line invites them in and may tie back to the last point."
+            f"The human guest raised a hand. Give them the floor now with {TO_HUMAN}; your "
+            f"line invites them in and may tie back to the last point."
         )
     else:
         task = f"""Decide who speaks next and say your line. Call exactly one tool.
 - Follow the live thread: call on whoever can best answer or challenge the last point. A raised
   hand with a fitting topic is a good reason, but you may call on someone who did not raise.
 - Keep it balanced: avoid the same panelist twice in a row unless they were asked something directly.
-- If the human guest raised a hand, you may let one panelist finish the current point first,
-  then use {TO_HUMAN}.
+- The human guest just spoke: let a panelist respond to them first.
 - Use {CLOSE} only when the topic is exhausted."""
     return f"""You are {host}, the moderator. The last line was spoken by {last_speaker or "nobody"}.
 

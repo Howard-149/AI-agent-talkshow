@@ -370,21 +370,19 @@ class LlmHostTests(unittest.TestCase):
         self.assertIn(("Let's go back to our guest on that.", False), host_lines)
         self.assertIn(("Amy, does that match what you saw?", False), host_lines)
 
-    def test_raised_human_waits_at_most_one_panelist(self) -> None:
-        # The human raises while the first panelist speaks: the host may let one
-        # more panelist go, then must hand over.
+    def test_raised_human_gets_the_next_pick(self) -> None:
+        # The human raises while the first panelist speaks: the next pick is theirs.
         act = FakeActuators(
             llm=True,
             keep_queue=True,
             human_raises_after=1,
             picks=[
                 FloorPick("guest", "host_llm", "Amy, what do you make of it?"),
-                FloorPick("commentator", "host_llm", "Ryan, quickly first."),
                 FloorPick("human", "host_llm", "Over to you."),
             ],
         )
         final = run(act, entry="moderate", trigger="idle_wait")
-        self.assertEqual(act.kinds("must_go"), [False, False, True])
+        self.assertEqual(act.kinds("must_go"), [False, True])
         self.assertEqual(final["outcome"], "human")
 
     def test_raised_human_goes_first_at_the_start_of_a_beat(self) -> None:
