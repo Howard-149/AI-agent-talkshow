@@ -32,7 +32,9 @@ except ImportError:  # run as a script: eval/ is on sys.path
     import gap_breakdown as gb  # type: ignore[no-redef]
 
 CAUSES = [c for c in gb.COMPONENTS if c not in ("endpoint", "translate")]
-MODERATED = ("open_floor", "intro")  # lines between two panelists in a moderated handover
+# Lines between two panelists in a moderated handover. direct_call = the host's own
+# LLM line naming the next panelist (nobody raised, or the LLM host's pick).
+MODERATED = ("open_floor", "intro", "direct_call")
 
 
 @dataclass
@@ -51,7 +53,7 @@ class ArmStats:
 
 def moderated_handovers(speech: list[gb.Speech], gaps: list[gb.Gap]) -> list[tuple[float, float, dict[str, float]]]:
     """(total s, silent s, silent s by cause) for each panelist → panelist handover
-    that goes through the host's open-floor and/or intro lines only."""
+    that goes through the host's open-floor / intro / direct-call lines only."""
     seq = [(gb.line_kind(s.step), s) for s in speech]
     out = []
     for i, (kind, sp) in enumerate(seq):
