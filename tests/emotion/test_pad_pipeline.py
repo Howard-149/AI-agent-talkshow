@@ -75,7 +75,7 @@ class OpenVocabTests(unittest.TestCase):
         self.assertIn("Concerned", s)
         self.assertTrue(s.endswith("<|endofprompt|>"))
         anger = emotion_instruct(emotion="Anger", locale="en")
-        self.assertIn("anger", anger.lower())
+        self.assertIn("angr", anger.lower())  # "angrily" (strong_en wording)
 
 
 class PadParseTests(unittest.TestCase):

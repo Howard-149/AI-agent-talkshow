@@ -32,16 +32,18 @@ _LEGACY_INSTRUCT_ZH: dict[str, str] = {
     "surprised": "请用略带惊讶的语气说这句话。",
 }
 
-# Primary MSP classes — richer phrasing than the generic template.
+# Primary MSP classes — richer phrasing than the generic template. Intensified wording
+# ("strong_en" in eval/voice_emotion.py, adopted 2026-10-16): the mild v1 wording
+# ("Speak with controlled anger …") moved the voice too little to be heard.
 _MSP_INSTRUCT_EN: dict[str, str] = {
     "Neutral": "Speak in a calm, natural conversational tone.",
-    "Happiness": "Speak with warmth and light happiness in your voice.",
-    "Anger": "Speak with controlled anger and firm intensity.",
-    "Sadness": "Speak with a subdued, sad, reflective tone.",
-    "Surprise": "Speak with mild surprise and lifted energy.",
-    "Fear": "Speak with uneasy tension and cautious fear.",
-    "Disgust": "Speak with distaste and mild disgust.",
-    "Contempt": "Speak with cool contempt and a dismissive edge.",
+    "Happiness": "Speak very happily and cheerfully, with a bright, smiling, upbeat voice.",
+    "Anger": "Speak very angrily, with a loud, sharp, tense and forceful voice.",
+    "Sadness": "Speak very sadly, with a low, slow, heavy, tearful voice.",
+    "Surprise": "Speak with great surprise and astonishment, in a high, excited voice.",
+    "Fear": "Speak fearfully and nervously, with a trembling, anxious voice.",
+    "Disgust": "Speak with strong disgust and revulsion in your voice.",
+    "Contempt": "Speak with cold contempt, sneering and scornful.",
     "Vague": "Speak in a calm, natural conversational tone.",
 }
 

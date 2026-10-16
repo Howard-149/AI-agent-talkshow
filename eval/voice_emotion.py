@@ -83,7 +83,9 @@ def _session_items(log: Path) -> list[dict[str, Any]]:
 
 
 # Instruct wordings to compare. "live" is agent.emotion.tts.emotion_instruct (what
-# the show sends today); the others replace only the instruct sentence.
+# the show sends today); the others replace only the instruct sentence. Since
+# 2026-10-16 live English = strong_en (the v1 report's "live" rows are the old
+# mild wording).
 _STRONG_EN = {
     "Neutral": "Speak in a calm, natural conversational tone.",
     "Happiness": "Speak very happily and cheerfully, with a bright, smiling, upbeat voice.",
