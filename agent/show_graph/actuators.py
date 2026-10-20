@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from agent.data import TalkShowData
     from agent.emotion.appraisal import Utterance
     from agent.floor import TurnController
+    from agent.multi_agent.types import AgentDraft
+    from agent.session.session_handoff import PreparedLineStart
     from agent.show_graph.state import FloorPick, HumanEvent, LineSpec, PanelistLine
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,9 @@ class LiveActuators:
         self._prefetched_poll: asyncio.Task | None = None
         # (role, step, transcript signature, draft task) started while the intro plays.
         self._draft_ahead: tuple[str, str, tuple[int, str], asyncio.Task] | None = None
+        # (role, step, task → PreparedLineStart | None): that draft's first chunk, started
+        # as soon as the draft lands (speak-ahead).
+        self._speak_ahead: tuple[str, str, asyncio.Task] | None = None
 
     # --- session / logging -------------------------------------------------
 
@@ -156,15 +161,21 @@ class LiveActuators:
         from agent.session.canned_cache import CANNED_KINDS
         from agent.session.session_handoff import speak_panel_line
 
-        await speak_panel_line(
-            self.session,
-            self.data,
-            speak_role=line["role"],
-            text=line["text"],
-            step=line.get("step") or line.get("kind") or "line",
-            texts=line.get("texts"),
-            canned=line.get("kind") in CANNED_KINDS,
-        )
+        ahead = await self._take_speak_ahead(line)
+        try:
+            await speak_panel_line(
+                self.session,
+                self.data,
+                speak_role=line["role"],
+                text=line["text"],
+                step=line.get("step") or line.get("kind") or "line",
+                texts=line.get("texts"),
+                canned=line.get("kind") in CANNED_KINDS,
+                ahead=ahead,
+            )
+        finally:
+            if ahead is not None:
+                ahead.discard()
 
     async def appraise(self, utt: Utterance, listener: str) -> dict[str, Any]:
         from agent.emotion.appraisal import (
@@ -272,16 +283,72 @@ class LiveActuators:
 
     def start_panelist_draft(self, role: str, step: str) -> None:
         """Start drafting ``role``'s line now, while the host's intro plays (opt-in)."""
-        from agent.panel.panel_speech import draft_ahead_enabled, draft_panelist
+        from agent.panel.panel_speech import (
+            draft_ahead_enabled,
+            draft_panelist,
+            speak_ahead_enabled,
+        )
 
         if not draft_ahead_enabled():
             return
         if self._draft_ahead is not None:
             self._draft_ahead[3].cancel()
+        self._drop_speak_ahead()
         task = asyncio.create_task(
             draft_panelist(self.data, speak_role=role, step=step), name=f"draft_ahead:{role}"
         )
         self._draft_ahead = (role, step, self._transcript_signature(), task)
+        if speak_ahead_enabled():
+            self._speak_ahead = (
+                role,
+                step,
+                asyncio.create_task(
+                    self._start_drafted_line(role, step, task), name=f"speak_ahead:{role}"
+                ),
+            )
+
+    async def _start_drafted_line(
+        self, role: str, step: str, draft_task: asyncio.Task[AgentDraft]
+    ) -> PreparedLineStart | None:
+        """Once the draft lands, start synthesizing and rendering its first chunk."""
+        from agent.session.session_handoff import prepare_line_start
+
+        # Shielded: dropping speak-ahead must not cancel the draft itself.
+        draft = await asyncio.shield(draft_task)
+        return await prepare_line_start(
+            self.data, speak_role=role, text=draft.speech, step=step, emotion_tag=draft.emotion
+        )
+
+    def _drop_speak_ahead(self, reason: str | None = None) -> None:
+        pending, self._speak_ahead = self._speak_ahead, None
+        if pending is None:
+            return
+        role, step, task = pending
+        if not task.done():
+            task.cancel()
+        elif not task.cancelled() and task.exception() is None and task.result() is not None:
+            task.result().discard()
+        if reason:
+            self.log("speak_ahead_dropped", role=role, step=step, reason=reason)
+
+    async def _take_speak_ahead(self, line: LineSpec) -> PreparedLineStart | None:
+        """The speak-ahead start of this panelist line, if one was started for it."""
+        pending = self._speak_ahead
+        if pending is None or line.get("kind") != "panelist":
+            return None
+        role, step, task = pending
+        if (role, step) != (line["role"], line.get("step")):
+            return None
+        self._speak_ahead = None
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.cancelled():
+                raise  # this line was cancelled, not the speak-ahead
+        except Exception:
+            logger.exception("speak ahead failed role=%s — speaking live", role)
+            self.log("speak_ahead_dropped", role=role, step=step, reason="error")
+        return None
 
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
         from agent.panel.panel_speech import generate_panelist_line, panelist_line_from_draft
@@ -297,6 +364,7 @@ class LiveActuators:
                 except Exception:
                     logger.exception("draft ahead failed role=%s — drafting live", role)
                     self.log("draft_ahead_dropped", role=role, step=step, reason="error")
+                    self._drop_speak_ahead(reason="error")
                 else:
                     self.log(
                         "draft_ahead_used",
@@ -308,6 +376,7 @@ class LiveActuators:
             else:
                 task.cancel()
                 self.log("draft_ahead_dropped", role=role, step=step, reason="stale")
+                self._drop_speak_ahead(reason="stale")
         return await generate_panelist_line(self.session, self.data, speak_role=role, step=step)
 
     # --- canned host lines ---------------------------------------------------

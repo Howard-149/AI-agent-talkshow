@@ -80,6 +80,18 @@ def draft_ahead_enabled() -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+def speak_ahead_enabled() -> bool:
+    """Synthesize and start rendering the drafted-ahead line while the intro plays (opt-in).
+
+    Builds on draft ahead, and on pre-rendered host lines: the intro then plays from the
+    cache, so TTS and the avatar are free to start on the next line.
+    """
+    from agent.session.canned_cache import prerender_enabled
+
+    raw = os.environ.get("TALKSHOW_SPEAK_AHEAD", "").strip().lower()
+    return raw in ("1", "true", "yes", "on") and draft_ahead_enabled() and prerender_enabled()
+
+
 def panelist_line_from_draft(data: TalkShowData, draft: AgentDraft) -> PanelistLine:
     """Apply the bookkeeping ``speak_draft`` would do to a draft that will be spoken."""
     if draft.dialogue_example_index is not None:
