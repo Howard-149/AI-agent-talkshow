@@ -47,7 +47,7 @@ class Actuators(Protocol):
     def consume_floor_next(self) -> str: ...
     def queue_roles(self) -> list[str]: ...
     async def return_to_host(self, trigger: str) -> None: ...
-    def prefetch_hand_raise_poll(self) -> None: ...
+    def prefetch_hand_raise_poll(self, turn_idx: int) -> None: ...
     async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
     def start_panelist_draft(self, role: str, step: str) -> None: ...
@@ -73,8 +73,9 @@ class LiveActuators:
         self.data = data
         self.controller = controller
         self._prefetched_poll: asyncio.Task | None = None
-        # (role, step, transcript signature, draft task) started while the intro plays.
-        self._draft_ahead: tuple[str, str, tuple[int, str], asyncio.Task] | None = None
+        # (role, step, last spoken line, draft task) started while the intro plays, or
+        # with speak-ahead as soon as the prefetched poll picks the speaker.
+        self._draft_ahead: tuple[str, str, object, asyncio.Task] | None = None
         # (role, step, task → PreparedLineStart | None): that draft's first chunk, started
         # as soon as the draft lands (speak-ahead).
         self._speak_ahead: tuple[str, str, asyncio.Task] | None = None
@@ -243,9 +244,13 @@ class LiveActuators:
 
         await return_floor_to_host(self.session, self.data, self.controller, trigger=trigger)
 
-    def prefetch_hand_raise_poll(self) -> None:
-        """Start the hand-raise poll now, while the open-floor line plays (opt-in)."""
+    def prefetch_hand_raise_poll(self, turn_idx: int) -> None:
+        """Start the hand-raise poll now, while the open-floor line plays (opt-in).
+
+        With speak-ahead, the winner's line starts drafting as soon as the poll lands.
+        """
         from agent.floor.host_floor import poll_during_open_floor_enabled, poll_panel_hand_raises
+        from agent.panel.panel_speech import speak_ahead_enabled
 
         if not poll_during_open_floor_enabled() or self.data.hand_raise_queue.roles():
             return
@@ -255,12 +260,27 @@ class LiveActuators:
             poll_panel_hand_raises(self.data, self.controller.panel_speaker_roles()),
             name="hand_raise_poll:prefetch",
         )
+        if speak_ahead_enabled():
+            self._prefetched_poll.add_done_callback(
+                lambda poll: self._draft_poll_winner(poll, turn_idx)
+            )
+
+    def _draft_poll_winner(self, poll: asyncio.Task, turn_idx: int) -> None:
+        from agent.floor.hand_raise_queue import poll_winner
+
+        if poll.cancelled() or poll.exception() is not None or self.data.hand_raise_queue.roles():
+            return  # no poll result, or a hand already in the queue goes first
+        role = poll_winner(poll.result(), self.data.panel_priority)
+        if role:
+            step = f"speech_{role}_{turn_idx}"  # the step panelist_line will use
+            self.start_panelist_draft(role, step)
+            self.log("draft_ahead_early", role=role, step=step)
 
     async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick:
         from agent.floor.host_floor import run_hand_raise_round
 
         prefetched, self._prefetched_poll = self._prefetched_poll, None
-        return await run_hand_raise_round(
+        pick = await run_hand_raise_round(
             self.session,
             self.data,
             self.controller,
@@ -269,6 +289,14 @@ class LiveActuators:
             turn_idx=turn_idx,
             prefetched_poll=prefetched,
         )
+        if self._draft_ahead is not None and self._draft_ahead[0] != pick.role:
+            # Drafted for the poll's winner, but the floor went elsewhere (e.g. the human).
+            role, step, _, task = self._draft_ahead
+            self._draft_ahead = None
+            task.cancel()
+            self.log("draft_ahead_dropped", role=role, step=step, reason="not_picked")
+            self._drop_speak_ahead(reason="not_picked")
+        return pick
 
     async def grant_panelist(self, role: str, reason: str) -> None:
         from agent.floor.hand_raise_ui import dequeue_hand_raise
@@ -277,9 +305,10 @@ class LiveActuators:
         await emit_floor_grant(role, reason=reason)
         await dequeue_hand_raise(self.data, role)
 
-    def _transcript_signature(self) -> tuple[int, str]:
+    def _transcript_signature(self) -> object:
+        """The last line that isn't a canned host line: a draft is stale once it changes."""
         lines = self.data.show_history.lines
-        return len(lines), (lines[-1].text if lines else "")
+        return next((ln for ln in reversed(lines) if not getattr(ln, "procedural", False)), None)
 
     def start_panelist_draft(self, role: str, step: str) -> None:
         """Start drafting ``role``'s line now, while the host's intro plays (opt-in)."""
@@ -292,6 +321,8 @@ class LiveActuators:
         if not draft_ahead_enabled():
             return
         if self._draft_ahead is not None:
+            if self._draft_ahead[:2] == (role, step):
+                return  # already drafting it: started when the poll landed
             self._draft_ahead[3].cancel()
         self._drop_speak_ahead()
         task = asyncio.create_task(
@@ -357,7 +388,7 @@ class LiveActuators:
         if pending is not None:
             p_role, p_step, signature, task = pending
             # Use the early draft only if it is for this line and nothing was said since.
-            if (p_role, p_step) == (role, step) and signature == self._transcript_signature():
+            if (p_role, p_step) == (role, step) and signature is self._transcript_signature():
                 t0 = asyncio.get_running_loop().time()
                 try:
                     draft = await task

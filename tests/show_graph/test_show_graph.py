@@ -115,7 +115,7 @@ class FakeActuators:
     async def return_to_host(self, trigger: str) -> None:
         self._ev("return_to_host", trigger)
 
-    def prefetch_hand_raise_poll(self) -> None:
+    def prefetch_hand_raise_poll(self, turn_idx: int) -> None:
         self._ev("prefetch_poll", None)
 
     async def hand_raise_round(self, turn_idx, spoken_roles) -> FloorPick:

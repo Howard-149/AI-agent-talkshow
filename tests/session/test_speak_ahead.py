@@ -13,10 +13,13 @@ from unittest import mock
 # cycle only resolves in this order (as in agent.main).
 import agent.agents  # noqa: F401
 from agent.config import LocaleTTSConfig
+from agent.floor import host_floor
+from agent.floor.floor_parser import HandRaiseResult
 from agent.multi_agent.types import AgentDraft
 from agent.panel import panel_speech
 from agent.session import session_handoff as sh
 from agent.show_graph.actuators import LiveActuators
+from agent.show_graph.state import FloorPick
 
 LINE = "The freeze is a mistake. Senior engineers leave first. Then the juniors follow."
 TTS = LocaleTTSConfig(engine="piper", model_path="voice.onnx", sample_rate=22050)
@@ -186,8 +189,8 @@ class PrepareLineStartTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
 
-class ActuatorTests(unittest.TestCase):
-    """LiveActuators hands the speak-ahead start to the line it was started for."""
+class _ActuatorCase(unittest.TestCase):
+    """LiveActuators with a fake draft, speak-ahead start and speech."""
 
     def setUp(self) -> None:
         self.log = Log()
@@ -224,6 +227,10 @@ class ActuatorTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
+
+class ActuatorTests(_ActuatorCase):
+    """LiveActuators hands the speak-ahead start to the line it was started for."""
+
     def _show(self, *, said_meanwhile: bool = False) -> LiveActuators:
         act = LiveActuators(None, self.data, None)  # type: ignore[arg-type]
 
@@ -259,6 +266,63 @@ class ActuatorTests(unittest.TestCase):
             self._show()
         self.assertEqual(self.started, [])
         self.assertEqual(self.spoken_with, [None])
+
+
+class EarlyDraftTests(_ActuatorCase):
+    """With the early poll on, the poll's winner starts drafting during the open-floor line."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.data.hand_raise_queue = SimpleNamespace(roles=lambda: [])
+        self.data.panel_priority = ["commentator", "guest"]
+        self.act = LiveActuators(  # type: ignore[arg-type]
+            None, self.data, SimpleNamespace(panel_speaker_roles=lambda: ["guest", "commentator"])
+        )
+
+        async def poll(data: Any, roles: list[str]) -> dict[str, HandRaiseResult]:
+            return {"guest": HandRaiseResult("guest", True), "commentator": HandRaiseResult("commentator", False)}
+
+        for patch in (
+            mock.patch.object(host_floor, "poll_panel_hand_raises", poll),
+            mock.patch.dict(os.environ, {**FLAGS, "TALKSHOW_POLL_DURING_OPEN_FLOOR": "1"}),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _open_floor(self, pick: str) -> None:
+        async def run_round(*args: Any, **kw: Any) -> FloorPick:
+            await kw["prefetched_poll"]
+            return FloorPick(pick, "queue_fifo")
+
+        async def go() -> None:
+            self.act.prefetch_hand_raise_poll(0)
+            await asyncio.sleep(0.01)  # the open-floor line plays; the poll lands
+            with mock.patch.object(host_floor, "run_hand_raise_round", run_round):
+                await self.act.hand_raise_round(0, [])
+            if pick != "guest":
+                return
+            # The intro: a canned line, then the draft-ahead start the graph makes for it.
+            self.data.show_history.lines.append(SimpleNamespace(text="Amy, you're up.", procedural=True))
+            self.act.start_panelist_draft("guest", "speech_guest_0")
+            line = await self.act.generate_panelist_line("guest", "speech_guest_0")
+            await self.act.speak({"role": "guest", "text": line.text, "step": "speech_guest_0", "kind": "panelist"})
+
+        asyncio.run(go())
+
+    def test_the_poll_winner_starts_before_the_intro_and_is_spoken(self) -> None:
+        self._open_floor("guest")
+        self.assertEqual(self.drafts, 1)  # the intro kept the early draft
+        self.assertEqual(self.started, [LINE])
+        self.assertIsNotNone(self.spoken_with[0])
+        self.assertEqual([f["step"] for f in self.log.events("draft_ahead_early")], ["speech_guest_0"])
+        self.assertEqual(self.log.events("draft_ahead_dropped"), [])
+
+    def test_floor_going_elsewhere_drops_the_early_draft(self) -> None:
+        self._open_floor("human")
+        self.assertEqual(self.drafts, 1)
+        self.assertEqual([f["reason"] for f in self.log.events("draft_ahead_dropped")], ["not_picked"])
+        self.assertEqual([f["reason"] for f in self.log.events("speak_ahead_dropped")], ["not_picked"])
+        self.assertIsNone(self.act._draft_ahead)
 
 
 if __name__ == "__main__":

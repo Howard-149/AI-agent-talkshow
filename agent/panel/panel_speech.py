@@ -81,10 +81,11 @@ def draft_ahead_enabled() -> bool:
 
 
 def speak_ahead_enabled() -> bool:
-    """Synthesize and start rendering the drafted-ahead line while the intro plays (opt-in).
+    """Synthesize and start rendering the drafted-ahead line before it is due (opt-in).
 
-    Builds on draft ahead, and on pre-rendered host lines: the intro then plays from the
-    cache, so TTS and the avatar are free to start on the next line.
+    Builds on draft ahead, and on pre-rendered host lines: the host's lines then play from
+    the cache, so TTS and the avatar are free to start on the next line. With the early
+    poll on, the draft starts as soon as the poll lands, during the open-floor line.
     """
     from agent.session.canned_cache import prerender_enabled
 

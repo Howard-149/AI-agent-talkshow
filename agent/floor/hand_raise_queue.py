@@ -21,6 +21,15 @@ def _queue_eligible(role: str) -> bool:
     return key in panel_speaker_roles(load_scenario())
 
 
+def poll_winner(raises: dict[str, HandRaiseResult], panel_priority: list[str]) -> str | None:
+    """The panelist an AI poll gives the floor to: the first raised hand by ``panel_priority``."""
+    yes_roles = [role for role, hr in raises.items() if role != "human" and hr.raised]
+    for role in panel_priority:
+        if role in yes_roles:
+            return role
+    return yes_roles[0] if yes_roles else None
+
+
 @dataclass
 class HandRaiseEntry:
     role: str
@@ -156,17 +165,9 @@ class HandRaiseQueue:
             else:
                 self.remove(role)
 
-        if not yes_roles:
-            return None, [], False
-
-        yes_set = set(yes_roles)
-        winner: str | None = None
-        for role in panel_priority:
-            if role in yes_set:
-                winner = role
-                break
+        winner = poll_winner(raises, panel_priority)
         if winner is None:
-            winner = yes_roles[0]
+            return None, [], False
 
         hr = raises[winner]
         self.merge_poll_raise(winner, reason=hr.reason, topic=hr.topic)
