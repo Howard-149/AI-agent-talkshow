@@ -62,6 +62,27 @@ def register_control_channel(
         parsed = parse_control_payload(ev.data)
         if parsed is None:
             return
+        from agent.session.ghost_flags import is_ai_only_participant
+        ai_only_room = data.reactive_session is not None and data.reactive_session.ai_only
+        if (is_ai_only_participant(ev.participant) or ai_only_room) and parsed.type in {"human_interrupt", "hand_raise", "ghost_human_turn"}:
+            return  # audience tokens do not become human guests
+        if parsed.type in {"human_interrupt", "reactive_demo", "reactive_stop"}:
+            from agent.session.ghost_flags import ghost_turns_allowed, is_ghost_participant
+            from agent.multi_agent.reactive_demo import run_reactive_demo
+
+            # Local experimental text participants only, never anonymous data senders.
+            if not ghost_turns_allowed() or not is_ghost_participant(ev.participant):
+                return
+            broker = data.reactive_session
+            if broker is None:
+                return
+            if parsed.type == "human_interrupt":
+                asyncio.create_task(broker.request_human())
+            elif parsed.type == "reactive_stop":
+                asyncio.create_task(broker.stop_demo())
+            else:
+                asyncio.create_task(run_reactive_demo(session, data, controller, mode=parsed.mode))
+            return
         if parsed.type == "hand_raise":
             asyncio.create_task(
                 _apply_human_hand(
@@ -147,6 +168,10 @@ async def idle_topic_loop(
                 reason="idle_no_humans",
             )
             break
+        if data.reactive_session is not None and data.reactive_session.ai_only:
+            # Pure-AI studio stays quietly Ready until the operator starts an
+            # episode. Do not trigger legacy open-floor / hand-raise moderation.
+            continue
         if data.panel_chain_running or data.panel_followup_pending:
             continue
         if peek_floor_next(data) == "human":

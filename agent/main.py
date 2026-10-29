@@ -27,6 +27,7 @@ from agent.session.talkshow_runtime import build_runtime
 from agent.session.livekit_session import build_agent_session, load_vad
 from agent.session.session_lifecycle import register_session_lifecycle
 from agent.floor import TurnController
+from agent.ui.playout_transcript import PlayoutTranscriptOutput
 
 logger = logging.getLogger("talkshow")
 logging.basicConfig(level=logging.INFO)
@@ -315,6 +316,10 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=build_agent("host", data),
         room=ctx.room,
         room_options=room_io.RoomOptions(
+            text_output=room_io.TextOutputOptions(
+                sync_transcription=True,
+                next_in_chain=PlayoutTranscriptOutput(data),
+            ),
             audio_input=False
             if os.environ.get("TALKSHOW_TEXT_INPUT", "0") == "1"
             else True,

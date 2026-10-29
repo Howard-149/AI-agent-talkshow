@@ -27,7 +27,7 @@ class PersonaWorker:
     def __init__(self, role: str) -> None:
         self.role = role
 
-    async def draft(self, data: TalkShowData, *, step: str) -> AgentDraft:
+    async def draft(self, data: TalkShowData, *, step: str, extra_prompt: str = "") -> AgentDraft:
         role = self.role
         # Legacy (non-graph) turn modes appraise in the background; make sure this
         # persona's own pending appraisal has landed before its prompt is built.
@@ -76,6 +76,9 @@ class PersonaWorker:
             dialogue_hint=dialogue_hint,
             data=data,
         )
+        if extra_prompt:
+            prompt += "\n\n" + extra_prompt
+            system_prompt += "\n\nExplicit demonstration role brief:\n" + extra_prompt
         logger.info(
             "panel draft prompt role=%s step=%s system_chars=%d user_chars=%d hint_chars=%d pick=%s",
             role,

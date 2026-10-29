@@ -50,6 +50,14 @@ async def bootstrap_after_connect(
         await set_agent_display_name("host")
         await publish_agent_panel_metadata(scenario)
         await emit_panel_roster(scenario)
+        from agent.multi_agent.reactive_session import ReactiveSession, reactive_enabled
+        if reactive_enabled():
+            if data.reactive_session is None:
+                data.reactive_session = ReactiveSession(session, data, controller)
+            from agent.session.ghost_flags import is_ai_only_participant
+            data.reactive_session.ai_only = any(
+                is_ai_only_participant(p) for p in ctx.room.remote_participants.values()
+            )
         await flush_pending_ui_events()
 
         # Warm multimodal / audio path before welcome + first human turn.
@@ -66,6 +74,10 @@ async def bootstrap_after_connect(
             if not await open_show_session(session, data, controller, room=ctx.room):
                 await run_session_opening(session, data, controller, room=ctx.room)
             await flush_pending_ui_events()
+
+        if data.reactive_session is not None:
+            await data.reactive_session.emit("reactive_ready", enabled=True,
+                                            ai_only=data.reactive_session.ai_only)
 
         data.touch_activity()
         logger.info("bootstrap_after_connect complete room=%s", ctx.room.name)

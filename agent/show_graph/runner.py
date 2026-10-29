@@ -322,6 +322,13 @@ async def open_show_session(
     if not (session_graph_enabled() and controller.is_host_moderated_mode()):
         return False
     show = start_show_session(session, data, controller)
+    if data.reactive_session is not None and data.reactive_session.ai_only:
+        # Audience can start a pure-AI episode without a human welcome, hand
+        # raise, or a spoken "floor is yours". The moderator owns idle floor.
+        from agent.floor.floor_control import apply_floor_next
+
+        apply_floor_next(data, "host")
+        return True
     if data.silent_handoff or os.environ.get("TALKSHOW_SKIP_GREETING", "").lower() in (
         "1", "true", "yes",
     ):

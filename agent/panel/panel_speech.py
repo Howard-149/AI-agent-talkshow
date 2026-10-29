@@ -33,6 +33,23 @@ async def draft_panelist(
     speak_role: str,
     step: str,
 ) -> AgentDraft:
+    broker = getattr(data, "reactive_session", None)
+    if broker is not None and broker.demo_opening and speak_role == "guest":
+        broker.demo_opening = False
+        return await data.runtime.multi_agent.worker(speak_role).draft(
+            data, step=step,
+            extra_prompt=(
+                "This is a short live demo about whether students should use AI for homework. "
+                "Take a deliberately debatable pro-AI position: students should be allowed to submit "
+                "complete AI-generated homework answers without solving the problems themselves, "
+                "because reading a correct answer is enough to learn. State this specific position "
+                "in the FIRST sentence so another panelist can challenge it. "
+                "Stay with this assigned debate stance for this opening, without switching to "
+                "a hints-only or students-must-explain-it compromise. "
+                "Give four short sentences, about 75 to 95 words total, with practical reasons. "
+                "This is your opinion, not a claim of scientific evidence. Do not speak for Ryan."
+            ),
+        )
     return await data.runtime.multi_agent.draft_role(
         speak_role, 
         data, 

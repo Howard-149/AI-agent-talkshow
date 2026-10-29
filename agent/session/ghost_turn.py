@@ -8,6 +8,7 @@ reuse the same post-heard commit + ``speak_panel_line`` path as mic turns.
 from __future__ import annotations
 
 import logging
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,13 @@ async def run_ghost_human_turn(
     if not heard:
         logger.info("ghost_human_turn skip — empty text")
         return False
+    # A reactive grant can reach the browser just before the graph releases its
+    # busy claim. Wait for that cleanup rather than silently dropping Send.
+    if data.reactive_session is not None and peek_floor_next(data) == "human":
+        for _ in range(50):
+            if not data.panel_chain_running:
+                break
+            await asyncio.sleep(0.1)
     if data.panel_chain_running:
         logger.info("ghost_human_turn skip — panel chain running")
         return False

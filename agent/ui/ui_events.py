@@ -163,6 +163,8 @@ async def emit_transcript(
     final: bool = True,
     step: str = "",
     texts: dict[str, str] | None = None,
+    utterance_id: str | None = None,
+    interrupted: bool = False,
 ) -> None:
     text = text.strip()
     if not text and not (texts and any(v.strip() for v in texts.values())):
@@ -178,6 +180,9 @@ async def emit_transcript(
         cleaned = {k: v.strip() for k, v in texts.items() if v and v.strip()}
         if cleaned:
             payload["texts"] = cleaned
+    if utterance_id is not None:
+        payload["utterance_id"] = utterance_id
+        payload["interrupted"] = interrupted
     await publish_ui_event("transcript", **payload)
 
 

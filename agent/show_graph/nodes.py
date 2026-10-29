@@ -273,6 +273,9 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
     line = state.get("line")
     if not line or not (line.get("text") or "").strip():
         return Command(goto="after_speak")
+    # Opt-in path records only played sentences, not the unspoken full draft.
+    if getattr(act, "uses_reactive", lambda _: False)(line):
+        return Command(goto="reactive_speak")
     utt = act.record_line(line)
     if not line.get("procedural"):
         act.relax(line["role"])
@@ -283,6 +286,31 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
         jobs += [{"utt": utt, "listener": r} for r in act.listeners(line["role"])]
     sends = [Send("speak", {"line": line})] + [Send("appraise", {"job": j}) for j in jobs]
     return Command(goto=sends, update={"extra_utterances": []})
+
+
+async def reactive_speak(state: ShowState, config: RunnableConfig) -> Command:
+    result = await _act(config).speak_reactive(
+        state["line"], list(state.get("extra_utterances") or []),
+    )
+    spoken_roles = list(state.get("spoken_roles") or [])
+    for role in result["roles"]:
+        if role in state["panel_roles"] and role not in spoken_roles:
+            spoken_roles.append(role)
+    update = {
+        "line": result["line"], "extra_utterances": [],
+        "spoken": result["steps"], "appraisals": result["appraisals"],
+        "spoken_roles": spoken_roles,
+        "turn_idx": state.get("turn_idx", 0) + result["extra_turns"],
+    }
+    if result["human"]:
+        return Command(goto="finish", update={**update, "outcome": "human"})
+    if result.get("stopped"):
+        return Command(goto="finish", update={**update, "outcome": "stopped"})
+    if result.get("closed"):
+        # Already played a contextual host wrap. Apply its human grant, then
+        # finish without a second canned "Floor's yours".
+        update.update(after="finish", outcome="close")
+    return Command(goto="after_speak", update=update)
 
 
 async def speak(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:

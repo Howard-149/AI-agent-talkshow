@@ -20,6 +20,7 @@ class ControlEvent:
     reason: str = ""
     locale: str = ""
     text: str = ""
+    mode: str = ""
 
 
 def parse_control_payload(raw: bytes) -> ControlEvent | None:
@@ -30,7 +31,14 @@ def parse_control_payload(raw: bytes) -> ControlEvent | None:
         logger.debug("control_events: invalid payload", exc_info=True)
         return None
 
+    if not isinstance(data, dict):
+        return None
     ev_type = str(data.get("type", "")).strip()
+    if ev_type in {"human_interrupt", "reactive_demo", "reactive_stop"}:
+        mode = data.get("mode", "live")
+        if not isinstance(mode, str) or mode not in {"live", "queue", "baseline"}:
+            return None
+        return ControlEvent(type=ev_type, mode=mode)
     if ev_type == "hand_raise":
         return ControlEvent(
             type=ev_type,

@@ -12,6 +12,17 @@ def ghost_turns_allowed() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def is_ai_only_participant(participant: object | None) -> bool:
+    """An audience/operator token, not a human guest in the discussion."""
+    if participant is None:
+        return False
+    try:
+        meta = json.loads(getattr(participant, "metadata", None) or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return isinstance(meta, dict) and meta.get("aiOnly") is True
+
+
 def is_ghost_participant(participant: object | None) -> bool:
     """True for identity ``ghost-*`` or token metadata ``{"ghost": true}``."""
     if participant is None:

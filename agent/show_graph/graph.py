@@ -20,6 +20,7 @@ _COMMAND_NODES = (
     "grant_human",
     "close",
     "prepare_speak",
+    "reactive_speak",
     "after_speak",
     "wait_event",
     "finish",

@@ -70,6 +70,7 @@ def mint_ghost_token(
     ttl_sec: int = 3600,
     viewer: bool = False,
     can_publish: bool | None = None,
+    ai_only: bool = False,
 ) -> tuple[str, str]:
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -84,6 +85,8 @@ def mint_ghost_token(
     meta: dict[str, Any] = {"locale": locale, "ghost": True}
     if viewer:
         meta["ghostViewer"] = True
+    if ai_only:
+        meta["aiOnly"] = True
     if can_publish is None:
         can_publish = not viewer
     token = (
@@ -97,6 +100,7 @@ def mint_ghost_token(
                 room=room,
                 can_publish=can_publish,
                 can_subscribe=True,
+                can_publish_data=True,
             )
         )
         .with_ttl(timedelta(seconds=ttl_sec))

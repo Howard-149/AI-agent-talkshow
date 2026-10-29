@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -68,6 +69,22 @@ class LiveActuators:
         self.session = session
         self.data = data
         self.controller = controller
+        from agent.multi_agent.reactive_session import ReactiveSession, reactive_enabled
+
+        if reactive_enabled() and data.reactive_session is None:
+            data.reactive_session = ReactiveSession(session, data, controller)
+
+    def uses_reactive(self, line: LineSpec) -> bool:
+        return bool(
+            self.data.reactive_session is not None
+            and not line.get("procedural")
+            and line.get("kind") in {"panelist", "host_reply"}
+            and self.data.needed_locales == frozenset({"en"})
+            and os.environ.get("TALKSHOW_AVATAR_ENABLED", "1") == "0"
+        )
+
+    async def speak_reactive(self, line: LineSpec, extra_utterances: list) -> dict:
+        return await self.data.reactive_session.speak(self, line, extra_utterances=extra_utterances)
 
     # --- session / logging -------------------------------------------------
 
@@ -197,8 +214,16 @@ class LiveActuators:
             apply_floor_next(self.data, line.get("next_tag") or "host")
         elif kind == "direct_call" and line.get("target"):
             await dequeue_hand_raise(self.data, line["target"])
-        elif kind == "grant_human":
-            reason = line.get("reason") or "queue_fifo"
+        elif kind == "close" and getattr(getattr(self.data, "reactive_session", None), "ai_only", False):
+            apply_floor_next(self.data, "host")
+        elif kind == "grant_human" or (
+            kind == "close" and os.environ.get("TALKSHOW_TEXT_INPUT", "0") == "1"
+        ):
+            # The closing line says "Back to you". In explicit text mode also
+            # signal the grant; otherwise the UI's Send button remains locked.
+            reason = line.get("reason") or (
+                "round_closed" if kind == "close" else "queue_fifo"
+            )
             apply_floor_next(self.data, "human")
             await emit_floor_grant("human", reason=reason)
             await dequeue_hand_raise(self.data, "human")
@@ -248,6 +273,11 @@ class LiveActuators:
         from agent.panel.panel_speech import generate_panelist_line
 
         return await generate_panelist_line(self.session, self.data, speak_role=role, step=step)
+
+    async def generate_demo_line(self, beat) -> dict:
+        from agent.multi_agent.reactive_demo_plan import generate_demo_line
+
+        return await generate_demo_line(self.data, beat)
 
     # --- canned host lines ---------------------------------------------------
 
