@@ -28,6 +28,7 @@ async def run_reactive_demo(session, data, controller, *, mode: str) -> bool:
     broker.pending_human = False
     broker.demo_stop = False
     broker.mode = mode
+    broker.topic = TOPIC
     broker.policy.last_ai_cut = float("-inf")
     try:
         await broker.emit("reactive_reset", mode=mode, topic=TOPIC, ai_only=broker.ai_only)

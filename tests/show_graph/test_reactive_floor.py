@@ -63,6 +63,26 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(self.decide(allow_ai_cut=False).status, "queued")
         self.assertEqual(self.decide(human_pending=True).rule, "human_priority")
 
+    def test_moderator_cut_outranks_debate_limits(self):
+        host = FloorRequest("host", 8, "interrupt", kind="moderation", evidence=CLAIM, speech="Back to it.")
+        self.policy.commit_cut(self.req, now=99)
+        decision = self.decide(host, allow_ai_cut=False, eligible_roles=["commentator", "host"])
+        self.assertEqual((decision.status, decision.rule, decision.priority), ("granted", "moderator_cut", 80))
+        self.assertEqual(self.decide(host, elapsed_s=1, eligible_roles=["host"]).rule, "minimum_speaking_time")
+        self.assertEqual(self.decide(host, heard="Unrelated.", eligible_roles=["host"]).rule, "evidence_not_heard")
+        waits = FloorRequest("host", 8, "queue", kind="moderation", reason="r", speech="s")
+        self.assertEqual(self.decide(waits, eligible_roles=["host"]).rule, "moderator_waits")
+
+    def test_moderation_kind_is_reserved_for_the_moderator(self):
+        moderation = json.dumps({"action": "interrupt", "kind": "moderation", "reason": "r",
+                                 "evidence": CLAIM, "speech": "Back to the topic."})
+        with self.assertRaises(ValueError):
+            parse_request(moderation, role="commentator", epoch=8)
+        with self.assertRaises(ValueError):
+            parse_request(RAW, role="host", epoch=8)  # the moderator never debates
+        self.assertEqual(parse_request(moderation, role="host", epoch=8).kind, "moderation")
+
+
     def test_malformed_json_fails_closed(self):
         for raw in ["not json", "[]", '{"action":"steal"}', '{"action":"interrupt","speech":123}']:
             with self.assertRaises((ValueError, TypeError)):
@@ -162,9 +182,12 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.client = FakeGemma()
         self.data = TalkShowData(scenario=load_scenario(), runtime=SimpleNamespace(gemma_client=self.client))
         self.session = FakeSession()
-        ctrl = SimpleNamespace(panel_speaker_roles=lambda: ["guest", "commentator"])
+        ctrl = SimpleNamespace(panel_speaker_roles=lambda: ["guest", "commentator"],
+                               listen_role=lambda: "host")
         self.broker = ReactiveSession(self.session, self.data, ctrl)
         self.broker.policy.min_speech_s = 0
+        # Moderator cuts have their own tests; keep the panel-only fixtures exact.
+        self.broker.host_cut = False
         self.events = []
         self.broker.log = lambda event, **fields: self.events.append({"event": event, **fields})
         self.broker.emit = AsyncMock()
@@ -419,6 +442,99 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         first = self.broker.epoch
         await self.broker.speak(self.act, self.line, extra_utterances=[])
         self.assertGreater(self.broker.epoch, first)
+
+
+OPENER = "Thanks, I have been thinking about this all week."
+LATE = "Honestly the moon landing was staged, and that is my real passion."
+FOURTH = "Anyway, this last sentence must stay unplayed."
+
+
+class ScriptedGemma:
+    """Answers like a listener who only reacts to what it was shown."""
+
+    def __init__(self, *, delay=0.012, claim=CLAIM, panel=None, moderator=None):
+        self.prompts = []; self.delay = delay; self.claim = claim
+        self.panel = panel; self.moderator = moderator
+        self.in_flight = 0; self.max_in_flight = 0
+
+    async def complete_text(self, prompt, *, system_prompt="", **_):
+        self.prompts.append(prompt)
+        self.in_flight += 1; self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(self.delay)
+        finally:
+            self.in_flight -= 1
+        if "You are the moderator" in system_prompt:
+            if self.moderator and self.moderator in prompt:
+                return json.dumps({"action": "interrupt", "kind": "moderation", "reason": "Off topic",
+                                   "evidence": self.moderator, "speech": "Amy, let's bring it back to homework."})
+            return json.dumps({"action": "none", "kind": "moderation", "reason": "", "evidence": "", "speech": ""})
+        if self.panel:
+            return self.panel
+        if self.claim in prompt:
+            return RAW
+        return json.dumps({"action": "none", "kind": "addition", "reason": "", "evidence": "", "speech": ""})
+
+
+class ContinuousListeningTests(unittest.IsolatedAsyncioTestCase):
+    """Listeners re-decide at each played sentence boundary."""
+
+    asyncSetUp = SessionTests.asyncSetUp
+    asyncTearDown = SessionTests.asyncTearDown
+
+    async def _run(self, text, client):
+        self.data.runtime.gemma_client = client
+        line = {"role": "guest", "text": text, "kind": "panelist", "step": "test"}
+        return await self.broker.speak(self.act, line, extra_utterances=[])
+
+    async def test_late_claim_is_caught_only_when_listening_every_sentence(self):
+        text = f"{OPENER} {CLAIM} {TAIL}"
+        self.broker.listen = "first"
+        first = ScriptedGemma()
+        await self._run(text, first)
+        self.assertEqual(len(first.prompts), 1)
+        self.assertNotIn(("commentator", "ai_interrupt"), self.act.grants)
+
+        await self.asyncTearDown(); await self.asyncSetUp()
+        every = ScriptedGemma()
+        await self._run(text, every)
+        self.assertIn(("commentator", "ai_interrupt"), self.act.grants)
+        self.assertEqual(self.data.show_history.lines[0].text, f"{OPENER} {CLAIM}")
+        self.assertNotIn("purple aardvark", " ".join(every.prompts))
+        self.assertNotIn("purple aardvark", " ".join(x.text for x in self.data.show_history.lines))
+
+    async def test_polls_never_overlap_and_skip_busy_boundaries(self):
+        slow = ScriptedGemma(delay=0.1, claim="no such claim")
+        await self._run(f"{OPENER} {CLAIM} {LATE} {FOURTH} {TAIL}", slow)
+        self.assertEqual(slow.max_in_flight, 1)
+        self.assertLess(len(slow.prompts), 4)  # some boundaries fell inside a running poll
+        starts = [e for e in self.events if e["event"] == "reactive_model_start"]
+        self.assertEqual([e["poll"] for e in starts], sorted({e["poll"] for e in starts}))
+
+    async def test_no_poll_after_the_last_sentence(self):
+        client = ScriptedGemma(claim="no such claim")
+        await self._run(f"{OPENER} {CLAIM}", client)
+        self.assertEqual(len(client.prompts), 1)
+
+    async def test_repeated_queue_requests_keep_one_entry_per_listener(self):
+        queue = json.dumps({"action": "queue", "kind": "addition", "reason": "One more angle",
+                            "evidence": "", "speech": "I would add a practical example."})
+        await self._run(f"{OPENER} {CLAIM} {LATE} {FOURTH}", ScriptedGemma(panel=queue))
+        self.assertGreater(sum(e["event"] == "reactive_decision" for e in self.events), 1)
+        self.assertEqual(sum(e["event"] == "reactive_draft_discarded" for e in self.events), 1)
+        self.assertEqual(self.data.hand_raise_queue.roles(), ["commentator"])
+
+    async def test_moderator_cut_steers_back_to_the_cut_speaker(self):
+        self.broker.host_cut = True
+        client = ScriptedGemma(claim="no such claim", moderator=LATE)
+        result = await self._run(f"{OPENER} {CLAIM} {LATE} {FOURTH}", client)
+        self.assertIn(("host", "moderator_cut"), self.act.grants)
+        self.assertEqual([x.role_id for x in self.data.show_history.lines], ["guest", "host"])
+        self.assertNotIn(FOURTH, " ".join(x.text for x in self.data.show_history.lines))
+        self.assertEqual((result["line"]["role"], result["line"]["kind"], result["line"]["next_tag"]),
+                         ("host", "host_reply", "guest"))
+        # The moderator's steering line is never itself polled for cuts.
+        self.assertFalse(any("Current speaker: Lessac" in p for p in client.prompts))
 
 
 class GraphIntegrationTests(unittest.TestCase):

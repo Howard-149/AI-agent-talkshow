@@ -10,6 +10,8 @@ export type InterruptionNotice = {
   targetName: string;
 };
 
+const INTERRUPTION_RULES = new Set(['grounded_rebuttal', 'moderator_cut']);
+
 /** Only a real, current-turn AI grant is an interruption, never a queued request. */
 export function readInterruption(
   event: unknown,
@@ -21,7 +23,7 @@ export function readInterruption(
     !record ||
     record.status !== 'granted' ||
     record.source !== 'llm' ||
-    record.rule !== 'grounded_rebuttal' ||
+    !INTERRUPTION_RULES.has(record.rule) ||
     record.epoch !== current.epoch ||
     record.role === current.role ||
     record.role === 'human'

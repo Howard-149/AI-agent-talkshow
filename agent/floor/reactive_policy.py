@@ -28,7 +28,7 @@ class Decision:
     priority: int = 0
 
 
-def parse_request(raw: str, *, role: str, epoch: int) -> FloorRequest:
+def parse_request(raw: str, *, role: str, epoch: int, moderator: str = "host") -> FloorRequest:
     """Strict JSON and allowlisted enums; malformed responses fail closed."""
     text = raw.strip()
     if text.startswith("```json") and text.endswith("```"):
@@ -37,11 +37,14 @@ def parse_request(raw: str, *, role: str, epoch: int) -> FloorRequest:
     if not isinstance(obj, dict):
         raise ValueError("request must be a JSON object")
     action = obj.get("action")
-    kind = obj.get("kind", "addition")
+    kind = obj.get("kind", "moderation" if role == moderator else "addition")
     if action not in {"interrupt", "queue", "none"}:
         raise ValueError("invalid action")
-    if kind not in {"rebuttal", "correction", "addition"}:
+    if kind not in {"rebuttal", "correction", "addition", "moderation"}:
         raise ValueError("invalid kind")
+    # Only the moderator may claim a moderation cut, and the moderator never debates.
+    if (kind == "moderation") != (role == moderator):
+        raise ValueError("kind not allowed for this role")
     fields = {}
     for key, limit in {"reason": 240, "evidence": 500, "speech": 900}.items():
         value = obj.get(key, "")
@@ -75,12 +78,22 @@ class ReactivePolicy:
             return Decision("none", "no_new_point")
         if human_pending:
             return Decision("queued", "human_priority", 50)
+        moderation = request.kind == "moderation"
+        if moderation and request.action != "interrupt":
+            # The moderator already owns the next turn; it has no queue slot.
+            return Decision("none", "moderator_waits")
         if request.action == "queue" or request.kind == "addition":
             return Decision("queued", "wait_for_turn_end", 10)
         evidence = " ".join(request.evidence.lower().split())
         context = " ".join(heard.lower().split())
         if not evidence or evidence not in context:
             return Decision("rejected", "evidence_not_heard")
+        if moderation:
+            # Moderation outranks debate cuts and is not limited by the AI
+            # cooldown or chain cap, but the speaker still gets a fair start.
+            if elapsed_s < self.min_speech_s:
+                return Decision("queued", "minimum_speaking_time", 80)
+            return Decision("granted", "moderator_cut", 80)
         if not allow_ai_cut:
             return Decision("queued", "queue_only_or_chain_limit", 50)
         if elapsed_s < self.min_speech_s:

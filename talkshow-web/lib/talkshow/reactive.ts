@@ -40,6 +40,8 @@ export const RULE_LABELS: Record<string, string> = {
   human_priority: 'Human first',
   superseded_by_human: 'Human takes priority over the AI request',
   grounded_rebuttal: 'Direct rebuttal',
+  moderator_cut: 'Moderator steers back to the topic',
+  moderator_waits: 'Moderator keeps listening',
   wait_for_turn_end: 'Wait for turn end',
   minimum_speaking_time: 'Let the speaker finish their opening',
   cooldown: 'Interruption cooldown',

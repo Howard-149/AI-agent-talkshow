@@ -20,6 +20,11 @@ describe('visible AI interruption', () => {
       epoch: 4,
     });
   });
+  it('treats a granted moderator cut as an interruption by the host', () => {
+    expect(
+      readInterruption({ ...grant, role: 'host', name: 'Lessac', rule: 'moderator_cut' }, current),
+    ).toMatchObject({ byRole: 'host', byName: 'Lessac', targetName: 'Amy' });
+  });
   it('does not label normal, queued, rejected, or stale requests as interruptions', () => {
     for (const changes of [
       { status: 'queued' },

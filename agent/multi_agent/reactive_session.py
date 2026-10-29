@@ -15,7 +15,6 @@ from typing import Any
 
 from agent.config import load_persona_name
 from agent.floor.reactive_policy import Decision, FloorRequest, ReactivePolicy, parse_request
-from agent.panel.panel_prompts import panelist_personality_block
 from agent.session.speak_chunks import split_speak_sentences
 
 
@@ -30,6 +29,7 @@ class ActiveTurn:
     winner: FloorRequest | None = None
     granted_at: float = 0.0
     poll: asyncio.Task | None = None
+    polls: int = 0
     queued: list[tuple[FloorRequest, Decision]] = field(default_factory=list)
 
 
@@ -49,6 +49,12 @@ class ReactiveSession:
         self.demo_generation: asyncio.Task | None = None
         self.ai_only = False
         self.demo_stop = False
+        # "every": listeners re-decide after each fully played sentence (one
+        # poll in flight at a time). "first": the original single poll.
+        self.listen = os.environ.get("TALKSHOW_REACTIVE_LISTEN", "every").strip().lower()
+        self.moderator = controller.listen_role()
+        self.host_cut = os.environ.get("TALKSHOW_REACTIVE_HOST_CUT", "1").lower() not in {"0", "false", "no"}
+        self.topic = ""
 
     def log(self, event: str, **fields: Any) -> None:
         if self.data.turn_log is not None:
@@ -68,6 +74,8 @@ class ReactiveSession:
 
     async def queue_request(self, turn: ActiveTurn, req: FloorRequest, decision: Decision) -> None:
         from agent.ui.ui_events import emit_queue_state
+        # Re-polls replace a listener's earlier request instead of stacking it.
+        turn.queued = [pair for pair in turn.queued if pair[0].role != req.role]
         turn.queued.append((req, decision))
         self.data.hand_raise_queue.enqueue(req.role, reason=req.reason, topic=req.kind)
         await emit_queue_state(self.data, phase="reactive_wait")
@@ -136,44 +144,27 @@ class ReactiveSession:
                 self.demo_generation = None
 
     async def _request_role(self, role: str, turn: ActiveTurn, heard: str) -> FloorRequest | None:
-        hist = self.data.show_history.prior_messages(perspective=role)
-        system = (
-            f"{panelist_personality_block(role)}\n\n"
-            "You are listening to a live talk show. Decide independently whether to request the floor. "
-            "The current speaker has NOT finished. You only know the fully played sentences shown below. "
-            "Do not invent later claims. Interrupt only for a direct disagreement or factual correction. "
-            "Use queue for a useful addition, none for agreement or repetition. "
-            "For an interrupt, evidence MUST be an exact short quote from the played sentences. "
-            "Your speech must address that quote in first person as yourself, in 2 or 3 short sentences. "
-            "Never write another character's dialogue. Output ONLY a JSON object with keys "
-            'action ("interrupt", "queue", "none"), kind ("rebuttal", "correction", "addition"), '
-            "reason, evidence, speech. No markdown."
+        from agent.floor.intent_prompts import (
+            DEMO_STANCES, intent_prompt, moderator_intent_system, panelist_intent_system,
         )
-        if self.demo_active and role == "commentator":
-            system += (
-                "\nFor this debate your position is that homework should demonstrate the student's "
-                "own understanding, and simply reading or submitting AI answers does not show mastery. "
-                "Assess the actual played claim against that position. You may still choose queue "
-                "or none if it does not directly conflict."
-            )
-        elif self.demo_active and role == "guest":
-            system += (
-                "\nFor this debate you favor learning from worked AI examples. "
-                "Acknowledge shallow-understanding risks without instantly abandoning "
-                "that benefit. Assess only the actual played claim; queue or none is fine."
-            )
-        prompt = (f"Current speaker: {load_persona_name(turn.role)}\n"
-                  f"Fully played sentences:\n{heard}\n\n"
-                  "Is there a concrete claim you disagree with enough to interrupt, a new point to queue, "
-                  "or nothing worth adding? Do not request just to keep the show going.")
+
+        hist = self.data.show_history.prior_messages(perspective=role)
+        moderator = role == self.moderator
+        if moderator:
+            system = moderator_intent_system(role, topic=self.topic)
+        else:
+            system = panelist_intent_system(
+                role, stance=DEMO_STANCES.get(role, "") if self.demo_active else "")
+        prompt = intent_prompt(load_persona_name(turn.role), heard, moderator=moderator)
         t0 = time.monotonic()
-        self.log("reactive_model_start", role=role, epoch=turn.epoch, heard=heard)
+        self.log("reactive_model_start", role=role, epoch=turn.epoch, heard=heard,
+                 poll=turn.polls, sentences=len(turn.heard))
         try:
             raw = await asyncio.wait_for(self.data.runtime.gemma_client.complete_text(
                 prompt, system_prompt=system, history_messages=hist, raw=True,
                 temperature=0.4, max_tokens=400,
             ), timeout=float(os.environ.get("TALKSHOW_REACTIVE_POLL_TIMEOUT_S", "12")))
-            req = parse_request(raw, role=role, epoch=turn.epoch)
+            req = parse_request(raw, role=role, epoch=turn.epoch, moderator=self.moderator)
         except asyncio.CancelledError:
             self.log("reactive_model_cancelled", role=role, epoch=turn.epoch)
             raise
@@ -183,12 +174,18 @@ class ReactiveSession:
             await self.emit("reactive_decision", role=role, name=load_persona_name(role),
                             status="rejected", rule="model_error", reason="No valid request", source="llm")
             return None
-        self.log("reactive_model_done", role=role, epoch=turn.epoch,
+        self.log("reactive_model_done", role=role, epoch=turn.epoch, poll=turn.polls,
                  latency_ms=round((time.monotonic() - t0) * 1000), raw=raw)
         return req
 
+    def listeners(self, speaker: str) -> list[str]:
+        roles = [r for r in self.controller.panel_speaker_roles() if r != speaker]
+        if self.host_cut and speaker != self.moderator:
+            roles.append(self.moderator)
+        return roles
+
     async def _poll(self, turn: ActiveTurn, *, allow_ai_cut: bool) -> None:
-        roles = [r for r in self.controller.panel_speaker_roles() if r != turn.role]
+        roles = self.listeners(turn.role)
         heard = " ".join(turn.heard)
         # Independent persona requests actually run concurrently with current TTS.
         requests = await asyncio.gather(*(self._request_role(r, turn, heard) for r in roles))
@@ -240,7 +237,8 @@ class ReactiveSession:
             await emit_role_active(turn.role)
             self.data.speak_line_busy = True
             self.log("reactive_line_start", role=turn.role, epoch=turn.epoch, text=full_text)
-            for sentence in split_speak_sentences(full_text):
+            sentences = split_speak_sentences(full_text)
+            for index, sentence in enumerate(sentences):
                 if turn.winner or self.demo_stop or self.data.shutdown_event.is_set():
                     break
                 # No ahead-of-time audio queue: at most one sentence is in flight.
@@ -258,10 +256,15 @@ class ReactiveSession:
                 self.log("reactive_sentence_done", role=turn.role, epoch=turn.epoch, text=sentence)
                 await self.emit("reactive_state", active=True, role=turn.role, name=load_persona_name(turn.role),
                                 epoch=turn.epoch, step=turn.step, mode=self.mode, heard=" ".join(turn.heard))
-                # One bounded poll per turn, never per token or audio frame.
-                if turn.poll is None and self.mode != "baseline" and line.get("kind") == "panelist":
+                # Polls run at sentence boundaries, never per token or audio frame,
+                # with at most one in flight. A sentence that ends while a poll is
+                # still running is covered by the next boundary's poll.
+                can_poll = turn.poll is None or (self.listen == "every" and turn.poll.done())
+                if (can_poll and index + 1 < len(sentences) and self.mode != "baseline"
+                        and line.get("kind") == "panelist"):
+                    turn.polls += 1
                     turn.poll = asyncio.create_task(self._poll(turn, allow_ai_cut=allow_ai_cut),
-                                                    name=f"reactive_poll:{turn.epoch}")
+                                                    name=f"reactive_poll:{turn.epoch}:{turn.polls}")
             return turn, " ".join(turn.heard)
         finally:
             if turn.handle is not None and not turn.handle.done():
@@ -346,12 +349,18 @@ class ReactiveSession:
                 if winner:
                     self.policy.commit_cut(winner, now=time.monotonic())
                     cuts += 1
-                    await act.grant_panelist(winner.role, "ai_interrupt")
+                    await act.grant_panelist(
+                        winner.role, "moderator_cut" if winner.kind == "moderation" else "ai_interrupt")
                     self.log("reactive_takeover", role=winner.role, previous_role=turn.role,
                              epoch=turn.epoch, source=winner.source, draft_reused=True)
+                    moderation = winner.kind == "moderation"
+                    # A moderator cut steers back and returns the floor to the
+                    # speaker it stopped; its own line is not open to AI cuts.
                     current = {"role": winner.role, "text": winner.speech,
-                               "step": f"reactive_takeover_{self.epoch}", "kind": "panelist",
-                               "procedural": False, "next_tag": "host"}
+                               "step": f"reactive_takeover_{self.epoch}",
+                               "kind": "host_reply" if moderation else "panelist",
+                               "procedural": False,
+                               "next_tag": turn.role if moderation else "host"}
                     continue
                 if self.demo_active:
                     from agent.multi_agent.reactive_demo_plan import DEMO_FOLLOWUPS, RYAN_FIRST_REPLY
