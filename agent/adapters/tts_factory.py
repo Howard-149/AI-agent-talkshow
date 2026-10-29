@@ -1,4 +1,4 @@
-"""Build LiveKit TTS instances for the active engine (piper | cosyvoice)."""
+"""Build LiveKit TTS instances for the active engine (piper | cosyvoice | fish)."""
 
 from __future__ import annotations
 
@@ -45,6 +45,10 @@ def build_tts_from_config(
     room_name: str = "",
 ) -> tts.TTS:
     engine = resolve_tts_engine(cfg)
+    if engine == "fish":
+        from agent.adapters.fish_tts import FishTTS
+
+        return FishTTS(cfg, role=role, locale=locale, turn_log=turn_log, room_name=room_name)
     if engine == "cosyvoice":
         from agent.adapters.cosyvoice_client import cosyvoice_enabled
         from agent.adapters.cosyvoice_tts import CosyVoiceTTS

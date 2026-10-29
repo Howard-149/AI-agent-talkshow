@@ -40,7 +40,7 @@ server = AgentServer(
     initialize_process_timeout=max(_init_timeout, 30.0),
 )
 logger.info(
-    "AgentServer idle_processes=%d init_timeout=%.0fs (Piper prewarm on idle spawn)",
+    "AgentServer idle_processes=%d init_timeout=%.0fs",
     max(_idle_processes, 0),
     max(_init_timeout, 30.0),
 )
@@ -48,6 +48,10 @@ logger.info(
 
 def prewarm(proc: JobProcess) -> None:
     proc.userdata["vad"] = load_vad()
+    from agent.adapters.tts_synthesize import resolve_tts_engine
+
+    if resolve_tts_engine(load_config().locale().tts) != "piper":
+        return
     try:
         from agent.adapters.piper_tts import prewarm_piper_voices
 

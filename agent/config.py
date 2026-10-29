@@ -218,7 +218,7 @@ def load_persona_tts(
     *,
     locale: str | None = None,
 ) -> LocaleTTSConfig:
-    """Per-role TTS: CosyVoice prompt wav or Piper ONNX, by locale/role env → yaml → default."""
+    """Per-role TTS: Fish voice ID, CosyVoice prompt wav or Piper ONNX."""
     import logging
 
     from agent.adapters.tts_synthesize import resolve_tts_engine
@@ -235,6 +235,12 @@ def load_persona_tts(
     role_key = persona_id.upper()
     loc_key = loc.upper()
     engine = resolve_tts_engine(base.tts)
+
+    if engine == "fish":
+        from agent.adapters.fish_client import fish_sample_rate, fish_voice_for_role
+
+        return LocaleTTSConfig(engine="fish", model_path=fish_voice_for_role(persona_id, loc),
+                               sample_rate=fish_sample_rate())
 
     if engine == "cosyvoice":
         from agent.adapters.cosyvoice_voices import cosyvoice_mode, mode_needs_prompt_wav, resolve_spk_id

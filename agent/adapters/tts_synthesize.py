@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def resolve_tts_engine(cfg: LocaleTTSConfig | None = None) -> str:
     """``TALKSHOW_TTS_ENGINE`` overrides yaml ``tts.engine``."""
     env = os.environ.get("TALKSHOW_TTS_ENGINE", "").strip().lower()
-    if env in ("piper", "cosyvoice"):
+    if env in ("piper", "cosyvoice", "fish"):
         return env
     if cfg is not None and cfg.engine:
         return str(cfg.engine).strip().lower()
@@ -37,13 +37,26 @@ async def synthesize_pcm_for_config(
     role: str = "",
     step: str = "",
 ) -> tuple[bytes, int, int]:
-    """Return int16 mono PCM for the active TTS engine (piper | cosyvoice)."""
+    """Return int16 mono PCM for the active TTS engine (piper | cosyvoice | fish)."""
     text = text.strip()
     if not text:
         return b"", cfg.sample_rate, 1
 
     engine = resolve_tts_engine(cfg)
     t0 = time.monotonic()
+
+    if engine == "fish":
+        from agent.adapters.fish_client import FishSettings, synthesize_fish_pcm
+
+        settings = FishSettings.from_env(
+            role or "host", locale,
+            reference_id=cfg.model_path if cfg.engine == "fish" else "",
+            sample_rate=cfg.sample_rate if cfg.engine == "fish" else None,
+        )
+        pcm, sample_rate, num_channels = await synthesize_fish_pcm(text, settings)
+        _log_synth(turn_log, engine="fish", tts_latency_s=time.monotonic() - t0,
+                   chars=len(text), room=room, role=role, step=step, emotion=emotion or "neutral")
+        return pcm, sample_rate, num_channels
 
     if engine == "cosyvoice":
         from agent.adapters.cosyvoice_client import (
