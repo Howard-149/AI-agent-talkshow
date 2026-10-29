@@ -1,0 +1,730 @@
+{
+  "generator": "gpt-4.1",
+  "validator": "gpt-5.5",
+  "items": [
+    {
+      "id": "m00",
+      "domain": "education",
+      "motion": "Students should be allowed to use AI for homework",
+      "clean": [
+        "Allowing students to use AI for homework could help them learn new concepts more efficiently and with greater support.",
+        "There is a risk that relying too much on AI might discourage students from developing independent problem-solving skills.",
+        "AI can be a useful tool to enhance education, but it should not replace the effort and creativity students put into their assignments.",
+        "Teachers may need to adapt their methods to ensure students still understand the core material when AI is used for homework.",
+        "Balancing AI assistance with traditional learning methods could help students benefit from technology while still building essential skills."
+      ],
+      "overclaim": "If students are allowed to use AI for homework, every student will instantly become an expert in every subject with no effort at all.",
+      "factual_error": "AI technology was first invented in the early nineteenth century, long before computers were even imagined by anyone.",
+      "off_topic": "Speaking of challenges, last weekend I went hiking in the mountains and the weather changed so quickly it really surprised me.",
+      "factual_truth": "AI technology emerged in the mid-twentieth century, after the development of early computers.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m01",
+      "domain": "education",
+      "motion": "Standardized tests should be dropped from college admissions",
+      "clean": [
+        "I think there are real concerns about fairness when it comes to using standardized tests in college admissions.",
+        "Some people feel these tests can help create a level playing field, but others argue they reinforce existing inequalities.",
+        "It is important to recognize that standardized tests do offer one way to compare students from vastly different backgrounds.",
+        "At the same time, I worry that relying too heavily on them might overlook qualities that are harder to measure.",
+        "Ultimately, the question is whether these tests truly capture the potential and talent that colleges are seeking."
+      ],
+      "overclaim": "If we eliminate standardized tests from college admissions, every student will finally have an equal and completely fair opportunity to attend any college.",
+      "factual_error": "Standardized tests for college admissions were first introduced in the United States during the early eighteen hundreds.",
+      "off_topic": "Speaking of tests, I just finished watching the latest season of that detective show and I could not stop until the finale.",
+      "factual_truth": "Standardized college admissions tests in the United States began in the early twentieth century.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m02",
+      "domain": "education",
+      "motion": "Schools should ban smartphones during class",
+      "clean": [
+        "I think banning smartphones during class could help students focus more on their lessons and reduce potential distractions.",
+        "On the other hand, smartphones can be useful tools for learning if they are used appropriately and under guidance.",
+        "I understand some students rely on their phones to stay in touch with family, which is important for their sense of security.",
+        "At the same time, it might be challenging for teachers to enforce a complete ban fairly and consistently across all classes.",
+        "Overall, I believe the decision to ban smartphones should consider both the benefits for learning and the practical challenges involved."
+      ],
+      "overclaim": "If schools do not ban smartphones during class, students will never be able to concentrate or succeed academically in any subject.",
+      "factual_error": "Smartphones were first invented in the early nineteen seventies and have always been a standard part of classroom learning since then.",
+      "off_topic": "Speaking of focus, I just adopted a little gray kitten last week and she is already climbing all over my furniture.",
+      "factual_truth": "Smartphones became widely available in the two thousands and were not part of classroom learning before then.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m03",
+      "domain": "education",
+      "motion": "Homework should be abolished in primary school",
+      "clean": [
+        "I think there are real benefits to giving young children time after school to relax and pursue their own interests.",
+        "However, some people believe a small amount of homework helps children build responsibility and good study habits early on.",
+        "At the same time, too much homework can be overwhelming and may even discourage children from enjoying learning.",
+        "We should consider whether primary school homework is truly supporting students or just adding unnecessary pressure to their lives.",
+        "It is important to find a balance that supports both academic growth and the well-being of young students."
+      ],
+      "overclaim": "If we abolish homework in primary school, every single child will instantly become happier and more successful in everything they do.",
+      "factual_error": "Homework in primary schools has been a legal requirement in every country since the early eighteen hundreds.",
+      "off_topic": "Speaking of learning, last weekend I saw my favorite band play live and the energy in the crowd was incredible.",
+      "factual_truth": "Homework is not a legal requirement in every country and did not start in the early eighteen hundreds.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m04",
+      "domain": "technology",
+      "motion": "Social media does more harm than good for teenagers",
+      "clean": [
+        "I think social media offers teenagers valuable ways to connect with friends and explore new interests, which can be very positive.",
+        "At the same time, I am aware that social media can sometimes lead to negative feelings or pressure to fit in.",
+        "It is important to recognize that some teenagers may benefit from online communities, especially if they feel isolated in their offline lives.",
+        "However, there are real concerns about how much time teenagers spend on these platforms and the impact on their well-being.",
+        "Overall, I believe social media brings both opportunities and challenges for teenagers, and it is not entirely harmful or entirely helpful."
+      ],
+      "overclaim": "Social media is completely destroying the mental health of every single teenager who uses it, leaving no room for any positive effects.",
+      "factual_error": "Social media was first invented in the year 1985, which is why teenagers today have always grown up with it.",
+      "off_topic": "By the way, I recently learned how to bake sourdough bread and was surprised at how much patience it requires.",
+      "factual_truth": "Most major social media platforms were created after 2000.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m05",
+      "domain": "technology",
+      "motion": "Remote work is better than working in an office",
+      "clean": [
+        "I think remote work allows people to better balance their personal lives and professional responsibilities, which can improve overall well-being.",
+        "However, working in an office can foster a sense of community and make it easier to connect with colleagues on a daily basis.",
+        "Some people may find remote work isolating, while others appreciate the quiet and flexibility it brings to their routines.",
+        "Offices often provide structure and a clear separation between work and home, which some employees find really helpful.",
+        "Overall, I believe both approaches have their strengths and challenges, and the best choice depends on individual preferences and job requirements."
+      ],
+      "overclaim": "Remote work is the only way forward and soon nobody will want or need to work in an office ever again.",
+      "factual_error": "Remote work first became popular in the nineteen seventies when the internet was invented and everyone started working from home.",
+      "off_topic": "Speaking of working from home, I am so excited that my favourite football team just made it to the finals this year.",
+      "factual_truth": "The internet was not invented in the nineteen seventies and remote work became common much later.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m07",
+      "domain": "technology",
+      "motion": "Governments should license powerful AI models",
+      "clean": [
+        "I think there are clear advantages to having governments license powerful AI models, mainly to ensure public safety and accountability.",
+        "However, I also understand concerns that too much regulation could stifle innovation or make it harder for smaller organizations to compete.",
+        "Licensing could help set minimum standards for responsible AI use, which might be especially important as these models become more influential in society.",
+        "On the other hand, we should be careful that licensing processes do not become overly bureaucratic or favor big corporations unfairly.",
+        "Ultimately, finding the right balance between oversight and freedom will be key if governments choose to license powerful AI models."
+      ],
+      "overclaim": "If governments do not license powerful AI models, society will inevitably descend into chaos and lose control over these technologies entirely.",
+      "factual_error": "Governments around the world have been licensing powerful AI models since the early nineteen eighties, long before machine learning even existed.",
+      "off_topic": "Speaking of responsibility, I just spent all weekend playing Stardew Valley because I could not stop managing my virtual farm.",
+      "factual_truth": "Governments have only recently begun considering licensing for powerful AI models, as machine learning became prominent in the twenty first century.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m08",
+      "domain": "economy",
+      "motion": "A four-day work week should become the standard",
+      "clean": [
+        "I think a four-day work week could offer people more balance, but it also brings up concerns about productivity and business needs.",
+        "Some workers might really appreciate the extra personal time, though employers may worry about fitting all their tasks into fewer days.",
+        "It is possible that having more rest could make employees more focused, yet there is a risk of increased pressure on shorter workdays.",
+        "Adapting to a new standard would require adjustments from both companies and workers, and not every sector could easily make this change.",
+        "While the idea is appealing to many, I understand that some people fear it might disrupt how teams and projects operate."
+      ],
+      "overclaim": "A four-day work week would instantly solve every major workplace problem and make everyone completely satisfied with their jobs.",
+      "factual_error": "The five-day work week was officially introduced worldwide in the year 1950, replacing the previous six-day standard everywhere.",
+      "off_topic": "Speaking of long weekends, I actually went on a hiking trip last Saturday and saw the most beautiful waterfall in the forest.",
+      "factual_truth": "The five-day work week was widely adopted during the early twentieth century, but not everywhere at the same time.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m09",
+      "domain": "economy",
+      "motion": "Tipping should be replaced by higher wages",
+      "clean": [
+        "I believe replacing tipping with higher wages could create more stability for workers and make paychecks more predictable overall.",
+        "At the same time, I understand some people enjoy rewarding great service directly and feel tipping lets them express appreciation.",
+        "Higher wages might also help reduce the pressure on customers to calculate appropriate tips in different situations.",
+        "However, some small businesses might struggle to afford higher base wages without raising prices or cutting staff hours.",
+        "Ultimately, whether we keep tipping or move to higher wages, the goal should be fair compensation for everyone in the service industry."
+      ],
+      "overclaim": "If we eliminate tipping and raise wages, every single worker in the hospitality industry will instantly be happy and financially secure.",
+      "factual_error": "Tipping became popular in the United States right after the Civil Rights Act was signed in the year 1890.",
+      "off_topic": "Speaking of change, I just started watching that detective series everyone talks about, and I cannot believe how suspenseful it gets.",
+      "factual_truth": "Tipping became common in the United States after the Civil War, and the Civil Rights Act was passed in 1964.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m10",
+      "domain": "economy",
+      "motion": "Cities should ban private cars from downtown areas",
+      "clean": [
+        "I understand that banning private cars from downtown areas could make cities quieter and more pleasant for walking and cycling.",
+        "At the same time, I worry that a ban might make it harder for some people, especially those with mobility issues, to get around.",
+        "There is something appealing about imagining downtown streets that are safer and less congested because there are fewer private vehicles.",
+        "On the other hand, we should consider whether public transportation can truly meet everyone’s needs if private cars are banned.",
+        "I think any decision about restricting cars downtown should try to balance environmental benefits with the practical needs of city residents."
+      ],
+      "overclaim": "If cities ban private cars from downtown areas, every resident will instantly enjoy a perfect urban lifestyle with no drawbacks at all.",
+      "factual_error": "Private cars were first invented in the early sixteen hundreds, long before cities started to grow in size and complexity.",
+      "off_topic": "Speaking of changes, my new kitten has started jumping on the kitchen table and it is both adorable and a little chaotic.",
+      "factual_truth": "Private cars were invented in the late nineteenth century, not the sixteen hundreds.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m11",
+      "domain": "economy",
+      "motion": "Universal basic income would do more good than harm",
+      "clean": [
+        "I believe universal basic income could provide a safety net for people experiencing unexpected hardships or changes in employment.",
+        "At the same time, I understand concerns that providing a guaranteed income might reduce the incentive for some people to seek work.",
+        "Some people worry about the potential cost of implementing universal basic income and how it might affect existing social programs.",
+        "However, having a basic income could also give people more freedom to pursue education or caregiving without immediate financial pressure.",
+        "It is important to consider both the possible benefits for individuals and the broader impacts on society when discussing universal basic income."
+      ],
+      "overclaim": "Universal basic income would immediately solve all economic and social problems, making society perfectly fair for everyone overnight.",
+      "factual_error": "Universal basic income was first introduced as a national policy in France during the year nineteen seventy-six.",
+      "off_topic": "Speaking of new experiences, I recently saw a live jazz band and was amazed by the energy and talent on stage.",
+      "factual_truth": "Universal basic income has never been fully implemented as a national policy in France.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m12",
+      "domain": "health",
+      "motion": "Sugary drinks should carry a special tax",
+      "clean": [
+        "I believe that introducing a special tax on sugary drinks could encourage people to make healthier choices over time.",
+        "At the same time, I understand that some feel such a tax might unfairly impact people with lower incomes who enjoy these beverages.",
+        "There is also the argument that individuals should have the freedom to decide what they consume without government interference.",
+        "On the other hand, public health is a shared responsibility, and encouraging better habits can benefit society as a whole.",
+        "Ultimately, I think it is important to find a balance between supporting public health and respecting personal choice when considering a special tax."
+      ],
+      "overclaim": "If we do not tax sugary drinks, every single person in the country will eventually develop serious health problems because of them.",
+      "factual_error": "Sugary drinks have only existed since the early nineteen eighties, so any health concerns about them are quite recent.",
+      "off_topic": "Speaking of changes, I recently started learning how to bake sourdough bread, and it has been such a rewarding experience.",
+      "factual_truth": "Sugary drinks have been popular and widely available since at least the late nineteenth century.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m13",
+      "domain": "health",
+      "motion": "Fast food advertising aimed at children should be banned",
+      "clean": [
+        "I believe that banning fast food advertising aimed at children could help reduce some of the pressures kids face around unhealthy eating choices.",
+        "However, I also understand that advertising is a huge part of how companies communicate with consumers, including families making their own decisions.",
+        "It seems important to consider whether a ban would genuinely change children's eating habits, or if other factors might play a bigger role.",
+        "Parents might appreciate less targeted advertising, but it is worth asking if this would unfairly restrict companies from promoting their products.",
+        "Overall, I think any decision on this issue should carefully weigh the potential benefits for children's health against the principles of free expression."
+      ],
+      "overclaim": "If we do not ban fast food advertising aimed at children, we are guaranteeing that every child will develop lifelong unhealthy eating habits.",
+      "factual_error": "Fast food advertising aimed at children has been illegal in every country since the nineteen seventies, so this debate is actually outdated.",
+      "off_topic": "Speaking of passionate debates, my favourite football team just signed a new striker and I cannot wait to see how the season unfolds.",
+      "factual_truth": "Some countries have restrictions on fast food advertising to children, but it is not banned everywhere.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m14",
+      "domain": "health",
+      "motion": "Daylight saving time should be abolished",
+      "clean": [
+        "I understand that daylight saving time was introduced with good intentions, aiming to make better use of daylight hours throughout the year.",
+        "Some people feel that changing the clocks can be disruptive, particularly for families with young children or those with strict routines.",
+        "On the other hand, others appreciate the longer evenings in summer that daylight saving time can provide, allowing for more outdoor activities.",
+        "There are also concerns about whether the benefits of daylight saving time still apply today, given our modern schedules and technology.",
+        "Ultimately, I think it is important to consider both the potential advantages and the drawbacks before deciding whether to abolish daylight saving time."
+      ],
+      "overclaim": "If we do not abolish daylight saving time, our society will continue to suffer unnecessary confusion and hardship every single year.",
+      "factual_error": "Daylight saving time was first introduced globally in the year 1950 as a coordinated effort among all countries.",
+      "off_topic": "Speaking of changes, last weekend my kitchen renovation went terribly wrong when the new tiles started falling off the wall.",
+      "factual_truth": "Daylight saving time was first widely adopted during the First World War, starting in 1916.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m15",
+      "domain": "health",
+      "motion": "Employers should pay for gym memberships",
+      "clean": [
+        "I think there are real benefits to employers offering gym memberships, as healthier employees may feel more energized and engaged at work.",
+        "On the other hand, not everyone wants or is able to use a gym, so it might not be equally valuable for all staff.",
+        "Some people might prefer alternative wellness options, so a one-size-fits-all approach to fitness benefits may not be the best solution.",
+        "Employers could consider supporting general well-being in different ways, but gym memberships are a visible gesture that shows care for employees.",
+        "Ultimately, I believe it is worth discussing flexible health benefits that respect individual needs while still encouraging a healthier workplace."
+      ],
+      "overclaim": "If every employer paid for gym memberships, workplace health problems would completely disappear and everyone would be happier than ever before.",
+      "factual_error": "Employers have been required by law to pay for gym memberships since the nineteen seventies in most countries.",
+      "off_topic": "Speaking of energy, I have been completely hooked on this new fantasy adventure game where you build your own magical kingdom.",
+      "factual_truth": "There is no law in most countries requiring employers to pay for gym memberships.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m16",
+      "domain": "society",
+      "motion": "Voting should be mandatory",
+      "clean": [
+        "I believe that making voting mandatory could encourage greater participation and help ensure a more representative democracy overall.",
+        "At the same time, I understand that some people feel strongly that voting should be a matter of personal choice, not obligation.",
+        "There is also the concern that forcing people to vote might lead to uninformed or disengaged choices being made at the polls.",
+        "On the positive side, mandatory voting might encourage citizens to become more informed about the issues and candidates before they cast their ballots.",
+        "Ultimately, I think it is important to weigh the benefits of higher turnout against the potential drawbacks of imposing civic duties."
+      ],
+      "overclaim": "If voting were mandatory, every single citizen would always make the best possible decision for our country without exception.",
+      "factual_error": "Compulsory voting has been required in every country in the world since the early nineteen hundreds.",
+      "off_topic": "Speaking of choices, I actually spent last weekend hiking in the mountains and got completely lost for a couple of hours.",
+      "factual_truth": "Compulsory voting is required in some countries but certainly not all.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m17",
+      "domain": "society",
+      "motion": "Zoos should be phased out",
+      "clean": [
+        "I think there are important ethical questions about keeping wild animals in zoos, but I also recognize their role in education.",
+        "Zoos can provide safe environments for endangered species, yet some argue these facilities do not always meet animals’ natural needs.",
+        "While visiting a zoo can inspire people to care about wildlife, it might also give a false impression of animal behavior.",
+        "Phasing out zoos could protect animals from captivity, though it would also mean losing opportunities for research and conservation.",
+        "It seems essential to consider both the benefits and drawbacks before deciding whether zoos should gradually be phased out."
+      ],
+      "overclaim": "There is absolutely no justification for the existence of zoos in any modern society and they should all be closed immediately.",
+      "factual_error": "Zoos were first invented in the year nineteen eighty-five, which is surprisingly recent for such a common institution.",
+      "off_topic": "Speaking of animals, I just started watching that crime drama about police dogs and I cannot stop binge-watching it every night.",
+      "factual_truth": "The oldest known zoo dates back to ancient Egypt, thousands of years ago.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m18",
+      "domain": "society",
+      "motion": "Professional athletes are overpaid",
+      "clean": [
+        "I can understand why people feel professional athletes are overpaid, since their salaries are often much higher than most other professions.",
+        "However, athletes train for years, make personal sacrifices, and face significant physical risks just to compete at the highest level.",
+        "It is also important to consider that their careers are usually much shorter than those in other fields, which can justify higher earnings.",
+        "At the same time, many people who work essential jobs in society are not compensated nearly as well as sports stars.",
+        "Ultimately, whether athletes are overpaid might depend on how we value entertainment versus other forms of work and contribution."
+      ],
+      "overclaim": "Professional athletes are so overpaid that it is outrageous and unfair to everyone else working hard in society.",
+      "factual_error": "Every single professional athlete signs a contract guaranteeing them a million dollars per year, no matter the sport or league.",
+      "off_topic": "Speaking of things I care about, my new kitten has already learned how to chase her tail and it is absolutely adorable.",
+      "factual_truth": "Not all professional athletes earn a million dollars per year; many earn significantly less depending on the sport and league.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m19",
+      "domain": "society",
+      "motion": "Celebrities should stay out of politics",
+      "clean": [
+        "I think celebrities have a unique platform and their voices can sometimes bring attention to important issues that might otherwise be overlooked.",
+        "On the other hand, some people feel that celebrities may not have the expertise needed to weigh in on complex political matters.",
+        "It can be helpful when public figures use their influence for causes they truly care about, as long as they remain respectful of differing opinions.",
+        "However, I understand concerns that celebrity involvement in politics might distract from more informed discussions led by experts or officials.",
+        "Ultimately, whether celebrities should speak out depends on how responsibly they use their influence and whether they genuinely contribute to the conversation."
+      ],
+      "overclaim": "If celebrities are allowed to talk about politics, they will end up controlling every major political decision in the country.",
+      "factual_error": "Celebrities have only started getting involved in politics within the last five years, which is a really recent phenomenon.",
+      "off_topic": "Last weekend I went to an outdoor concert, and the energy from the crowd made it such a memorable experience.",
+      "factual_truth": "Celebrities have been involved in politics for many decades.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m20",
+      "domain": "environment",
+      "motion": "Nuclear power is the best tool against climate change",
+      "clean": [
+        "Nuclear power offers a consistent source of low-carbon energy, which is an important factor in fighting climate change.",
+        "However, concerns about nuclear waste and the potential for accidents make some people hesitant to consider nuclear as the best tool.",
+        "While renewable sources like wind and solar are essential, they depend on weather and may not always provide reliable energy around the clock.",
+        "Nuclear power plants require significant investment and time to build, which could delay immediate action against climate change.",
+        "Balancing the risks and benefits of nuclear energy is necessary when deciding its role in addressing our climate challenges."
+      ],
+      "overclaim": "Nuclear power is the only realistic solution for stopping climate change, and any other approach will absolutely fail to make a difference.",
+      "factual_error": "Nuclear power plants actually release more carbon dioxide than coal plants, which makes them the worst option for the environment.",
+      "off_topic": "Speaking of challenges, I recently learned how to bake sourdough bread and getting the starter right was a real adventure.",
+      "factual_truth": "Nuclear power plants emit much less carbon dioxide than coal plants.",
+      "plant_at": 1,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m21",
+      "domain": "environment",
+      "motion": "Space exploration is worth the public money",
+      "clean": [
+        "I believe space exploration has inspired many people and driven technological advances that benefit our daily lives in subtle ways.",
+        "At the same time, I understand concerns about the cost, especially when there are urgent problems here on Earth demanding public funds.",
+        "Investing in space can foster global cooperation and spark curiosity, but it is important to balance those benefits against present needs.",
+        "Some people feel the money could be better spent on healthcare or education, and I think that is a fair point to consider.",
+        "Ultimately, I think the value of exploring space goes beyond just scientific discovery, but we need to be thoughtful about our priorities."
+      ],
+      "overclaim": "Space exploration is the single most important use of public money, and nothing else comes close to matching its value for society.",
+      "factual_error": "We landed the first humans on the moon in the year nineteen ninety-nine, which marked a turning point for space exploration.",
+      "off_topic": "Speaking of big dreams, I really hope my favorite football team wins the championship this season, because they have come close so often.",
+      "factual_truth": "The first humans landed on the moon in the year nineteen sixty-nine.",
+      "plant_at": 2,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m22",
+      "domain": "environment",
+      "motion": "Single-use plastic bags should be banned everywhere",
+      "clean": [
+        "While I understand the environmental concerns, I also think we need to consider the convenience single-use plastic bags provide to many people.",
+        "Banning these bags everywhere might help reduce litter, but it could also create challenges for small businesses and low-income communities.",
+        "Reusable bags are a great alternative, yet not everyone has easy access to them or the means to purchase extras.",
+        "I believe any decision about banning single-use plastic bags should take into account both environmental impact and the needs of different communities.",
+        "Ultimately, we need to find a balance between protecting our environment and making sure people are not unfairly burdened by new rules."
+      ],
+      "overclaim": "There is absolutely no valid reason for anyone to oppose banning single-use plastic bags everywhere, and it would only bring positive outcomes.",
+      "factual_error": "Single-use plastic bags were first invented in the late eighteen hundreds as a solution to food storage problems.",
+      "off_topic": "Speaking of bags, last week I accidentally knocked over a can of paint in my kitchen and ruined my new floor tiles.",
+      "factual_truth": "Single-use plastic bags were invented in the nineteen sixties.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    },
+    {
+      "id": "m23",
+      "domain": "environment",
+      "motion": "Short domestic flights should be banned where trains exist",
+      "clean": [
+        "I think the idea of banning short domestic flights where trains exist is appealing from an environmental perspective, but it is not that simple.",
+        "People often rely on short flights for convenience, especially in regions where train service may not be as reliable or accessible.",
+        "While trains offer a lower-carbon alternative, not everyone has the time or flexibility to use them for every journey.",
+        "It is important to recognize that transitioning away from flights could be challenging for those with mobility needs or strict time constraints.",
+        "Ultimately, I believe we should encourage train travel where possible, but a complete ban on flights raises some significant concerns."
+      ],
+      "overclaim": "Banning every short domestic flight where a train exists would instantly solve all our environmental and transportation problems in one stroke.",
+      "factual_error": "France was the very first country to completely ban all domestic flights back in nineteen seventy-six, which set a global precedent.",
+      "off_topic": "Speaking of travel, I recently got completely absorbed in building virtual cities in that new simulation game I downloaded last weekend.",
+      "factual_truth": "France introduced some restrictions on short domestic flights in the early twenty-twenties, but did not ban them all.",
+      "plant_at": 4,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": true,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": []
+    }
+  ],
+  "dropped": [
+    {
+      "id": "m06",
+      "domain": "technology",
+      "motion": "Self-driving cars should be allowed on public roads today",
+      "clean": [
+        "I believe self-driving cars have great potential to improve road safety, but there are still many challenges that need to be addressed.",
+        "Allowing autonomous vehicles on public roads today could help us learn more about their real-world performance and limitations.",
+        "At the same time, I worry that rushing this technology could put both passengers and pedestrians at unnecessary risk.",
+        "We need to balance innovation with caution, ensuring that regulations keep pace with the rapid development of self-driving systems.",
+        "Ultimately, careful oversight and gradual introduction might be the best way to realize the benefits while minimizing potential harm."
+      ],
+      "overclaim": "Self-driving cars are so advanced now that if we allowed them everywhere today, all accidents would disappear overnight.",
+      "factual_error": "Self-driving cars were actually invented in the early seventies, and thousands have been operating safely on public roads since then.",
+      "off_topic": "Speaking of safety, last weekend my kitchen ceiling collapsed while I was trying to replace a light fixture, and what a mess that was.",
+      "factual_truth": "Self-driving cars have only been tested on public roads in recent years, and none were invented in the early seventies.",
+      "plant_at": 3,
+      "validation": {
+        "clean": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "overclaim": false,
+        "factual_error": true,
+        "off_topic": true
+      },
+      "problems": [
+        "overclaim_failed_check"
+      ]
+    }
+  ]
+}

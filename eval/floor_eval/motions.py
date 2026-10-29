@@ -1,0 +1,28 @@
+"""Hand-written debate motions, four per domain. Swap in the IQ2 set when shared."""
+
+MOTIONS: list[tuple[str, str]] = [
+    ("education", "Students should be allowed to use AI for homework"),
+    ("education", "Standardized tests should be dropped from college admissions"),
+    ("education", "Schools should ban smartphones during class"),
+    ("education", "Homework should be abolished in primary school"),
+    ("technology", "Social media does more harm than good for teenagers"),
+    ("technology", "Remote work is better than working in an office"),
+    ("technology", "Self-driving cars should be allowed on public roads today"),
+    ("technology", "Governments should license powerful AI models"),
+    ("economy", "A four-day work week should become the standard"),
+    ("economy", "Tipping should be replaced by higher wages"),
+    ("economy", "Cities should ban private cars from downtown areas"),
+    ("economy", "Universal basic income would do more good than harm"),
+    ("health", "Sugary drinks should carry a special tax"),
+    ("health", "Fast food advertising aimed at children should be banned"),
+    ("health", "Daylight saving time should be abolished"),
+    ("health", "Employers should pay for gym memberships"),
+    ("society", "Voting should be mandatory"),
+    ("society", "Zoos should be phased out"),
+    ("society", "Professional athletes are overpaid"),
+    ("society", "Celebrities should stay out of politics"),
+    ("environment", "Nuclear power is the best tool against climate change"),
+    ("environment", "Space exploration is worth the public money"),
+    ("environment", "Single-use plastic bags should be banned everywhere"),
+    ("environment", "Short domestic flights should be banned where trains exist"),
+]
