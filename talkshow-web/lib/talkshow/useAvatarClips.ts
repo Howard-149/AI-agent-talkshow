@@ -27,10 +27,11 @@ export function useAvatarClips() {
         setWarmingRole(ev.role);
         return;
       }
-      if (ev.url) {
+      const url = ev.url;
+      if (url) {
         setClipsByRole((prev) => ({
           ...prev,
-          [ev.role]: { url: ev.url, step: ev.step },
+          [ev.role]: { url, step: ev.step },
         }));
       }
       return;

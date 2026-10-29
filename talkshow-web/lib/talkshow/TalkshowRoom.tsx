@@ -46,6 +46,7 @@ export function TalkshowRoom(props: {
   userChoices?: TalkshowConnectChoices;
   locale?: TalkshowLocale;
   recordMode?: boolean;
+  aiOnly?: boolean;
 }) {
   const keyProvider = useMemo(() => new ExternalE2EEKeyProvider(), []);
   const { worker, e2eePassphrase } = useSetupE2EE();
@@ -162,13 +163,7 @@ export function TalkshowRoom(props: {
       await room.localParticipant.setCameraEnabled(choices?.videoEnabled ?? false);
       await room.localParticipant.setMicrophoneEnabled(choices?.audioEnabled ?? false);
     };
-  }, [
-    room,
-    props.liveKitUrl,
-    props.token,
-    connectOptions,
-    props.userChoices,
-  ]);
+  }, [room, props.liveKitUrl, props.token, connectOptions, props.userChoices]);
 
   useEffect(() => {
     if (!e2eeSetupComplete) return;
@@ -213,7 +208,11 @@ export function TalkshowRoom(props: {
             onLeave={() => router.push('/')}
           />
         ) : (
-          <TalkshowView viewerLocale={viewerLocale} recordMode={props.recordMode} />
+          <TalkshowView
+            viewerLocale={viewerLocale}
+            recordMode={props.recordMode}
+            aiOnly={props.aiOnly}
+          />
         )}
         {!props.recordMode && <StartMediaButton label="Click to enable playback" />}
         {!props.recordMode && <DebugMode logLevel={LogLevel.debug} />}

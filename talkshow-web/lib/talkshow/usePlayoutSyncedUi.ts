@@ -7,19 +7,12 @@ import { ParticipantEvent, type Participant, type RemoteParticipant } from 'live
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { parseAgentMetadata, type PanelRole } from '@/lib/talkshow/roles';
+import { updateTranscript, type TranscriptLine } from './transcript';
 
-export type SyncedTranscriptLine = {
-  id: string;
-  speaker: string;
-  role: string;
-  text: string;
-  ts: number;
-};
+export type SyncedTranscriptLine = TranscriptLine;
 
 /** Remote talkshow agent participant (single RTC bot). */
-export function findAgentParticipant(
-  remotes: RemoteParticipant[],
-): RemoteParticipant | undefined {
+export function findAgentParticipant(remotes: RemoteParticipant[]): RemoteParticipant | undefined {
   return remotes.find((p) => parseAgentMetadata(p.metadata)?.talkshowAgent);
 }
 
@@ -74,16 +67,26 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
   const [lines, setLines] = useState<SyncedTranscriptLine[]>([]);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const appendLine = useCallback((role: string, speaker: string, text: string) => {
-    const line: SyncedTranscriptLine = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      role,
-      speaker,
-      text,
-      ts: Date.now(),
-    };
-    setLines((prev) => [...prev, line]);
-  }, []);
+  const appendLine = useCallback(
+    (
+      role: string,
+      speaker: string,
+      text: string,
+      options: { id?: string; final?: boolean; interrupted?: boolean } = {},
+    ) => {
+      const line: SyncedTranscriptLine = {
+        id: options.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role,
+        speaker,
+        text,
+        ts: Date.now(),
+        final: options.final ?? true,
+        interrupted: options.interrupted,
+      };
+      setLines((prev) => updateTranscript(prev, line));
+    },
+    [],
+  );
 
   const activeRole = signaledRole;
 
@@ -104,10 +107,15 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
   }, []);
 
   const pushLine = useCallback(
-    (role: string, speaker: string, text: string) => {
+    (
+      role: string,
+      speaker: string,
+      text: string,
+      options?: { id?: string; final?: boolean; interrupted?: boolean },
+    ) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      appendLine(role, speaker, trimmed);
+      appendLine(role, speaker, trimmed, options);
     },
     [appendLine],
   );
@@ -117,5 +125,20 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
     [signaledRole, lipSyncSpeaking],
   );
 
-  return { activeRole, lipSyncActive, lines, onRoleActive, onRoleIdle, pushLine };
+  const clearLines = useCallback(() => setLines([]), []);
+  const finishLine = useCallback((id: string, interrupted: boolean) => {
+    setLines((prev) =>
+      prev.map((line) => (line.id === id ? { ...line, final: true, interrupted } : line)),
+    );
+  }, []);
+  return {
+    activeRole,
+    lipSyncActive,
+    lines,
+    onRoleActive,
+    onRoleIdle,
+    pushLine,
+    clearLines,
+    finishLine,
+  };
 }

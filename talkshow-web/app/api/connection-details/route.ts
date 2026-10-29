@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const metadataParam = request.nextUrl.searchParams.get('metadata') ?? '';
     const localeParam = request.nextUrl.searchParams.get('locale');
     const region = request.nextUrl.searchParams.get('region');
+    const aiOnly = request.nextUrl.searchParams.get('aiOnly') === '1';
     if (!LIVEKIT_URL) {
       throw new Error('LIVEKIT_URL is not defined');
     }
@@ -56,6 +57,23 @@ export async function GET(request: NextRequest) {
     if (!randomParticipantPostfix) {
       randomParticipantPostfix = randomString(4);
     }
+    // Laptop text mode reuses the repo's guarded ghost-turn path. Audio-only
+    // Gemma deployments keep their normal participant metadata unchanged.
+    if (process.env.TALKSHOW_TEXT_INPUT === '1') {
+      let parsed: Record<string, unknown> = {};
+      try {
+        const value = metadata ? JSON.parse(metadata) : {};
+        if (value && typeof value === 'object' && !Array.isArray(value)) parsed = value;
+      } catch {
+        // A malformed optional metadata parameter must not break local joins.
+      }
+      metadata = JSON.stringify({
+        ...parsed,
+        ghost: true,
+        ...(aiOnly ? { aiOnly: true, ghostViewer: true } : {}),
+      });
+    }
+
     const participantToken = await createParticipantToken(
       {
         identity: `${participantName}__${randomParticipantPostfix}`,
@@ -63,6 +81,7 @@ export async function GET(request: NextRequest) {
         metadata,
       },
       roomName,
+      aiOnly,
     );
 
     // Return connection details
@@ -85,13 +104,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function createParticipantToken(userInfo: AccessTokenOptions, roomName: string) {
+function createParticipantToken(userInfo: AccessTokenOptions, roomName: string, aiOnly = false) {
   const at = new AccessToken(API_KEY, API_SECRET, userInfo);
   at.ttl = '5m';
   const grant: VideoGrant = {
     room: roomName,
     roomJoin: true,
-    canPublish: true,
+    canPublish: !aiOnly,
     canPublishData: true,
     canSubscribe: true,
   };

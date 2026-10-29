@@ -13,6 +13,7 @@ export default async function Page({
     hq?: string;
     codec?: string;
     singlePC?: string;
+    aiOnly?: string;
   }>;
 }) {
   const _params = await params;
@@ -31,6 +32,7 @@ export default async function Page({
       hq={hq}
       codec={codec}
       singlePeerConnection={singlePC}
+      aiOnly={_searchParams.aiOnly === '1'}
     />
   );
 }

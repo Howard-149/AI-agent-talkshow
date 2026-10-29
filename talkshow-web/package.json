@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@datadog/browser-logs": "^5.23.3",
+    "@livekit/components-core": "0.12.13",
     "@livekit/components-react": "2.9.21",
     "@livekit/components-styles": "1.2.0",
     "@livekit/krisp-noise-filter": "0.4.3",
     "@livekit/track-processors": "^0.7.0",
+    "@next/env": "15.5.16",
     "livekit-client": "2.19.1",
     "livekit-server-sdk": "2.15.4",
     "next": "15.5.16",

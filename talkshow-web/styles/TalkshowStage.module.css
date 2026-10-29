@@ -7,6 +7,339 @@
   max-width: 42rem;
 }
 
+/* Pure-AI presentation mode: legible at 1080p, no human seat/control dock. */
+.aiOnlyRoom .title {
+  font-size: 1.3rem;
+}
+.aiOnlyRoom .stage {
+  padding: 1.2rem 2rem;
+}
+.aiOnlyRoom .panelRow {
+  --panel-avatar-size: 92px;
+  width: min(1120px, 100%);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.aiOnlyRoom .card {
+  min-width: 0;
+  padding: 1rem;
+}
+.aiOnlyRoom .meta strong {
+  font-size: 1.15rem;
+}
+.aiOnlyRoom .meta span {
+  font-size: 0.85rem;
+}
+.aiOnlyRoom .body {
+  padding: 0 2rem 1.4rem;
+  gap: 1.2rem;
+}
+.aiOnlyRoom .transcriptTitle {
+  font-size: 1.15rem;
+}
+.aiOnlyRoom .lineText {
+  font-size: 1.12rem;
+  line-height: 1.65;
+}
+.aiOnlyRoom .speaker {
+  font-size: 1rem;
+}
+.aiOnlyRoom .reactivePanel {
+  flex-basis: 390px;
+  font-size: 0.95rem;
+  padding: 1.2rem;
+}
+.aiOnlyRoom .reactiveHeading h3 {
+  font-size: 1.12rem;
+}
+.aiOnlyRoom .reactivePanel button {
+  font-size: 0.9rem;
+  padding: 0.6rem 0.8rem;
+}
+.aiOnlyRoom .reactiveHeard {
+  font-size: 0.95rem;
+}
+.aiOnlyRoom .reactiveNote {
+  font-size: 0.8rem;
+}
+.aiOnlyRoom .reactiveDecision summary {
+  font-size: 0.85rem;
+}
+@media (max-width: 900px) {
+  .aiOnlyRoom .card {
+    min-width: 0;
+  }
+  .aiOnlyRoom .stage {
+    padding: 0.8rem;
+  }
+  .aiOnlyRoom .body {
+    padding: 0 0.8rem 0.8rem;
+  }
+  .aiOnlyRoom .reactivePanel {
+    flex-basis: 300px;
+    max-width: 40%;
+  }
+}
+@media (max-width: 650px) {
+  .aiOnlyRoom .panelRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.observerCard {
+  border-style: dashed;
+  border-color: #526072;
+  background: #141922;
+}
+.aiSeatBadge,
+.observerBadge {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  border-radius: 5px;
+  padding: 0.18rem 0.38rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.aiSeatBadge {
+  color: #d9e5f3;
+  background: #2a3547;
+  border: 1px solid #53657b;
+}
+.observerBadge {
+  color: #cebfa2;
+  background: #302e2a;
+  border: 1px solid #72654f;
+}
+.transcriptHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 64px;
+  flex-shrink: 0;
+  padding-right: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.transcriptHeading .transcriptTitle {
+  border-bottom: none;
+  flex-shrink: 0;
+}
+.interruptionBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 0.8rem;
+  color: #fff1d1;
+  background: #513725;
+  border: 1px solid #c8945d;
+  border-radius: 6px;
+  animation: interruptionFlash 1.2s ease-out;
+}
+.interruptionBanner > span {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #e6bd83;
+}
+.interruptionBanner strong {
+  font-size: 1.05rem;
+}
+.aiTranscriptBadge {
+  font-size: 0.65rem;
+  align-self: center;
+  padding: 0 0.25rem;
+  border: 1px solid #58687c;
+  border-radius: 3px;
+  color: #aabbcf;
+}
+.lineHeader .time {
+  margin-left: auto;
+}
+.line[data-interrupted='true'] {
+  border-left: 2px solid #b98959;
+  padding-left: 0.6rem;
+}
+@keyframes interruptionFlash {
+  from {
+    box-shadow: 0 0 0 4px #dbad644d;
+  }
+  to {
+    box-shadow: 0 0 0 0 #dbad6400;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .interruptionBanner {
+    animation: none;
+  }
+}
+@media (max-width: 650px) {
+  .interruptionBanner {
+    gap: 0.3rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .interruptionBanner strong {
+    font-size: 0.85rem;
+  }
+}
+
+.reactivePanel {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1rem;
+  border-left: 1px solid #2d3441;
+  background: #11151d;
+  font-size: 0.8rem;
+}
+.stage.reactiveStage {
+  flex: 0 0 auto;
+  padding: 0.7rem 1.25rem;
+}
+.reactiveStage .panelRow {
+  --panel-avatar-size: 80px;
+}
+.reactiveStage .card {
+  padding: 0.65rem;
+}
+.body.reactiveBody {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 0 1.25rem 0.6rem;
+  gap: 0.7rem;
+}
+.reactiveBody .transcript {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+.reactiveBody .transcriptScroll {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+}
+.reactiveHeading,
+.reactiveNow,
+.reactiveDecision header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.reactiveHeading,
+.reactiveNow {
+  flex-shrink: 0;
+}
+.reactiveHeading h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.reactiveContent {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.reactiveExport textarea {
+  width: 100%;
+  color: #c5cdd6;
+  background: #0d1118;
+  border: 1px solid #394453;
+  font: 0.65rem monospace;
+  resize: vertical;
+}
+.reactiveExport {
+  margin: 0.5rem 0;
+}
+.reactivePanel button {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #394453;
+  border-radius: 6px;
+  color: #e7edf5;
+  background: #202735;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.reactivePanel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.reactiveModes {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+.reactiveNote {
+  font-size: 0.67rem;
+  color: #8e9bad;
+}
+.reactiveNow {
+  margin: 0.5rem 0;
+}
+.reactivePanel .interruptButton {
+  border-color: #be715f;
+  background: #472b2a;
+}
+.reactiveHeard {
+  color: #b8c5d6;
+  line-height: 1.5;
+  font-size: 0.74rem;
+}
+.reactiveDecisions {
+  display: grid;
+  gap: 0.65rem;
+}
+.reactiveDecision {
+  border-left: 2px solid #64748b;
+  padding: 0.65rem;
+  background: #1a202a;
+}
+.reactiveDecision[data-status='granted'] {
+  border-color: #69baa6;
+}
+.reactiveDecision[data-status='queued'] {
+  border-color: #d1af65;
+}
+.reactiveDecision[data-status='rejected'] {
+  border-color: #d78678;
+}
+.reactiveDecision header span {
+  color: #aebdce;
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+.reactiveDecision p {
+  margin: 0.4rem 0;
+}
+.reactiveDecision summary {
+  cursor: pointer;
+  color: #91a2b7;
+  font-size: 0.7rem;
+}
+.reactiveDecision blockquote {
+  margin: 0.5rem 0;
+  color: #c5cdd6;
+}
+@media (max-width: 760px) {
+  .reactivePanel {
+    flex-basis: 230px;
+    max-width: 42%;
+    padding: 0.7rem;
+  }
+  .reactiveStage .panelRow {
+    --panel-avatar-size: 48px;
+  }
+  .reactiveModes {
+    flex-wrap: wrap;
+  }
+}
+
 .recoveryTitle {
   margin: 0 0 0.5rem;
   font-weight: 600;
@@ -40,6 +373,29 @@
   overflow: hidden;
 }
 
+.textInput {
+  margin: 0.5rem 1rem;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.textInputRow {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.textInputRow input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.7rem;
+  color: #f1f5f9;
+  background: #151923;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
 .room {
   display: flex;
   flex-direction: column;
@@ -69,6 +425,51 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.topicBanner {
+  flex: 0 0 auto;
+  padding: 1.1rem 2rem 0.4rem;
+  text-align: center;
+}
+.topicBanner > span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #a0adbf;
+}
+.topicBanner h2 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.4rem, 2.1vw, 2.3rem);
+  line-height: 1.25;
+  font-weight: 600;
+  color: #f3e8c5;
+}
+.liveCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 0.25rem;
+  vertical-align: -0.12em;
+  background: #d3ba7b;
+  animation: captionBlink 1s steps(2, jump-none) infinite;
+}
+.interruptedLabel {
+  color: #bd967e;
+  margin-right: auto;
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+@keyframes captionBlink {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liveCursor {
+    animation: none;
+  }
 }
 
 .localeToggle {

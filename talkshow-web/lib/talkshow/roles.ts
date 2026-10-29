@@ -29,6 +29,33 @@ export const UI_TOPIC = 'talkshow/ui';
 
 /** Agent → browser events on `talkshow/ui`. AI highlight + transcript gated on client audio. */
 export type UiEvent =
+  | { type: 'reactive_ready'; enabled: boolean }
+  | { type: 'reactive_reset'; mode: string; topic: string }
+  | { type: 'reactive_error'; message: string }
+  | { type: 'reactive_generating'; role: string; name: string; step: string }
+  | {
+      type: 'reactive_state';
+      active: boolean;
+      role: string;
+      name: string;
+      epoch: number;
+      step?: string;
+      mode: string;
+      heard: string;
+      stop_ack_ms?: number;
+      interrupted?: boolean;
+    }
+  | { type: 'reactive_complete'; mode: string; outcome: string }
+  | {
+      type: 'reactive_decision';
+      role: string;
+      name: string;
+      status: string;
+      rule: string;
+      reason: string;
+      source: string;
+      epoch?: number;
+    }
   | { type: 'panel_roster'; scenario: string; members: PanelistDef[] }
   | {
       type: 'role_active';
@@ -38,8 +65,25 @@ export type UiEvent =
       emotion?: string;
     }
   | { type: 'role_idle' }
-  | { type: 'avatar_clip'; role: PanelRole; url?: string; step?: string; transport?: 'livekit' | 'http' }
+  | {
+      type: 'avatar_clip';
+      role: PanelRole;
+      url?: string;
+      step?: string;
+      transport?: 'livekit' | 'http';
+    }
   | { type: 'floor_pending'; active: boolean }
+  | {
+      type: 'transcript_partial';
+      utterance_id: string;
+      epoch: number;
+      role: string;
+      speaker: string;
+      text: string;
+      final: false;
+      step?: string;
+      source: 'playout_sync';
+    }
   | {
       type: 'transcript';
       role: string;
@@ -48,6 +92,8 @@ export type UiEvent =
       final: boolean;
       step?: string;
       texts?: { en?: string; zh?: string };
+      utterance_id?: string;
+      interrupted?: boolean;
     }
   | {
       type: 'hand_raise';

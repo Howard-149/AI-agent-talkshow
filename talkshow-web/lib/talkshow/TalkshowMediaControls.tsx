@@ -10,6 +10,8 @@ import { MicrophoneSettings } from '@/lib/MicrophoneSettings';
 import type { TalkshowLocale } from '@/lib/talkshow/locale';
 import styles from '@/styles/TalkshowStage.module.css';
 
+const textInputMode = process.env.NEXT_PUBLIC_TALKSHOW_TEXT_INPUT === '1';
+
 type Props = {
   showSettings: boolean;
   onToggleSettings: () => void;
@@ -53,6 +55,7 @@ export function TalkshowMediaControls({
                 type="button"
                 className={`${styles.localeBtn} ${viewerLocale === 'zh' ? styles.localeBtnOn : ''}`}
                 aria-pressed={viewerLocale === 'zh'}
+                disabled={textInputMode}
                 onClick={() => onLocaleChange('zh')}
               >
                 中文
@@ -62,7 +65,7 @@ export function TalkshowMediaControls({
               Applies to transcript and upcoming TTS. Already-spoken lines keep their language.
             </p>
           </div>
-          <MicrophoneSettings />
+          {!textInputMode && <MicrophoneSettings />}
           <CameraSettings />
         </div>
       )}
@@ -71,7 +74,7 @@ export function TalkshowMediaControls({
         <ControlBar
           className={styles.lkBar}
           controls={{
-            microphone: true,
+            microphone: !textInputMode,
             camera: true,
             screenShare: false,
             chat: false,

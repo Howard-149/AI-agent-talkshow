@@ -66,6 +66,10 @@ export function PanelAvatar({
 }: Props) {
   const avatar = panelist.avatar;
   const initial = panelist.name[0] ?? '?';
+  // Audio-only deployments should not request the untracked avatar media.
+  if (process.env.NEXT_PUBLIC_DYSTREAM_ENABLED === '0') {
+    return <LetterAvatar initial={initial} color={panelist.color} compact={compact} mode="letter" />;
+  }
   const portraitUrl = localPortraitUrl(panelist.role) ?? avatar?.portrait;
   const idleVideoUrl = localIdleUrl(panelist.role) ?? avatar?.idle_video;
 
