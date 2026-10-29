@@ -24,7 +24,6 @@ from agent.adapters.avatar_video import (
     lk_video_enabled,
 )
 from agent.adapters.tts_synthesize import synthesize_pcm_for_config
-from agent.agents.factory import build_agent
 from agent.config import LocaleTTSConfig, load_persona_tts
 from agent.data import TalkShowData
 from agent.ui.participant_display import set_agent_display_name
@@ -55,6 +54,8 @@ async def switch_to_role(
         return
 
     ctrl = TurnController(data.scenario, data)
+    # The role classes import this module. Resolve the factory only when used.
+    from agent.agents.factory import build_agent
     data.silent_handoff = True
     try:
         ctrl.record_handoff(to_role=role, reason=reason)

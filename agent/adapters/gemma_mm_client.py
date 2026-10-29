@@ -198,6 +198,10 @@ class GemmaMMClient:
             "max_tokens": max_tokens or self._cfg.max_tokens,
             "temperature": 0.45 if temperature is None else temperature,
         }
+        # Ark's DeepSeek defaults to thinking. Panel turns need short, immediate
+        # spoken replies; reasoning can also exhaust the small output budget.
+        if self._cfg.model.startswith("deepseek-"):
+            payload["thinking"] = {"type": "disabled"}
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0

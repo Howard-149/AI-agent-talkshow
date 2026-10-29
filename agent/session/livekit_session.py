@@ -8,7 +8,6 @@ from typing import Any
 
 from livekit.agents import AgentSession, TurnHandlingOptions
 from livekit.plugins import silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from agent.adapters import GemmaAudioSTT, StoredReplyLLM
 from agent.adapters.tts_factory import build_tts_from_config
@@ -55,6 +54,10 @@ def build_turn_handling() -> TurnHandlingOptions:
             max_delay,
         )
         return TurnHandlingOptions(endpointing=endpointing)
+
+    # Importing registers an inference runner that preloads ONNX weights even
+    # when the session uses VAD only. Do not load it for the laptop text demo.
+    from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
     logger.info(
         "turn_handling multilingual endpointing min=%.2fs max=%.2fs",

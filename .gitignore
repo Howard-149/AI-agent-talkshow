@@ -29,6 +29,7 @@ avatar/runtime/clips/*
 eval/demo_emotions/*
 *.mp4
 poster/
+/models/
 
 # Local DyStream clone for reading upstream (Babel uses DYSTREAM_ROOT)
 /DyStream/
@@ -36,4 +37,3 @@ poster/
 # CosyVoice clone prompts (baked from Piper; see cosyvoice-prompts/README.md)
 cosyvoice-prompts/*.wav
 !cosyvoice-prompts/README.md
-

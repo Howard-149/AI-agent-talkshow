@@ -314,7 +314,11 @@ async def entrypoint(ctx: JobContext) -> None:
     await session.start(
         agent=build_agent("host", data),
         room=ctx.room,
-        room_options=room_io.RoomOptions(),
+        room_options=room_io.RoomOptions(
+            audio_input=False
+            if os.environ.get("TALKSHOW_TEXT_INPUT", "0") == "1"
+            else True,
+        ),
         room_input_options=room_io.RoomInputOptions(close_on_disconnect=True),
     )
 
