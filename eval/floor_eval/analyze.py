@@ -19,7 +19,7 @@ import statistics
 
 import numpy as np
 
-from agent.floor.reactive_policy import ReactivePolicy, parse_request
+from agent.floor.reactive_policy import ReactivePolicy, parse_request, quote_heard
 from eval.floor_eval.run import VARIANTS, variant_sentences
 
 # Fish voices played Amy's live lines at about 2.6 words per second.
@@ -98,7 +98,7 @@ def simulate(item: dict, variant: str, rep: int, arm: Arm, answers: dict) -> dic
             granted.sort(key=lambda g: (-g[0], arm.listeners.index(g[1])))
             _, listener, kind, evidence = granted[0]
             return {"cut": True, "prefix": prefix, "listener": listener, "kind": kind,
-                    "grounded": bool(norm(evidence)) and norm(evidence) in norm(heard),
+                    "grounded": quote_heard(evidence, heard),
                     "on_plant": variant != "clean" and targets(evidence, item[variant])}
     return {"cut": False}
 
@@ -192,8 +192,7 @@ def main(run: Path, stimuli: Path, out: Path) -> None:
         state = r["variant"] if heard_plant else ("clean" if r["variant"] == "clean" else "before_plant")
         actions[f"{r['listener']}:{state}"][parsed.action] += 1
         if parsed.action == "interrupt":
-            interrupt_quotes["grounded" if parsed.evidence and norm(parsed.evidence) in norm(r["heard"])
-                             else "ungrounded"] += 1
+            interrupt_quotes["grounded" if quote_heard(parsed.evidence, r["heard"]) else "ungrounded"] += 1
             if parsed.kind == "addition":
                 interrupt_quotes["addition_asked_to_interrupt"] += 1
     req["strict_parse_failures"] = strict_fail

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,20 @@ class FloorRequest:
     evidence: str = ""
     speech: str = ""
     source: str = "llm"
+
+
+def _words(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9']+", text.lower().replace("’", "'")))
+
+
+def quote_heard(evidence: str, heard: str) -> bool:
+    """The quote's words appear contiguously in the played speech.
+
+    Case, punctuation and wrapping quotation marks are ignored (small models
+    often return “quoted” evidence); paraphrases and stitched fragments are not.
+    """
+    quote = _words(evidence)
+    return bool(quote) and f" {quote} " in f" {_words(heard)} "
 
 
 @dataclass(frozen=True)
@@ -84,9 +99,7 @@ class ReactivePolicy:
             return Decision("none", "moderator_waits")
         if request.action == "queue" or request.kind == "addition":
             return Decision("queued", "wait_for_turn_end", 10)
-        evidence = " ".join(request.evidence.lower().split())
-        context = " ".join(heard.lower().split())
-        if not evidence or evidence not in context:
+        if not quote_heard(request.evidence, heard):
             return Decision("rejected", "evidence_not_heard")
         if moderation:
             # Moderation outranks debate cuts and is not limited by the AI

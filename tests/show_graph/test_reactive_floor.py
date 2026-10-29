@@ -52,6 +52,16 @@ class PolicyTests(unittest.TestCase):
     def test_unheard_evidence_rejected(self):
         self.assertEqual(self.decide(heard="A different statement.").rule, "evidence_not_heard")
 
+    def test_quoted_evidence_matches_but_paraphrase_does_not(self):
+        heard = "Honestly, AI answers teach students automatically, and that's my view."
+        for evidence in ["“AI answers teach students automatically.”", '"ai answers TEACH students"',
+                         "that’s my view"]:
+            req = FloorRequest("commentator", 8, "interrupt", kind="rebuttal", evidence=evidence)
+            self.assertEqual(self.decide(req, heard=heard).status, "granted", evidence)
+        for evidence in ["AI answers… automatically", "AI answers teach kids automatically", "“”", "teach student"]:
+            req = FloorRequest("commentator", 8, "interrupt", kind="rebuttal", evidence=evidence)
+            self.assertEqual(self.decide(req, heard=heard).rule, "evidence_not_heard", evidence)
+
     def test_self_request_rejected(self):
         self.assertEqual(self.decide(speaker="commentator").rule, "ineligible_role")
 
