@@ -1,0 +1,323 @@
+[
+  {
+    "room": "gefei-reactive-live-1793255893-0",
+    "mode": "live",
+    "passed": true,
+    "audio_seconds": 154.82,
+    "audio_peak": 25941,
+    "audio": "logs/reactive-acceptance-v2/gefei-reactive-live-1793255893-0.wav",
+    "decisions": 11,
+    "grants": [
+      {
+        "role": "commentator",
+        "source": "llm",
+        "rule": "grounded_rebuttal"
+      }
+    ],
+    "stop_ack_ms": [
+      15.5
+    ],
+    "intent_latency_ms": [
+      880,
+      1652,
+      969,
+      2015,
+      1073,
+      1549,
+      807,
+      1509,
+      785,
+      1353
+    ],
+    "history_tail_leak": false,
+    "ai_interrupted": true,
+    "human_reply_verified": false,
+    "demo_speeches": [
+      {
+        "role": "guest",
+        "step": "speech_guest_0",
+        "text": "I think students should be allowed to submit complete AI-generated homework answers without solving the problems themselves, because reading a correct answer is enough to learn."
+      },
+      {
+        "role": "commentator",
+        "step": "reactive_takeover_1",
+        "text": "I disagree: reading an answer isn\u2019t proof you understand how to get it. Homework should show the student can solve the problem, not just submit AI\u2019s work."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_response",
+        "text": "I hear you\u2014turning in an AI answer as your own doesn\u2019t show you can solve it. But a worked example can be a useful first step: in algebra, a student can ask AI to explain each line, then try a similar problem without help and see what they\u2019ve learned."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_followup",
+        "text": "Amy sees a worked AI example as a useful first step if students then try a similar problem; Ryan says homework needs to show they can solve it themselves. Ryan, what\u2019s one practical rule that would distinguish learning from copying?"
+      },
+      {
+        "role": "commentator",
+        "step": "demo_ryan_proposal",
+        "text": "Let students use AI for worked examples, but require them to solve a parallel problem on their own and explain one key step in their own words. Amy\u2019s approach can make a good first step; that quick check shows whether the idea actually stuck."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_final",
+        "text": "I could accept that rule: AI can show a worked example, then students solve a parallel problem and explain one key step themselves. I\u2019d just allow the example to remain available while they practice, so the check protects independent understanding without losing AI\u2019s value as a patient guide."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_wrap",
+        "text": "We agree AI can provide worked examples, but students should still show they understand by solving a parallel problem and explaining a key step. The trade-off is whether they can keep the example available while practicing\u2014thanks, Amy and Ryan."
+      }
+    ],
+    "natural_wrap_verified": true
+  },
+  {
+    "room": "gefei-reactive-live-1793256049-1",
+    "mode": "live",
+    "passed": true,
+    "audio_seconds": 148.68,
+    "audio_peak": 22128,
+    "audio": "logs/reactive-acceptance-v2/gefei-reactive-live-1793256049-1.wav",
+    "decisions": 10,
+    "grants": [
+      {
+        "role": "commentator",
+        "source": "llm",
+        "rule": "grounded_rebuttal"
+      }
+    ],
+    "stop_ack_ms": [
+      14.2
+    ],
+    "intent_latency_ms": [
+      1063,
+      1706,
+      784,
+      1448,
+      1027,
+      1471,
+      999,
+      1385,
+      904,
+      1278
+    ],
+    "history_tail_leak": false,
+    "ai_interrupted": true,
+    "human_reply_verified": false,
+    "demo_speeches": [
+      {
+        "role": "guest",
+        "step": "speech_guest_0",
+        "text": "I think students should be allowed to submit complete AI-generated homework answers without solving the problems themselves, because reading a correct answer can be enough to learn."
+      },
+      {
+        "role": "commentator",
+        "step": "reactive_takeover_1",
+        "text": "I disagree: reading an answer may help, but it doesn\u2019t show the student can solve the problem. Homework should reveal their understanding, not just an AI\u2019s."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_response",
+        "text": "I hear you\u2014if students just copy an answer, it can give a false impression of understanding. But a worked example can still teach: in algebra, AI can show each step, then the student tries a similar problem on their own."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_followup",
+        "text": "Amy thinks even a complete AI answer can teach, especially when it shows the steps; Ryan\u2019s concern is that copying doesn\u2019t demonstrate the student understands. Ryan, what\u2019s one practical homework rule that would separate learning from copying?"
+      },
+      {
+        "role": "commentator",
+        "step": "demo_ryan_proposal",
+        "text": "Let AI explain one worked example, then require students to solve a similar problem themselves and show their steps without AI. That keeps Amy\u2019s useful guidance while making understanding visible\u2014because reading the solution isn\u2019t the same as being able to do it."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_final",
+        "text": "I could accept that rule: AI can explain one example, but students solve a similar problem themselves and show their steps. The trade-off is that students may miss helpful examples when they\u2019re stuck, so teachers could allow a second hint or example before the independent attempt."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_wrap",
+        "text": "We agree AI can explain a worked example, but students should solve a similar problem themselves to show understanding. The trade-off is how much extra help to allow before the independent attempt; thanks, Amy and Ryan."
+      }
+    ],
+    "natural_wrap_verified": true
+  },
+  {
+    "room": "gefei-reactive-queue-1793256199-2",
+    "mode": "queue",
+    "passed": true,
+    "audio_seconds": 189.29,
+    "audio_peak": 21915,
+    "audio": "logs/reactive-acceptance-v2/gefei-reactive-queue-1793256199-2.wav",
+    "decisions": 15,
+    "grants": [],
+    "stop_ack_ms": [],
+    "intent_latency_ms": [
+      1083,
+      2080,
+      890,
+      1682,
+      976,
+      1758,
+      1071,
+      1385,
+      968,
+      1306,
+      921,
+      1526,
+      907,
+      1401
+    ],
+    "history_tail_leak": false,
+    "ai_interrupted": false,
+    "human_reply_verified": false,
+    "demo_speeches": [
+      {
+        "role": "guest",
+        "step": "speech_guest_0",
+        "text": "I think students should be allowed to submit complete AI-generated homework answers without solving the problems themselves, because reading a correct answer can be enough to learn. A worked solution shows the steps in order and gives students a clear model they can revisit when they study. It can also make homework less intimidating for students who are stuck or short on time. I\u2019d rather see them engage with an accurate explanation than spend an evening frustrated and learn nothing from the assignment."
+      },
+      {
+        "role": "commentator",
+        "step": "demo_ryan_reply",
+        "text": "Amy\u2019s right that a worked solution can help, but recognizing a finished answer isn\u2019t the same as understanding how to get there. Let students use AI for help, then ask them to solve a fresh, similar problem without it\u2014that\u2019s the proof the learning stuck."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_response",
+        "text": "I hear you\u2014recognizing a finished answer can create the illusion of understanding, and a fresh problem is a good check. I\u2019d still keep worked AI examples: if a student is stuck on fractions, seeing each step with a short explanation can give them a model to try on their own."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_followup",
+        "text": "Amy sees complete AI solutions as useful models, while Ryan worries that reading them can mask a lack of understanding and favors testing skills on a fresh problem. Ryan, what\u2019s one practical homework rule that would help students show they\u2019re learning rather than copying?"
+      },
+      {
+        "role": "commentator",
+        "step": "demo_ryan_proposal",
+        "text": "Allow AI-generated worked examples, but require students to submit their own attempt and a brief explanation of one key step; if they\u2019re stuck, they can say where and use AI to get unstuck. That keeps Amy\u2019s helpful model while making understanding visible instead of treating a copied solution as learning."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_final",
+        "text": "I could get behind that: students show their own attempt and explain one key step, with room to say where they got stuck. The trade-off is that a rough start shouldn\u2019t keep them from seeing a complete AI example, so they can learn the missing steps and then try a similar problem independently."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_wrap",
+        "text": "Amy and Ryan agree students can use worked AI examples, but should also show their own attempt and explain a key step. The trade-off is how to keep complete examples available to students who are stuck while still checking they can solve a similar problem independently. Thanks to you both."
+      }
+    ],
+    "natural_wrap_verified": true
+  },
+  {
+    "room": "gefei-reactive-human-1793256390-3",
+    "mode": "human",
+    "passed": true,
+    "audio_seconds": 51.11,
+    "audio_peak": 17145,
+    "audio": "logs/reactive-acceptance-v2/gefei-reactive-human-1793256390-3.wav",
+    "decisions": 2,
+    "grants": [
+      {
+        "role": "human",
+        "source": "human",
+        "rule": "human_priority"
+      },
+      {
+        "role": "human",
+        "source": "human",
+        "rule": "human_priority"
+      }
+    ],
+    "stop_ack_ms": [
+      9.5,
+      5.0
+    ],
+    "intent_latency_ms": [],
+    "history_tail_leak": false,
+    "ai_interrupted": false,
+    "human_reply_verified": true,
+    "demo_speeches": [
+      {
+        "role": "guest",
+        "step": "speech_guest_0",
+        "text": "I think students should be allowed to submit complete AI-generated homework answers without solving the problems themselves, because reading a correct answer can be enough to learn."
+      }
+    ],
+    "natural_wrap_verified": false
+  },
+  {
+    "room": "gefei-reactive-ai_only-1793256442-4",
+    "mode": "ai_only",
+    "passed": true,
+    "audio_seconds": 125.95,
+    "audio_peak": 23082,
+    "audio": "logs/reactive-acceptance-v2/gefei-reactive-ai_only-1793256442-4.wav",
+    "decisions": 10,
+    "grants": [
+      {
+        "role": "commentator",
+        "source": "llm",
+        "rule": "grounded_rebuttal"
+      }
+    ],
+    "stop_ack_ms": [
+      14.9
+    ],
+    "intent_latency_ms": [
+      901,
+      1652,
+      991,
+      1310,
+      841,
+      1212,
+      799,
+      1390,
+      834,
+      1187
+    ],
+    "history_tail_leak": false,
+    "ai_interrupted": true,
+    "human_reply_verified": false,
+    "demo_speeches": [
+      {
+        "role": "guest",
+        "step": "speech_guest_0",
+        "text": "I think students should be allowed to submit complete AI-generated homework answers without solving the problems themselves, because reading a correct answer is enough to learn."
+      },
+      {
+        "role": "commentator",
+        "step": "reactive_takeover_1",
+        "text": "I disagree: reading an answer isn\u2019t the same as being able to solve the problem yourself. Homework that skips the student\u2019s work can\u2019t show mastery."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_response",
+        "text": "That\u2019s a fair concern\u2014if students only copy the answer, they may not understand it. But a worked example can make a hard step visible; for instance, AI can show how to isolate a variable, then the student can try a similar problem on their own."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_followup",
+        "text": "Amy sees a complete AI answer as potentially instructive, especially when it shows a worked step; Ryan says submitting work without solving it doesn\u2019t demonstrate mastery. Ryan, what practical homework rule would show students are learning rather than copying?"
+      },
+      {
+        "role": "commentator",
+        "step": "demo_ryan_proposal",
+        "text": "Let AI show a worked example, then require students to solve a fresh, similar problem themselves and explain one key step in their own words. That keeps Amy\u2019s useful support, but makes understanding\u2014not a polished AI answer\u2014the proof of learning."
+      },
+      {
+        "role": "guest",
+        "step": "demo_amy_final",
+        "text": "I could accept that rule: AI may show a worked example, but students then solve a fresh problem and explain a key step themselves. The trade-off is that we shouldn\u2019t ban AI examples when students are stuck; teachers can ask for a brief note on how the example helped."
+      },
+      {
+        "role": "host",
+        "step": "demo_host_wrap",
+        "text": "We agree AI can show a worked example, while students still need to solve a fresh problem and explain a step themselves. The trade-off is allowing useful help without letting a polished answer stand in for learning; thanks, Amy and Ryan."
+      }
+    ],
+    "natural_wrap_verified": true
+  }
+]

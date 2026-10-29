@@ -1,0 +1,353 @@
+{
+  "model": "gpt-5.4-nano",
+  "items": 23,
+  "reps": 3,
+  "words_per_second": 2.6,
+  "arms": {
+    "first_rules": {
+      "label": "Before: first sentence only, rules",
+      "clean": {
+        "n": 69,
+        "rates": {
+          "no_cut": 1.0
+        },
+        "success": 1.0,
+        "success_ci95": [
+          1.0,
+          1.0
+        ],
+        "lag_sentences": null
+      },
+      "overclaim": {
+        "n": 69,
+        "rates": {
+          "caught": 0.14492753623188406,
+          "missed": 0.855072463768116
+        },
+        "success": 0.14492753623188406,
+        "success_ci95": [
+          0.028985507246376812,
+          0.30434782608695654
+        ],
+        "lag_sentences": 0
+      },
+      "factual_error": {
+        "n": 69,
+        "rates": {
+          "caught": 0.2028985507246377,
+          "missed": 0.7971014492753623
+        },
+        "success": 0.2028985507246377,
+        "success_ci95": [
+          0.07246376811594203,
+          0.37681159420289856
+        ],
+        "lag_sentences": 0
+      },
+      "off_topic": {
+        "n": 69,
+        "rates": {
+          "missed": 1.0
+        },
+        "success": 0.0,
+        "success_ci95": [
+          0.0,
+          0.0
+        ],
+        "lag_sentences": null
+      },
+      "planted_detection": 0.11594202898550725,
+      "planted_detection_ci95": [
+        0.03864734299516908,
+        0.21256038647342995
+      ],
+      "ungrounded_cuts": 0,
+      "cuts": 24,
+      "detection_by_plant_position": {
+        "1": 0.4444444444444444,
+        "2": 0.0,
+        "3": 0.0,
+        "4": 0.0
+      }
+    },
+    "every_rules": {
+      "label": "Every sentence, rules",
+      "clean": {
+        "n": 69,
+        "rates": {
+          "false_cut": 0.08695652173913043,
+          "no_cut": 0.9130434782608695
+        },
+        "success": 0.9130434782608695,
+        "success_ci95": [
+          0.855072463768116,
+          0.9710144927536232
+        ],
+        "lag_sentences": null
+      },
+      "overclaim": {
+        "n": 69,
+        "rates": {
+          "caught": 0.6521739130434783,
+          "missed": 0.34782608695652173
+        },
+        "success": 0.6521739130434783,
+        "success_ci95": [
+          0.4927536231884058,
+          0.7971014492753623
+        ],
+        "lag_sentences": 0.3333333333333333
+      },
+      "factual_error": {
+        "n": 69,
+        "rates": {
+          "caught": 0.7536231884057971,
+          "missed": 0.21739130434782608,
+          "wrong_target": 0.014492753623188406,
+          "premature": 0.014492753623188406
+        },
+        "success": 0.7536231884057971,
+        "success_ci95": [
+          0.5942028985507246,
+          0.8985507246376812
+        ],
+        "lag_sentences": 0.15384615384615385
+      },
+      "off_topic": {
+        "n": 69,
+        "rates": {
+          "missed": 0.9130434782608695,
+          "wrong_target": 0.07246376811594203,
+          "caught_by_other": 0.014492753623188406
+        },
+        "success": 0.0,
+        "success_ci95": [
+          0.0,
+          0.0
+        ],
+        "lag_sentences": null
+      },
+      "planted_detection": 0.46859903381642515,
+      "planted_detection_ci95": [
+        0.391304347826087,
+        0.5362318840579711
+      ],
+      "ungrounded_cuts": 0,
+      "cuts": 111,
+      "detection_by_plant_position": {
+        "1": 0.5925925925925926,
+        "2": 0.5185185185185185,
+        "3": 0.3333333333333333,
+        "4": 0.4074074074074074
+      }
+    },
+    "every_rules_mod": {
+      "label": "Every sentence, rules + moderator (new)",
+      "clean": {
+        "n": 69,
+        "rates": {
+          "false_cut": 0.08695652173913043,
+          "no_cut": 0.9130434782608695
+        },
+        "success": 0.9130434782608695,
+        "success_ci95": [
+          0.855072463768116,
+          0.9710144927536232
+        ],
+        "lag_sentences": null
+      },
+      "overclaim": {
+        "n": 69,
+        "rates": {
+          "caught": 0.6521739130434783,
+          "missed": 0.34782608695652173
+        },
+        "success": 0.6521739130434783,
+        "success_ci95": [
+          0.4927536231884058,
+          0.7971014492753623
+        ],
+        "lag_sentences": 0.3333333333333333
+      },
+      "factual_error": {
+        "n": 69,
+        "rates": {
+          "caught": 0.7101449275362319,
+          "missed": 0.21739130434782608,
+          "wrong_target": 0.014492753623188406,
+          "caught_by_other": 0.043478260869565216,
+          "premature": 0.014492753623188406
+        },
+        "success": 0.7101449275362319,
+        "success_ci95": [
+          0.5507246376811594,
+          0.855072463768116
+        ],
+        "lag_sentences": 0.16326530612244897
+      },
+      "off_topic": {
+        "n": 69,
+        "rates": {
+          "missed": 0.3333333333333333,
+          "caught": 0.6231884057971014,
+          "wrong_target": 0.043478260869565216
+        },
+        "success": 0.6231884057971014,
+        "success_ci95": [
+          0.43478260869565216,
+          0.7971014492753623
+        ],
+        "lag_sentences": 0.046511627906976744
+      },
+      "planted_detection": 0.6618357487922706,
+      "planted_detection_ci95": [
+        0.5845410628019324,
+        0.7342995169082126
+      ],
+      "ungrounded_cuts": 0,
+      "cuts": 151,
+      "detection_by_plant_position": {
+        "1": 0.6666666666666666,
+        "2": 0.7592592592592593,
+        "3": 0.6444444444444445,
+        "4": 0.5740740740740741
+      }
+    },
+    "every_llm_only": {
+      "label": "Every sentence + moderator, LLM only (no rules)",
+      "clean": {
+        "n": 69,
+        "rates": {
+          "false_cut": 0.08695652173913043,
+          "no_cut": 0.9130434782608695
+        },
+        "success": 0.9130434782608695,
+        "success_ci95": [
+          0.855072463768116,
+          0.9710144927536232
+        ],
+        "lag_sentences": null
+      },
+      "overclaim": {
+        "n": 69,
+        "rates": {
+          "caught": 0.6811594202898551,
+          "missed": 0.3188405797101449
+        },
+        "success": 0.6811594202898551,
+        "success_ci95": [
+          0.5217391304347826,
+          0.8260869565217391
+        ],
+        "lag_sentences": 0.3404255319148936
+      },
+      "factual_error": {
+        "n": 69,
+        "rates": {
+          "caught": 0.7101449275362319,
+          "missed": 0.21739130434782608,
+          "wrong_target": 0.014492753623188406,
+          "caught_by_other": 0.043478260869565216,
+          "premature": 0.014492753623188406
+        },
+        "success": 0.7101449275362319,
+        "success_ci95": [
+          0.5507246376811594,
+          0.855072463768116
+        ],
+        "lag_sentences": 0.16326530612244897
+      },
+      "off_topic": {
+        "n": 69,
+        "rates": {
+          "missed": 0.3333333333333333,
+          "caught": 0.6231884057971014,
+          "wrong_target": 0.043478260869565216
+        },
+        "success": 0.6231884057971014,
+        "success_ci95": [
+          0.43478260869565216,
+          0.7971014492753623
+        ],
+        "lag_sentences": 0.046511627906976744
+      },
+      "planted_detection": 0.6714975845410628,
+      "planted_detection_ci95": [
+        0.5942028985507246,
+        0.7439613526570048
+      ],
+      "ungrounded_cuts": 2,
+      "cuts": 153,
+      "detection_by_plant_position": {
+        "1": 0.7037037037037037,
+        "2": 0.7592592592592593,
+        "3": 0.6444444444444445,
+        "4": 0.5740740740740741
+      }
+    }
+  },
+  "requests": {
+    "calls": 2208,
+    "errors": 0,
+    "latency_ms_median": 1238.0,
+    "latency_ms_p90": 1661.6,
+    "strict_parse_failures": 34,
+    "actions": {
+      "commentator:before_plant": {
+        "queue": 295,
+        "none": 5,
+        "interrupt": 1
+      },
+      "commentator:clean": {
+        "queue": 260,
+        "interrupt": 6,
+        "none": 3
+      },
+      "commentator:factual_error": {
+        "interrupt": 105,
+        "queue": 62,
+        "none": 1
+      },
+      "commentator:off_topic": {
+        "none": 11,
+        "queue": 148,
+        "interrupt": 7
+      },
+      "commentator:overclaim": {
+        "interrupt": 83,
+        "queue": 84
+      },
+      "host:before_plant": {
+        "none": 306
+      },
+      "host:clean": {
+        "none": 276
+      },
+      "host:factual_error": {
+        "none": 170,
+        "interrupt": 4
+      },
+      "host:off_topic": {
+        "none": 107,
+        "interrupt": 66
+      },
+      "host:overclaim": {
+        "none": 174
+      }
+    },
+    "interrupt_requests": {
+      "grounded": 270,
+      "ungrounded": 2
+    }
+  },
+  "run_meta": {
+    "model": "gpt-5.4-nano",
+    "base_url": "https://api.openai.com/v1",
+    "reps": 3,
+    "items": 23,
+    "stimuli": "eval/floor_eval/data/stimuli.json",
+    "seconds": 279.0,
+    "ok": 2208,
+    "error": 0
+  }
+}

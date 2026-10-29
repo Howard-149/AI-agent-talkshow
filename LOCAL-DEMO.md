@@ -193,13 +193,29 @@ no reactive line or demo generation is active, the interruption button is disabl
   browser that does not support file downloads.
   Server JSONL includes complete request, cancellation and sentence telemetry.
 
+- Listeners re-decide after every fully played sentence, with at most one poll in
+  flight (`TALKSHOW_REACTIVE_LISTEN=first` restores the single first-sentence poll).
+- The moderator also listens and may make a priority-80 "moderation" cut when a
+  panelist clearly leaves the topic or attacks someone; it bypasses the AI cooldown
+  and chain cap, still waits for the minimum speaking time, and hands the floor back
+  to the speaker it cut (`TALKSHOW_REACTIVE_HOST_CUT=0` disables it).
+- Quotes are matched as word sequences, ignoring case, punctuation and quotation marks.
+
 Useful optional configuration:
 
 ```dotenv
 TALKSHOW_REACTIVE_MIN_SPEECH_S=3
 TALKSHOW_REACTIVE_COOLDOWN_S=15
 TALKSHOW_REACTIVE_POLL_TIMEOUT_S=12
+TALKSHOW_REACTIVE_LISTEN=every
+TALKSHOW_REACTIVE_HOST_CUT=1
+# OpenAI gpt-5+/o-series: reasoning is off unless set (low | medium | high)
+TALKSHOW_LLM_REASONING_EFFORT=none
 ```
+
+Offline evaluation of these decisions (planted overclaims, factual errors and
+off-topic drifts, with arms replayed from cached answers): `eval/floor_eval/`,
+results in `eval/floor_eval/results/README.md`.
 
 ### Acceptance and reproducibility
 
