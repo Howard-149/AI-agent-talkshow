@@ -33,3 +33,18 @@ class TextBackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_gemma_payload_unchanged(self):
         payload = await self._complete('google/gemma-4-E4B-it')
         self.assertNotIn('thinking', payload)
+        self.assertEqual(payload['max_tokens'], 128)
+        self.assertEqual(payload['temperature'], 0.45)
+
+    async def test_openai_reasoning_family_uses_completion_tokens(self):
+        for model in ('gpt-6-luna', 'gpt-5.6-luna', 'o4-mini'):
+            payload = await self._complete(model)
+            self.assertEqual(payload['max_completion_tokens'], 128)
+            self.assertEqual(payload['reasoning_effort'], 'none')
+            self.assertNotIn('max_tokens', payload)
+            self.assertNotIn('temperature', payload)
+
+    async def test_older_openai_chat_models_keep_temperature(self):
+        payload = await self._complete('gpt-4.1-mini')
+        self.assertEqual(payload['max_tokens'], 128)
+        self.assertIn('temperature', payload)

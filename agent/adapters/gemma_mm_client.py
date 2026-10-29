@@ -6,6 +6,7 @@ import base64
 import io
 import logging
 import os
+import re
 import time
 import wave
 from typing import Any
@@ -16,6 +17,21 @@ from agent.adapters.response_parser import ParsedTurn, parse_heard_reply
 from agent.config import LocaleLLMConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _sampling_params(model: str, *, max_tokens: int, temperature: float) -> dict[str, Any]:
+    """Token/temperature fields for the backend's model family.
+
+    OpenAI's reasoning-family models (gpt-5+, o-series) reject ``max_tokens`` and
+    any non-default temperature. Panel turns need short immediate replies, so
+    reasoning is off unless TALKSHOW_LLM_REASONING_EFFORT says otherwise.
+    """
+    if re.match(r"^(gpt-([5-9]|\d{2,})|o\d)", model):
+        return {
+            "max_completion_tokens": max_tokens,
+            "reasoning_effort": os.environ.get("TALKSHOW_LLM_REASONING_EFFORT", "").strip() or "none",
+        }
+    return {"max_tokens": max_tokens, "temperature": temperature}
 
 
 def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -> bytes:
@@ -140,8 +156,7 @@ class GemmaMMClient:
         payload: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "max_tokens": self._cfg.max_tokens,
-            "temperature": 0.5,
+            **_sampling_params(self._cfg.model, max_tokens=self._cfg.max_tokens, temperature=0.5),
         }
 
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
@@ -195,8 +210,11 @@ class GemmaMMClient:
         payload: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "max_tokens": max_tokens or self._cfg.max_tokens,
-            "temperature": 0.45 if temperature is None else temperature,
+            **_sampling_params(
+                self._cfg.model,
+                max_tokens=max_tokens or self._cfg.max_tokens,
+                temperature=0.45 if temperature is None else temperature,
+            ),
         }
         # Ark's DeepSeek defaults to thinking. Panel turns need short, immediate
         # spoken replies; reasoning can also exhaust the small output budget.
