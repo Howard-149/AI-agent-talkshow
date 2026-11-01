@@ -34,7 +34,7 @@ mkdir -p "${OUT}"
 # On/off latency flags. Arms that don't set one get it explicitly off, so a value in
 # .env (which the agent loads without overriding the environment) can't leak into
 # the baseline. Pacing values (TALKSHOW_HAND_RAISE_*_SEC) are left to .env defaults.
-BOOL_FLAGS=(TALKSHOW_PRERENDER_CANNED TALKSHOW_POLL_DURING_OPEN_FLOOR TALKSHOW_DRAFT_AHEAD)
+BOOL_FLAGS=(TALKSHOW_PRERENDER_CANNED TALKSHOW_POLL_DURING_OPEN_FLOOR TALKSHOW_DRAFT_AHEAD TALKSHOW_SPEAK_AHEAD)
 
 newest_session() {
   ls -1t "${SESSION_DIR}"/session-*.jsonl 2>/dev/null | head -1
