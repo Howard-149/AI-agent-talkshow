@@ -95,8 +95,12 @@ def add_session(arm: ArmStats, path: Path) -> None:
     arm.mid_line += [g.dur for g in gaps if g.kind == "mid_line"]
     for r in rows:
         e = r["event"]
-        if e in ("canned_cache_hit", "canned_cache_miss", "draft_ahead_used", "draft_ahead_dropped", "hand_raise_wait_start"):
+        if e in ("canned_cache_hit", "canned_cache_miss", "draft_ahead_used", "draft_ahead_dropped",
+                 "speak_ahead_dropped", "hand_raise_wait_start"):
             arm.counts[e] += 1
+        elif e == "speak_ahead_used":
+            arm.counts[e] += 1
+            arm.counts["speak_ahead_ready"] += bool(r.get("ready"))
         elif e == "avatar_bake" and r.get("gen_fps"):
             arm.gen_fps.append(float(r["gen_fps"]))
         elif e == "hand_raise_poll":
@@ -166,8 +170,10 @@ def main() -> None:
         )
 
     print("\n== Did each flag engage? (event counts)")
-    keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped", "hand_raise_wait_start"]
-    labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped", "empty waits"]
+    keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped",
+            "speak_ahead_used", "speak_ahead_ready", "speak_ahead_dropped", "hand_raise_wait_start"]
+    labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped",
+              "spoken ahead", "ahead ready", "ahead dropped", "empty waits"]
     print(f"{'arm':<10}  " + "  ".join(f"{h:>14}" for h in labels))
     for a in arms:
         print(f"{a.name:<10}  " + "  ".join(f"{a.counts.get(k, 0):>14}" for k in keys))

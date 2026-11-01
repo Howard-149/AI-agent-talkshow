@@ -390,30 +390,13 @@ async def _speak_canned(
     return True
 
 
-async def _speak_avatar_chunked(
-    session: AgentSession,
-    data: TalkShowData,
-    *,
-    bridge: AvatarBridge,
-    speak_role: str,
-    text: str,
-    step: str,
-    tts_cfg: LocaleTTSConfig,
-    turn_log: object | None,
-    video_pub: AvatarVideoPublisher | None,
-    use_lk_video: bool,
-    ui_text: str | None = None,
-    texts: dict[str, str] | None = None,
-    audio_via_session: bool = True,
-    locale_audio: object | None = None,
-    emit_ui: bool = True,
-    slot_prefix: str = "",
-    emotion: str | None = None,
-    locale: str = "en",
-) -> None:
+def _plan_chunks(
+    text: str, tts_cfg: LocaleTTSConfig, *, audio_via_session: bool
+) -> tuple[list[str], str]:
+    """Chunks a line is synthesized and rendered in, and the CosyVoice chunk mode."""
     sentences = split_speak_sentences(text)
     if not sentences:
-        return
+        return [], "sentence"
     # CosyVoice chunk modes (TALKSHOW_COSYVOICE_CHUNK_MODE):
     #   sentence (default) — per-sentence TTS + DyStream (correct A/V boundaries)
     #   full — one TTS + one DyStream for the whole line
@@ -443,6 +426,157 @@ async def _speak_avatar_chunked(
             sentences = [text]
         elif len(sentences) == 1 or not avatar_chunk_stream_enabled():
             sentences = [text]
+    return sentences, cosy_mode
+
+
+@dataclass
+class PreparedLineStart:
+    """A line's first chunk, synthesized and rendering before the line is due (speak-ahead)."""
+
+    role: str
+    text: str  # the line in ``locale``, as it will be delivered
+    locale: str
+    texts: dict[str, str]
+    emotion: str
+    first_chunk: str
+    slot: str
+    task: asyncio.Task[_PreparedChunk]
+
+    def discard(self) -> None:
+        """Stop the work if it is still running; a finished render is just dropped."""
+        if not self.task.done():
+            self.task.cancel()
+
+
+def _expected_line_emotion(data: TalkShowData, role: str, *, tag: str | None = None) -> str:
+    """The emotion a line will most likely be spoken with, without updating any state.
+
+    PAD mode: the role's current label (speaking re-materializes it after a few seconds
+    of decay, which rarely changes the label). llm mode: the draft's tag, else the current.
+    """
+    from agent.emotion import emotion_source, get_role_emotion
+    from agent.emotion.state import normalize_emotion
+
+    if emotion_source() == "llm":
+        return normalize_emotion(tag) or get_role_emotion(data, role)
+    return get_role_emotion(data, role)
+
+
+async def prepare_line_start(
+    data: TalkShowData,
+    *,
+    speak_role: str,
+    text: str,
+    step: str,
+    emotion_tag: str | None = None,
+) -> PreparedLineStart | None:
+    """Start TTS and the avatar render of ``text``'s first chunk now, to play when it is due.
+
+    Only with the avatar on and one viewer locale; the line's later chunks render as
+    usual. None when there is nothing to start.
+    """
+    from agent.floor.floor_parser import strip_speech_control_tags
+    from agent.locale.localize import texts_for_needed_locales
+    from agent.locale.viewer_locales import DEFAULT_LOCALE, primary_delivery_locale
+
+    text = strip_speech_control_tags(text.strip())
+    bridge = get_avatar_bridge()
+    needed = frozenset(getattr(data, "needed_locales", None) or {DEFAULT_LOCALE})
+    if not text or bridge is None or len(needed) != 1:
+        return None
+    texts = await texts_for_needed_locales(data, text)
+    locale = primary_delivery_locale(needed)
+    line_text = texts.get(locale) or text
+    tts_cfg = load_persona_tts(speak_role, data.runtime.config, locale=locale)
+    chunks, cosy_mode = _plan_chunks(line_text, tts_cfg, audio_via_session=True)
+    if not chunks or cosy_mode == "tts_once":
+        return None  # tts_once cuts one whole-line TTS call; its first chunk can't start alone
+    emotion = _expected_line_emotion(data, speak_role, tag=emotion_tag)
+    video_pub = get_avatar_video_publisher(locale)
+    slot = f"ahead-{step}"  # its own slot: the line playing now keeps c0, c1, …
+    task = asyncio.create_task(
+        _prepare_chunk(
+            bridge=bridge,
+            tts_cfg=tts_cfg,
+            speak_role=speak_role,
+            step=step,
+            chunk_text=chunks[0],
+            chunk_idx=0,
+            slot=slot,
+            turn_log=getattr(data, "turn_log", None),
+            room=data.room_name,
+            video_pub=video_pub,
+            use_lk_video=lk_video_enabled() and video_pub is not None,
+            emotion=emotion,
+            locale=locale,
+        ),
+        name=f"speak_ahead_chunk:{speak_role}",
+    )
+    return PreparedLineStart(
+        role=speak_role,
+        text=line_text,
+        locale=locale,
+        texts=texts,
+        emotion=emotion,
+        first_chunk=chunks[0],
+        slot=slot,
+        task=task,
+    )
+
+
+async def _await_ahead(ahead: PreparedLineStart, live: dict) -> _PreparedChunk:
+    """The speak-ahead chunk; rendered live instead if speak-ahead failed or was dropped."""
+    try:
+        return await asyncio.shield(ahead.task)
+    except asyncio.CancelledError:
+        if not ahead.task.cancelled():
+            raise  # this line was cancelled, not the speak-ahead
+    except Exception:
+        logger.exception("speak ahead failed role=%s — rendering live", ahead.role)
+    return await _prepare_chunk(**live)
+
+
+async def _speak_avatar_chunked(
+    session: AgentSession,
+    data: TalkShowData,
+    *,
+    bridge: AvatarBridge,
+    speak_role: str,
+    text: str,
+    step: str,
+    tts_cfg: LocaleTTSConfig,
+    turn_log: object | None,
+    video_pub: AvatarVideoPublisher | None,
+    use_lk_video: bool,
+    ui_text: str | None = None,
+    texts: dict[str, str] | None = None,
+    audio_via_session: bool = True,
+    locale_audio: object | None = None,
+    emit_ui: bool = True,
+    slot_prefix: str = "",
+    emotion: str | None = None,
+    locale: str = "en",
+    ahead: PreparedLineStart | None = None,
+) -> None:
+    sentences, cosy_mode = _plan_chunks(text, tts_cfg, audio_via_session=audio_via_session)
+    if not sentences:
+        return
+    if ahead is not None and (
+        cosy_mode == "tts_once"
+        or (ahead.text, ahead.locale, ahead.emotion, ahead.first_chunk)
+        != (text, locale, emotion, sentences[0])
+    ):
+        # The line, its locale or its emotion changed since speak-ahead started.
+        ahead.discard()
+        if turn_log is not None:
+            turn_log.log(
+                "speak_ahead_dropped",
+                role=speak_role,
+                step=step,
+                reason="changed",
+                room=data.room_name,
+            )
+        ahead = None
 
     prefix = slot_prefix.strip()
     slots = [f"{prefix}c{i}" if prefix else f"c{i}" for i in range(len(sentences))]
@@ -517,9 +651,19 @@ async def _speak_avatar_chunked(
             kw["tts_ms"] = oneshot_tts_ms if i == 0 else 0
         return kw
 
-    next_task: asyncio.Task[_PreparedChunk] | None = asyncio.create_task(
-        _prepare_chunk(**_chunk_kwargs(0))
-    )
+    if ahead is not None:
+        if turn_log is not None:
+            turn_log.log(
+                "speak_ahead_used",
+                role=speak_role,
+                step=step,
+                ready=ahead.task.done(),
+                room=data.room_name,
+            )
+        first = _await_ahead(ahead, _chunk_kwargs(0))
+    else:
+        first = _prepare_chunk(**_chunk_kwargs(0))
+    next_task: asyncio.Task[_PreparedChunk] | None = asyncio.create_task(first)
 
     try:
         for i, sent in enumerate(sentences):
@@ -599,7 +743,7 @@ async def _speak_avatar_chunked(
                 await next_task
             except (asyncio.CancelledError, Exception):
                 pass
-        cleanup_speech_slots(slots)
+        cleanup_speech_slots(slots if ahead is None else [*slots, ahead.slot])
 
     if turn_log is not None:
         turn_log.log(
@@ -632,6 +776,7 @@ async def speak_panel_line(
     step: str,
     texts: dict[str, str] | None = None,
     canned: bool = False,
+    ahead: PreparedLineStart | None = None,
 ) -> None:
     """Speak any show line via Piper (+ DyStream when avatar sync is on).
 
@@ -641,6 +786,8 @@ async def speak_panel_line(
     Optional ``texts`` skips Gemma translate (canned lines such as session welcome).
     ``canned`` marks a fixed host line: with TALKSHOW_PRERENDER_CANNED=1 it plays
     from the pre-rendered cache when one viewer locale is needed and it is cached.
+    ``ahead`` is the line's first chunk started early (speak-ahead): it plays if the
+    line, locale and emotion still match, else that chunk renders live.
     """
     from agent.adapters.locale_audio import get_locale_audio_publisher
     from agent.floor.floor_parser import strip_speech_control_tags
@@ -694,6 +841,8 @@ async def speak_panel_line(
     use_lk_video = lk_video_enabled()
 
     needed = frozenset(getattr(data, "needed_locales", None) or {DEFAULT_LOCALE})
+    if texts is None and ahead is not None and frozenset(ahead.texts) == needed:
+        texts = ahead.texts  # translated when speak-ahead started
     if texts is None:
         texts = await texts_for_needed_locales(data, text)
     else:
@@ -828,6 +977,7 @@ async def speak_panel_line(
                     emit_ui=True,
                     emotion=role_emotion,
                     locale=primary,
+                    ahead=ahead,
                 )
                 if secondary_coros:
                     await asyncio.gather(primary_coro, *secondary_coros)

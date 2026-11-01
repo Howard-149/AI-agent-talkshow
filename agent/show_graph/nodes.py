@@ -173,7 +173,8 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
         "kind": "open_floor",
         "procedural": True,
     }
-    act.prefetch_hand_raise_poll()  # no-op unless TALKSHOW_POLL_DURING_OPEN_FLOOR=1
+    # No-op unless TALKSHOW_POLL_DURING_OPEN_FLOOR=1.
+    act.prefetch_hand_raise_poll(state.get("turn_idx", 0))
     return _say(line, "hand_raise")
 
 
