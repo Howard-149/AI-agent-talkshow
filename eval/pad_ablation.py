@@ -38,6 +38,8 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 HALF_LIFE_S = 120.0
+# Host lines with fixed text (welcome, open floor, intro, canned grant / close).
+CANNED_STEPS = ("session_welcome", "open_floor", "intro_", "grant_human", "close_round")
 CONFIGS = {
     "FULL": {"soft": True, "gamma": 0.12},
     "NOSOFT": {"soft": False, "gamma": 0.12},
@@ -176,7 +178,8 @@ def print_legend() -> None:
 
 def live_arms(manifest: Path) -> None:
     """Same metrics on the live trajectories of each arm (FULL_a, FULL_b … → FULL),
-    plus the share of TTS lines spoken with a non-Neutral label."""
+    plus the share of spoken lines (not chunks; canned host lines excluded) whose TTS
+    label was non-Neutral."""
     import csv
     from collections import defaultdict
 
@@ -195,10 +198,18 @@ def live_arms(manifest: Path) -> None:
             if not p.is_file():
                 continue
             trajs += [Traj(p.name, r, xs) for r, xs in logged_states(load_events(p)).items()]
+            seen: set[str] = set()
             for raw in p.read_text(encoding="utf-8").splitlines():
                 d = json.loads(raw)
-                if d.get("event") == "tts_synthesize" and d.get("role") != "human":
-                    tts.append((d.get("emotion") or "neutral").lower())
+                if d.get("event") != "tts_synthesize" or d.get("role") == "human":
+                    continue
+                # One line is synthesized in chunks ("speech_guest_7:c0", ":c1", …): count
+                # the line once, and skip the host's canned lines (their label is incidental).
+                step = str(d.get("step") or "").split(":", 1)[0]
+                if not step or step in seen or step.startswith(CANNED_STEPS):
+                    continue
+                seen.add(step)
+                tts.append((d.get("emotion") or "neutral").lower())
         share = sum(e != "neutral" for e in tts) / len(tts) if tts else float("nan")
         print_row(name, trajs, knn, speakable_label, extra=f"{share:>9.0%}{len(paths):>6}")
     print_legend()
