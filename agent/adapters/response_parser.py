@@ -127,6 +127,26 @@ def parse_host_speech(text: str) -> ParsedTurn:
     )
 
 
+# A control tag the model is partway through at the end of a streamed output: a bracket
+# not yet closed ("[ne", "[next:ho"), or a trailing tag whose value is still coming
+# ("[next]:", "[emotion]: hap", "[pad]: P=0.1").
+_UNFINISHED_TAG_RE = re.compile(
+    r"\[[^\]]*\Z|\[\s*(?:next|emotion|pad|handoff)\b[^\]]*\][^\n\[]*\Z", re.IGNORECASE
+)
+
+
+def streamed_reply_so_far(raw_so_far: str) -> str:
+    """The spoken reply in model output that is still being written, tags stripped.
+
+    The tag patterns only match a finished tag, so a half-written one would otherwise
+    read as more speech: a one-sentence reply followed by "[ne" looks like two.
+    """
+    from agent.floor.floor_parser import strip_speech_control_tags
+
+    raw = _UNFINISHED_TAG_RE.sub("", raw_so_far)
+    return strip_speech_control_tags(parse_host_speech(raw).reply.strip())
+
+
 def is_noise_heard(heard: str) -> bool:
     """True when STT should not start a user turn (silence, placeholder, noise)."""
     text = heard.strip()

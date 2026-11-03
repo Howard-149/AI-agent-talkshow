@@ -7,7 +7,7 @@ import os
 import time
 from typing import Callable
 
-from agent.adapters.response_parser import parse_host_speech
+from agent.adapters.response_parser import parse_host_speech, streamed_reply_so_far
 from agent.config import load_persona_name
 from agent.emotion import emotion_source, get_role_emotion, normalize_emotion
 from agent.floor.floor_parser import strip_speech_control_tags
@@ -106,7 +106,7 @@ class PersonaWorker:
         if on_reply is not None:
 
             def on_text(raw_so_far: str) -> None:
-                on_reply(strip_speech_control_tags(parse_host_speech(raw_so_far).reply.strip()))
+                on_reply(streamed_reply_so_far(raw_so_far))
 
         t0 = time.monotonic()
         raw = await data.runtime.gemma_client.complete_text(

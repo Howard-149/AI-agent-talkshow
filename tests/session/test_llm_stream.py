@@ -16,6 +16,7 @@ import httpx
 # cycle only resolves in this order (as in agent.main).
 import agent.agents  # noqa: F401
 from agent.adapters import gemma_mm_client as gmc
+from agent.adapters import response_parser as rp
 from agent.multi_agent.types import AgentDraft
 from agent.panel import panel_speech
 from agent.session import session_handoff as sh
@@ -94,6 +95,59 @@ class SettledChunkTests(unittest.TestCase):
 
     def test_matches_the_finished_line(self) -> None:
         self.assertEqual(sh.settled_first_chunk(LINE[:30]), sh.split_speak_sentences(LINE)[0])
+
+
+ONE = "That's a massive leap, and I'm skeptical of the hidden costs."
+
+
+def _prefixes(text: str) -> list[str]:
+    return [text[:i] for i in range(1, len(text) + 1)]
+
+
+def _settled_while_streaming(raw: str) -> list[tuple[str, str]]:
+    """(prefix, first chunk) for each prefix of ``raw`` whose streamed view settles one."""
+    out = []
+    for prefix in _prefixes(raw):
+        first = sh.settled_first_chunk(rp.streamed_reply_so_far(prefix))
+        if first is not None:
+            out.append((prefix, first))
+    return out
+
+
+class StreamedReplyTests(unittest.TestCase):
+    """The spoken reply as a panelist's output is streamed, one character at a time."""
+
+    def test_a_one_sentence_reply_never_settles_early(self) -> None:
+        for raw in (
+            f"[reply]: {ONE}\n[next]: host",
+            f"[reply]: {ONE}\n[next:host]",
+            f"[reply]: {ONE}\n[next]: host\n[emotion]: happy",
+            f"[reply]: {ONE}\n[emotion:happy]\n[next]: host",
+            f"[reply]: {ONE}\n[next]: host\n[pad]: P=0.10 A=0.20 D=0.00",
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(_settled_while_streaming(raw), [])
+
+    def test_a_longer_reply_settles_on_its_first_sentence(self) -> None:
+        for raw in (
+            f"[reply]: {LINE}\n[next]: host",
+            f"[reply]: {LINE}\n[next:host]",
+            f"[emotion]: calm\n[reply]: {LINE}\n[next]: host",
+        ):
+            with self.subTest(raw=raw):
+                prefix, first = _settled_while_streaming(raw)[0]
+                self.assertEqual(first, FIRST)
+                final = rp.parse_host_speech(raw).reply
+                start = _ahead(rp.streamed_reply_so_far(prefix))
+                self.assertEqual(sh.adopt_streamed_start(start, final)[1], "")
+
+    def test_half_written_tags_are_cut(self) -> None:
+        for tail in ("[", "[ne", "[next:ho", "[next]", "[next]:", "[next]: ho", "[emotion]: hap"):
+            with self.subTest(tail=tail):
+                got = rp.streamed_reply_so_far(f"[reply]: {LINE}\n{tail}")
+                self.assertNotIn("[", got)
+                self.assertNotIn(":", got)
+                self.assertEqual(len(sh.split_speak_sentences(got)), 3)
 
 
 def _ahead(text: str, *, texts: dict[str, str] | None = None) -> sh.PreparedLineStart:
