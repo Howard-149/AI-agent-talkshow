@@ -48,6 +48,7 @@ class ArmStats:
     gap_a: list[float] = field(default_factory=list)
     mid_line: list[float] = field(default_factory=list)
     gen_fps: list[float] = field(default_factory=list)
+    host_decide_s: list[float] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
@@ -108,6 +109,13 @@ def add_session(arm: ArmStats, path: Path) -> None:
         elif e == "hand_raise_poll":
             arm.counts["poll"] += 1
             arm.counts["poll_prefetched"] += bool(r.get("poll_prefetched"))
+        elif e in ("stream_ahead_started", "stream_ahead_dropped"):
+            arm.counts[e] += 1
+        elif e == "host_decide":
+            arm.counts["host_decide"] += 1
+            arm.counts["host_decide_fallback"] += bool(r.get("fallback"))
+            if r.get("latency_s") is not None:
+                arm.host_decide_s.append(float(r["latency_s"]))
 
 
 def med(xs: list[float]) -> float:
@@ -173,12 +181,20 @@ def main() -> None:
 
     print("\n== Did each flag engage? (event counts)")
     keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped",
-            "speak_ahead_used", "speak_ahead_ready", "speak_ahead_dropped", "hand_raise_wait_start"]
+            "speak_ahead_used", "speak_ahead_ready", "speak_ahead_dropped", "hand_raise_wait_start",
+            "stream_ahead_started", "stream_ahead_dropped", "host_decide", "host_decide_fallback"]
     labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped",
-              "spoken ahead", "ahead ready", "ahead dropped", "empty waits"]
+              "spoken ahead", "ahead ready", "ahead dropped", "empty waits",
+              "streamed starts", "stream dropped", "LLM host picks", "host fallbacks"]
     print(f"{'arm':<10}  " + "  ".join(f"{h:>14}" for h in labels))
     for a in arms:
         print(f"{a.name:<10}  " + "  ".join(f"{a.counts.get(k, 0):>14}" for k in keys))
+
+    if any(a.host_decide_s for a in arms):
+        print("\n== LLM host decision (host_decide latency, s)")
+        for a in arms:
+            if a.host_decide_s:
+                print(f"{a.name:<10}  median {fmt(med(a.host_decide_s), 2)}  n={len(a.host_decide_s)}")
 
     if args.csv:
         with args.csv.open("w", newline="", encoding="utf-8") as f:
