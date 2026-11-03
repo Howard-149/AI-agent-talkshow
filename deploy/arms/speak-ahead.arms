@@ -1,6 +1,8 @@
 # Speak-ahead (TALKSHOW_SPEAK_AHEAD) against its baseline D, plus a re-check of main:
 # D and A repeat arms D and A of latency.arms, so they should land near the earlier
 # numbers. D and S come first in case the job is preempted.
-D TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1
-S TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_SPEAK_AHEAD=1
-A
+# Every arm pins the FIFO hand-raise queue (TALKSHOW_HOST_DECIDE=fifo), as in the October
+# runs: the LLM host is the code default and bypasses most of these fixes.
+D TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_HOST_DECIDE=fifo
+S TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_SPEAK_AHEAD=1 TALKSHOW_HOST_DECIDE=fifo
+A TALKSHOW_HOST_DECIDE=fifo
