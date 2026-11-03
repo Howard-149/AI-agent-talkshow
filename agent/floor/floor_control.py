@@ -45,7 +45,7 @@ def resolve_floor_after_host_speech(
     Returns the resolved role id.
 
     When ``after_human_turn`` is True, always hand off to host moderation (open floor + poll + FIFO)
-    except explicit [next:human] or [next:close].
+    except explicit [next]: human or [next]: close.
     """
     tag = (tagged_next or "").strip().lower()
     if tag == "human":

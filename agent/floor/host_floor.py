@@ -341,9 +341,9 @@ async def _host_decide_floor(
 {raise_block}{order_hint}
 
 Rules:
-- [next:human] returns floor to the human guest (they speak via mic, not TTS)
+- [next]: human returns floor to the human guest (they speak via mic, not TTS)
 - If multiple panelists raised, pick the best next speaker
-- If none raised, pick who should speak OR [next:close] OR [next:human] if the guest raised
+- If none raised, pick who should speak OR [next]: close OR [next]: human if the guest raised
 - Panelist names: {role_map}
 - Panelists may speak more than once; honor [topic] angles when choosing
 

@@ -184,7 +184,7 @@ class HumanTurnFlowTests(unittest.TestCase):
                 ("open_floor", "host"),
                 ("intro", "host"),
                 ("panelist", "guest"),
-                ("panelist", "commentator"),  # chained via [next:commentator], no intro
+                ("panelist", "commentator"),  # chained via [next]: commentator, no intro
                 ("open_floor", "host"),
                 ("grant_human", "host"),
             ],

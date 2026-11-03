@@ -61,8 +61,8 @@ def host_after_human_card(scenario) -> str:
         human_floor="frozen",
     ) + (
         f"\nYour beat: 1–2 sentences to the ROOM.\n"
-        f"- Name a panelist ({panel}) to speak next → matching [next:<role>]\n"
-        f"- Open floor for volunteers → [next:host]"
+        f"- Name a panelist ({panel}) to speak next → matching [next]: <role>\n"
+        f"- Open floor for volunteers → [next]: host"
     )
 
 

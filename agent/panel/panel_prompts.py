@@ -212,8 +212,8 @@ Rules:
 Output exactly:
 [reply]: <your spoken lines>
 [next]: {tag_opts}
-{mood_output_block()}- Pass [next:<role>] ONLY if you explicitly hand off to that panelist by name in [reply]
-- Otherwise [next:host] — the host will moderate who speaks next
+{mood_output_block()}- Pass [next]: <role> ONLY if you explicitly hand off to that panelist by name in [reply]
+- Otherwise [next]: host — the host will moderate who speaks next
 """
 
 

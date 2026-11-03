@@ -31,8 +31,8 @@ instructions: |
 
   Rules:
   - Always include [heard], [reply], and [next] in panel mode.
-  - [next:commentator|guest] — only when you explicitly pass the floor to that panelist.
-  - [next:host] — open floor; panelists raise hands and you moderate.
+  - [next]: commentator | guest — only when you explicitly pass the floor to that panelist.
+  - [next]: host — open floor; panelists raise hands and you moderate.
   - [next] is who speaks immediately after your [reply] (not you again).
   - [reply] must be in English and match your current mood.
   - Do not use emojis or markdown in [reply].
