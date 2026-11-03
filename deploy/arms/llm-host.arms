@@ -1,0 +1,10 @@
+# Which latency fixes still engage when the LLM host picks the next speaker
+# (TALKSHOW_HOST_DECIDE=llm, the default), against the FIFO hand-raise queue they were
+# built for. S turns on the pre-rendered host lines, early poll, draft-ahead and
+# speak-ahead, and keeps the hand-raise flash and grant pause (as in speak-ahead.arms).
+# The LLM arms come first in case the job is preempted; FIFO_A comes last because
+# speak-ahead.arms already measured that baseline.
+LLM_A TALKSHOW_HOST_DECIDE=llm
+LLM_S TALKSHOW_HOST_DECIDE=llm TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_SPEAK_AHEAD=1
+FIFO_S TALKSHOW_HOST_DECIDE=fifo TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_SPEAK_AHEAD=1
+FIFO_A TALKSHOW_HOST_DECIDE=fifo
