@@ -1,0 +1,11 @@
+# FIFO hand-raise queue vs the LLM host (show-graph phase 4) on one node.
+# Latency flags stay off in both arms (ghost-arms.sh forces them to 0), so the
+# only difference is who picks the next speaker. Arms are interleaved and run
+# once each (ARMS_RUNS=1) so a preempted job still leaves paired runs from one
+# node; combine them with eval/host_decide_report.py --pairs or compare_arms --arm.
+FIFO_a TALKSHOW_HOST_DECIDE=fifo
+LLM_a TALKSHOW_HOST_DECIDE=llm
+FIFO_b TALKSHOW_HOST_DECIDE=fifo
+LLM_b TALKSHOW_HOST_DECIDE=llm
+FIFO_c TALKSHOW_HOST_DECIDE=fifo
+LLM_c TALKSHOW_HOST_DECIDE=llm

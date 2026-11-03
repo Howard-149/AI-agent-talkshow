@@ -48,7 +48,10 @@ class Actuators(Protocol):
     def queue_roles(self) -> list[str]: ...
     async def return_to_host(self, trigger: str) -> None: ...
     def prefetch_hand_raise_poll(self, turn_idx: int) -> None: ...
-    async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick: ...
+    async def hand_raise_round(
+        self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
+    ) -> FloorPick: ...
+    def llm_host(self) -> bool: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
     def start_panelist_draft(self, role: str, step: str) -> None: ...
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine: ...
@@ -276,7 +279,9 @@ class LiveActuators:
             self.start_panelist_draft(role, step)
             self.log("draft_ahead_early", role=role, step=step)
 
-    async def hand_raise_round(self, turn_idx: int, spoken_roles: list[str]) -> FloorPick:
+    async def hand_raise_round(
+        self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
+    ) -> FloorPick:
         from agent.floor.host_floor import run_hand_raise_round
 
         prefetched, self._prefetched_poll = self._prefetched_poll, None
@@ -287,6 +292,7 @@ class LiveActuators:
             panel_roles=self.controller.panel_speaker_roles(),
             spoken_roles=set(spoken_roles),
             turn_idx=turn_idx,
+            human_must_go=human_must_go,
             prefetched_poll=prefetched,
         )
         if self._draft_ahead is not None and self._draft_ahead[0] != pick.role:
@@ -297,6 +303,11 @@ class LiveActuators:
             self.log("draft_ahead_dropped", role=role, step=step, reason="not_picked")
             self._drop_speak_ahead(reason="not_picked")
         return pick
+
+    def llm_host(self) -> bool:
+        from agent.floor.host_decide import llm_host_enabled
+
+        return llm_host_enabled()
 
     async def grant_panelist(self, role: str, reason: str) -> None:
         from agent.floor.hand_raise_ui import dequeue_hand_raise

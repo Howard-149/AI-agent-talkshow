@@ -72,65 +72,31 @@ async def run_hand_raise_round(
     panel_roles: list[str],
     spoken_roles: set[str],
     turn_idx: int,
+    human_must_go: bool = False,
     prefetched_poll: asyncio.Task | None = None,
 ) -> FloorPick:
     """
-    Pick next speaker: FIFO queue (human UI + AI poll).
-    Poll only when queue is empty; wait (5 s by default) only when still empty after poll.
+    Pick next speaker. Hand raises (human UI + AI poll) are collected either way;
+    the LLM host decides (phase 4) unless ``TALKSHOW_HOST_DECIDE=fifo``, in which
+    case the FIFO queue does. Poll only when the queue is empty; in FIFO mode wait
+    (5 s by default) only when still empty after the poll.
     ``prefetched_poll`` = a poll already started during the open-floor line.
     """
+    from agent.floor.host_decide import llm_host_enabled
+
     if should_stop_session_work(data, session):
         if prefetched_poll is not None:
             prefetched_poll.cancel()
         return FloorPick(None, "")
+    if llm_host_enabled():
+        return await _run_llm_host_round(
+            session, data, controller,
+            panel_roles=panel_roles, spoken_roles=spoken_roles, human_must_go=human_must_go,
+            prefetched_poll=prefetched_poll,
+        )
     await emit_floor_pending(active=True)
     try:
-        if not data.hand_raise_queue.roles():
-            t0 = time.monotonic()
-            if prefetched_poll is not None:
-                poll = await prefetched_poll
-            else:
-                poll = await poll_panel_hand_raises(data, panel_roles)
-            # With a prefetched poll this is only the wait left after the open-floor line.
-            poll_latency_s = time.monotonic() - t0
-            await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
-            winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
-                poll,
-                data.panel_priority,
-            )
-            if had_tie and winner:
-                data.rotate_panel_priority(winner)
-            await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
-            if data.turn_log:
-                data.turn_log.log(
-                    "hand_raise_poll",
-                    results={
-                        role: {"raised": hr.raised, "topic": hr.topic[:40]}
-                        for role, hr in poll.items()
-                    },
-                    winner=winner,
-                    yes_roles=yes_roles,
-                    had_tie=had_tie,
-                    poll_latency_s=round(poll_latency_s, 3),
-                    poll_prefetched=prefetched_poll is not None,
-                    panel_priority=list(data.panel_priority),
-                    room=data.room_name,
-                    queue=data.hand_raise_queue.roles(),
-                )
-        else:
-            if prefetched_poll is not None:
-                prefetched_poll.cancel()
-            logger.info(
-                "hand_raise poll skip queue=%s",
-                data.hand_raise_queue.roles(),
-            )
-            if data.turn_log:
-                data.turn_log.log(
-                    "hand_raise_poll_skip",
-                    reason="queue_nonempty",
-                    room=data.room_name,
-                    queue=data.hand_raise_queue.roles(),
-                )
+        await _poll_into_queue(data, panel_roles, prefetched_poll)
 
         if not data.hand_raise_queue.roles():
             await wait_for_hand_raises(data, panel_roles=panel_roles)
@@ -184,6 +150,93 @@ async def run_hand_raise_round(
             trigger=f"no_raises_{turn_idx}",
         )
         return FloorPick(role, reason, line)
+    finally:
+        await emit_floor_pending(active=False)
+
+
+async def _poll_into_queue(
+    data: TalkShowData,
+    panel_roles: list[str],
+    prefetched_poll: asyncio.Task | None = None,
+) -> None:
+    """Poll the panel for hand raises unless the queue already has someone."""
+    if data.hand_raise_queue.roles():
+        if prefetched_poll is not None:
+            prefetched_poll.cancel()
+        logger.info("hand_raise poll skip queue=%s", data.hand_raise_queue.roles())
+        if data.turn_log:
+            data.turn_log.log(
+                "hand_raise_poll_skip",
+                reason="queue_nonempty",
+                room=data.room_name,
+                queue=data.hand_raise_queue.roles(),
+            )
+        return
+    t0 = time.monotonic()
+    if prefetched_poll is not None:
+        poll = await prefetched_poll
+    else:
+        poll = await poll_panel_hand_raises(data, panel_roles)
+    # With a prefetched poll this is only the wait left after the open-floor line.
+    poll_latency_s = time.monotonic() - t0
+    await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
+    winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
+        poll,
+        data.panel_priority,
+    )
+    if had_tie and winner:
+        data.rotate_panel_priority(winner)
+    await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
+    if data.turn_log:
+        data.turn_log.log(
+            "hand_raise_poll",
+            results={
+                role: {"raised": hr.raised, "topic": hr.topic[:40]}
+                for role, hr in poll.items()
+            },
+            winner=winner,
+            yes_roles=yes_roles,
+            had_tie=had_tie,
+            poll_latency_s=round(poll_latency_s, 3),
+            poll_prefetched=prefetched_poll is not None,
+            panel_priority=list(data.panel_priority),
+            room=data.room_name,
+            queue=data.hand_raise_queue.roles(),
+        )
+
+
+async def _run_llm_host_round(
+    session: AgentSession,
+    data: TalkShowData,
+    controller: TurnController,
+    *,
+    panel_roles: list[str],
+    spoken_roles: set[str],
+    human_must_go: bool,
+    prefetched_poll: asyncio.Task | None = None,
+) -> FloorPick:
+    """Collect raises, then the LLM host picks (FIFO queue on any failure)."""
+    from agent.floor.host_decide import host_decide
+
+    await emit_floor_pending(active=True)
+    try:
+        await _poll_into_queue(data, panel_roles, prefetched_poll)
+        if should_stop_session_work(data, session):
+            return FloorPick(None, "")
+        decision = await host_decide(
+            data,
+            panel_roles=panel_roles,
+            human_must_go=human_must_go,
+            perspective=controller.listen_role(),
+        )
+        if decision is not None:
+            return FloorPick(decision.role, "host_llm", decision.line)
+        if human_must_go:
+            return FloorPick("human", "human_wait_cap")
+        role, reason = await resolve_next_speaker(
+            data, panel_roles=panel_roles, spoken_roles=spoken_roles
+        )
+        return FloorPick(role, reason)
     finally:
         await emit_floor_pending(active=False)
 
