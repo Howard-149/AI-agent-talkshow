@@ -1,0 +1,5 @@
+# LLM streaming (TALKSHOW_LLM_STREAM) under the LLM host, where no line is drafted ahead:
+# each panelist line's first sentence starts TTS and the avatar as soon as it is written.
+# No other latency fix is on, so the pair isolates the streaming gain.
+LLM_A TALKSHOW_HOST_DECIDE=llm
+LLM_T TALKSHOW_HOST_DECIDE=llm TALKSHOW_LLM_STREAM=1

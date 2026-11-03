@@ -419,7 +419,77 @@ class LiveActuators:
                 task.cancel()
                 self.log("draft_ahead_dropped", role=role, step=step, reason="stale")
                 self._drop_speak_ahead(reason="stale")
+        from agent.panel.panel_speech import llm_stream_enabled
+
+        if llm_stream_enabled():
+            return await self._generate_streamed(role, step)
         return await generate_panelist_line(self.session, self.data, speak_role=role, step=step)
+
+    async def _generate_streamed(self, role: str, step: str) -> PanelistLine:
+        """Draft live from a streamed request, starting the first sentence's TTS and
+        avatar render as soon as it is written; speak() then plays it via speak-ahead."""
+        from agent.panel.panel_speech import draft_panelist, panelist_line_from_draft
+        from agent.session.session_handoff import prepare_line_start, settled_first_chunk
+
+        loop = asyncio.get_running_loop()
+        t0 = loop.time()
+        started: list[asyncio.Task[PreparedLineStart | None]] = []
+
+        def on_reply(partial: str) -> None:
+            if started:
+                return
+            first = settled_first_chunk(partial)
+            if first is None:
+                return
+            started.append(
+                asyncio.create_task(
+                    prepare_line_start(self.data, speak_role=role, text=partial, step=step),
+                    name=f"stream_ahead:{role}",
+                )
+            )
+            self.log(
+                "stream_ahead_started",
+                role=role,
+                step=step,
+                after_s=round(loop.time() - t0, 3),
+                first_chars=len(first),
+            )
+
+        try:
+            draft = await draft_panelist(self.data, speak_role=role, step=step, on_reply=on_reply)
+        except BaseException:
+            for task in started:
+                task.cancel()
+            raise
+        line = panelist_line_from_draft(self.data, draft)
+        if started:
+            self._drop_speak_ahead()
+            self._speak_ahead = (
+                role,
+                step,
+                asyncio.create_task(
+                    self._adopt_streamed(role, step, started[0], line.text),
+                    name=f"stream_adopt:{role}",
+                ),
+            )
+        else:
+            self.log("stream_ahead_dropped", role=role, step=step, reason="not_started")
+        return line
+
+    async def _adopt_streamed(
+        self,
+        role: str,
+        step: str,
+        task: asyncio.Task[PreparedLineStart | None],
+        text: str,
+    ) -> PreparedLineStart | None:
+        """The streamed first chunk, if the finished line still opens with it."""
+        from agent.session.session_handoff import adopt_streamed_start
+
+        ahead, why = adopt_streamed_start(await task, text)
+        if why:
+            self.log("stream_ahead_dropped", role=role, step=step, reason=why)
+        return ahead
 
     # --- canned host lines ---------------------------------------------------
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import tempfile
 import time
 from dataclasses import dataclass
@@ -522,6 +523,46 @@ async def prepare_line_start(
         slot=slot,
         task=task,
     )
+
+
+_SENTENCE_END_RE = re.compile(r"[.!?…][\"')\]]*$")
+
+
+def settled_first_chunk(partial: str) -> str | None:
+    """The first chunk of a line still being written, once more text can't change it.
+
+    The sentence tokenizer only closes a chunk when the next one has started, so the
+    first chunk is final once there are two and it ends a sentence.
+    """
+    parts = split_speak_sentences(partial)
+    if len(parts) < 2 or not _SENTENCE_END_RE.search(parts[0]):
+        return None
+    return parts[0]
+
+
+def adopt_streamed_start(
+    ahead: PreparedLineStart | None, final_text: str
+) -> tuple[PreparedLineStart | None, str]:
+    """Bind a first chunk started from a partial line to the line as finally written.
+
+    Returns (ahead, "") when the finished line still opens with that chunk, else
+    (None, why) after discarding it.
+    """
+    from agent.floor.floor_parser import strip_speech_control_tags
+
+    if ahead is None:
+        return None, "not_started"
+    final = strip_speech_control_tags(final_text.strip())
+    chunks = split_speak_sentences(final)
+    if len(chunks) < 2 or chunks[0] != ahead.first_chunk:
+        ahead.discard()
+        return None, "changed"
+    if ahead.texts.get(ahead.locale) != ahead.text:
+        ahead.discard()  # delivered in a translation, which was made from the partial line
+        return None, "translated"
+    ahead.text = final
+    ahead.texts = {ahead.locale: final}
+    return ahead, ""
 
 
 async def _await_ahead(ahead: PreparedLineStart, live: dict) -> _PreparedChunk:

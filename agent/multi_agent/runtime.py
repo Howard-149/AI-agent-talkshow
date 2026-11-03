@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from agent.multi_agent.coordinator import MultiAgentCoordinator
 from agent.multi_agent.worker import PersonaWorker
 from agent.multi_agent.types import AgentDraft
@@ -30,10 +32,12 @@ class MultiAgentRuntime:
         data: TalkShowData,
         *,
         step: str,
+        on_reply: Callable[[str], None] | None = None,
     ) -> AgentDraft:
         return await self.worker(role).draft(
             data,
             step=step,
+            on_reply=on_reply,
         )
 
     async def draft_roles(

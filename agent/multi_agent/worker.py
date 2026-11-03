@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from typing import Callable
 
 from agent.adapters.response_parser import parse_host_speech
 from agent.config import load_persona_name
@@ -27,7 +28,15 @@ class PersonaWorker:
     def __init__(self, role: str) -> None:
         self.role = role
 
-    async def draft(self, data: TalkShowData, *, step: str) -> AgentDraft:
+    async def draft(
+        self,
+        data: TalkShowData,
+        *,
+        step: str,
+        on_reply: Callable[[str], None] | None = None,
+    ) -> AgentDraft:
+        """``on_reply`` streams the request and gets the spoken reply so far (tags
+        stripped) as it is written; the returned draft is the same either way."""
         role = self.role
         # Legacy (non-graph) turn modes appraise in the background; make sure this
         # persona's own pending appraisal has landed before its prompt is built.
@@ -93,6 +102,12 @@ class PersonaWorker:
                 prompt,
             )
 
+        on_text = None
+        if on_reply is not None:
+
+            def on_text(raw_so_far: str) -> None:
+                on_reply(strip_speech_control_tags(parse_host_speech(raw_so_far).reply.strip()))
+
         t0 = time.monotonic()
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
@@ -100,6 +115,7 @@ class PersonaWorker:
             history_messages=hist,
             output_role=role,
             raw=True,  # parse [next] from the full output, not the stripped reply
+            on_text=on_text,
         )
         model_latency_s = time.monotonic() - t0
 

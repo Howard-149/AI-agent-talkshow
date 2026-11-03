@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Callable
 
 from livekit.agents import AgentSession
 
@@ -33,11 +34,14 @@ async def draft_panelist(
     *,
     speak_role: str,
     step: str,
+    on_reply: Callable[[str], None] | None = None,
 ) -> AgentDraft:
+    """``on_reply`` streams the draft and gets the spoken reply so far."""
     return await data.runtime.multi_agent.draft_role(
-        speak_role, 
-        data, 
-        step=step
+        speak_role,
+        data,
+        step=step,
+        on_reply=on_reply,
     )
 
 
@@ -77,6 +81,16 @@ async def speak_draft(
 def draft_ahead_enabled() -> bool:
     """Draft the next panelist's line while the host's intro plays (opt-in)."""
     raw = os.environ.get("TALKSHOW_DRAFT_AHEAD", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def llm_stream_enabled() -> bool:
+    """Stream a panelist line's generation and start its first sentence's TTS and avatar
+    render as soon as that sentence is written, instead of after the whole line (opt-in).
+
+    Applies to lines drafted live, i.e. not drafted ahead during the host's intro.
+    """
+    raw = os.environ.get("TALKSHOW_LLM_STREAM", "").strip().lower()
     return raw in ("1", "true", "yes", "on")
 
 

@@ -9,7 +9,7 @@ import logging
 import os
 import time
 import wave
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -18,6 +18,30 @@ from agent.config import LocaleLLMConfig
 from agent.telemetry.model_output_logger import ModelOutputLogger
 
 logger = logging.getLogger(__name__)
+
+
+def sse_content_delta(line: str) -> str | None:
+    """Text delta from one server-sent-events line of a streamed chat completion.
+
+    "" for lines that carry no text (blank lines, role-only or empty deltas), None at
+    the ``[DONE]`` sentinel.
+    """
+    line = line.strip()
+    if not line.startswith("data:"):
+        return ""
+    data = line[len("data:"):].strip()
+    if data == "[DONE]":
+        return None
+    try:
+        obj = json.loads(data)
+    except json.JSONDecodeError:
+        logger.warning("Gemma stream: unparsable event %.200s", data)
+        return ""
+    choices = obj.get("choices") or []
+    if not choices:
+        return ""
+    content = (choices[0].get("delta") or {}).get("content")
+    return content if isinstance(content, str) else ""
 
 
 def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -> bytes:
@@ -189,12 +213,17 @@ class GemmaMMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         output_role: str | None = None,
+        on_text: Callable[[str], None] | None = None,
     ) -> str:
         """Text-only turn with optional prior conversation as chat messages.
 
         ``raw=True`` returns the model output untouched so callers can parse
         control tags ([next]/[pad]/…). Otherwise a [reply]-formatted answer is
         reduced to its spoken reply, which strips those tags.
+
+        ``on_text`` streams the request and is called with the raw output so far after
+        each delta, so a caller can start on the first sentence while the rest is
+        written. The return value is the same either way.
         """
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(
@@ -212,24 +241,28 @@ class GemmaMMClient:
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0
         logger.info(
-            "Gemma text request → %s persona=%s history_msgs=%d",
+            "Gemma text request → %s persona=%s history_msgs=%d stream=%s",
             url,
             self.active_persona_id,
             hist_n,
+            on_text is not None,
         )
-        resp = await self._http.post(url, json=payload, headers=headers)
-        if resp.status_code >= 400:
-            logger.error(
-                "Gemma text HTTP %s model=%s body=%.500s",
-                resp.status_code,
-                self._cfg.model,
-                resp.text,
-            )
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        if not isinstance(content, str):
-            content = str(content)
+        if on_text is not None:
+            content = await self._stream_text(url, payload, headers, on_text)
+        else:
+            resp = await self._http.post(url, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                logger.error(
+                    "Gemma text HTTP %s model=%s body=%.500s",
+                    resp.status_code,
+                    self._cfg.model,
+                    resp.text,
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            if not isinstance(content, str):
+                content = str(content)
         if self._output_logger is not None and output_role is not None:
             self._output_logger.log(output_role, content)
         text = content.strip()
@@ -240,6 +273,41 @@ class GemmaMMClient:
                 parsed = parse_heard_reply(text)
                 return parsed.reply or text
         return text
+
+    async def _stream_text(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        on_text: Callable[[str], None],
+    ) -> str:
+        """POST with ``stream: true``; call ``on_text`` with the output so far per delta."""
+        parts: list[str] = []
+        async with self._http.stream(
+            "POST", url, json={**payload, "stream": True}, headers=headers
+        ) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode("utf-8", "replace")
+                logger.error(
+                    "Gemma text HTTP %s model=%s body=%.500s",
+                    resp.status_code,
+                    self._cfg.model,
+                    body,
+                )
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                delta = sse_content_delta(line)
+                if delta is None:
+                    break
+                if not delta:
+                    continue
+                parts.append(delta)
+                try:
+                    on_text("".join(parts))
+                except Exception:
+                    # A failing listener must not lose the reply itself.
+                    logger.exception("Gemma stream listener failed")
+        return "".join(parts)
 
     async def complete_tools(
         self,
