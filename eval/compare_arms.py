@@ -150,11 +150,15 @@ def add_session(arm: ArmStats, path: Path) -> None:
             arm.counts["poll_prefetched"] += bool(r.get("poll_prefetched"))
         elif e in ("stream_ahead_started", "stream_ahead_dropped"):
             arm.counts[e] += 1
+        elif e == "host_decide" and r.get("ahead"):
+            arm.counts["host_decide_ahead"] += 1  # made while the line played: hidden
         elif e == "host_decide":
             arm.counts["host_decide"] += 1
             arm.counts["host_decide_fallback"] += bool(r.get("fallback"))
             if r.get("latency_s") is not None:
                 arm.host_decide_s.append(float(r["latency_s"]))
+        elif e in ("host_decide_ahead_used", "host_decide_ahead_dropped", "draft_ahead_from_host_line"):
+            arm.counts[e] += 1
 
 
 def med(xs: list[float]) -> float:
@@ -263,16 +267,18 @@ def main() -> None:
     print("\n== Did each flag engage? (event counts)")
     keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped",
             "speak_ahead_used", "speak_ahead_ready", "speak_ahead_dropped", "hand_raise_wait_start",
-            "stream_ahead_started", "stream_ahead_dropped", "host_decide", "host_decide_fallback"]
+            "stream_ahead_started", "stream_ahead_dropped", "host_decide", "host_decide_fallback",
+            "host_decide_ahead", "host_decide_ahead_used", "host_decide_ahead_dropped", "draft_ahead_from_host_line"]
     labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped",
               "spoken ahead", "ahead ready", "ahead dropped", "empty waits",
-              "streamed starts", "stream dropped", "LLM host picks", "host fallbacks"]
+              "streamed starts", "stream dropped", "picks when due", "host fallbacks",
+              "picks ahead", "ahead used", "ahead dropped", "drafts at call"]
     print(f"{'arm':<10}  " + "  ".join(f"{h:>14}" for h in labels))
     for a in arms:
         print(f"{a.name:<10}  " + "  ".join(f"{a.counts.get(k, 0):>14}" for k in keys))
 
     if any(a.host_decide_s for a in arms):
-        print("\n== LLM host decision (host_decide latency, s)")
+        print("\n== LLM host decision when due (host_decide latency, s; picks made ahead excluded)")
         for a in arms:
             if a.host_decide_s:
                 print(f"{a.name:<10}  median {fmt(med(a.host_decide_s), 2)}  n={len(a.host_decide_s)}")
