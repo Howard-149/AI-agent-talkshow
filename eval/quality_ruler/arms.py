@@ -107,6 +107,9 @@ ARMS: dict[str, dict] = {
                                 "opener_plan": "persona"},
     "fast": {"live_flags": FAST_FLAGS, "best_of": 1},
     "concrete_fact_pack": {"live_flags": FAST_FLAGS, "best_of": 1, "fact_pack": True},
+    # Same as concrete_fact_pack, but the style examples carry no figures or named cases of their own.
+    "concrete_fact_pack_nofig": {"live_flags": {**FAST_FLAGS, "TALKSHOW_DIALOGUE_LIBRARY": "panel_concrete_nofig"},
+                                 "best_of": 1, "fact_pack": True},
 }
 
 
