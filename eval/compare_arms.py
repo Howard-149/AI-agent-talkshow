@@ -14,12 +14,21 @@ For each arm (in manifest order, the first is the reference):
     (human turn → host's first audio); mid-line pauses; and counts that show
     whether each latency flag engaged (canned-line cache hits, early polls,
     drafts used ahead, empty-queue waits).
+
+Line-length correction: a handover's silence grows with the first sentence of each
+line rendered inside it (its TTS, then the avatar's buffer), and with an unseeded LLM
+that length varies from session to session. For each handover, the first chunks of
+the lines that start in it (the host's lines and the next panelist's) are summed, as
+seconds of audio. Each arm's mean silence is then moved to the pooled mean of that
+length along the arm's own slope, floored at 0, so arms compare at equal lengths.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -45,6 +54,8 @@ class ArmStats:
     handover_total: list[float] = field(default_factory=list)
     handover_silent: list[float] = field(default_factory=list)
     handover_parts: list[dict[str, float]] = field(default_factory=list)
+    handover_first_s: list[float] = field(default_factory=list)  # first-sentence audio, s
+    session_silent: list[float] = field(default_factory=list)  # mean per handover, each session
     gap_a: list[float] = field(default_factory=list)
     mid_line: list[float] = field(default_factory=list)
     gen_fps: list[float] = field(default_factory=list)
@@ -52,9 +63,33 @@ class ArmStats:
     counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
-def moderated_handovers(speech: list[gb.Speech], gaps: list[gb.Gap]) -> list[tuple[float, float, dict[str, float]]]:
-    """(total s, silent s, silent s by cause) for each panelist → panelist handover
-    that goes through the host's open-floor / intro / direct-call lines only."""
+def first_chunks(rows: list[dict]) -> list[tuple[float, str, float]]:
+    """(playout start, line step, audio s) of the first chunk of each line played."""
+    out, seen = [], None
+    for r in rows:
+        if r["event"] != "avatar_chunk_play":
+            continue
+        line = re.sub(r":c\d+$", "", r.get("step", ""))
+        if line != seen:
+            out.append((float(r["ts"]), line, float(r.get("pcm_duration_sec") or 0.0)))
+        seen = line
+    return out
+
+
+def first_sentence_s(chunks: list[tuple[float, str, float]], a: float, b: float, slack: float = 0.5) -> float:
+    """Audio s of the first chunks of the lines that start in (a, b]: the host's lines
+    and the next panelist's first sentence. NaN when no chunk events were logged."""
+    if not chunks:
+        return math.nan
+    return sum(dur for ts, _, dur in chunks if a < ts <= b + slack)
+
+
+def moderated_handovers(
+    speech: list[gb.Speech], gaps: list[gb.Gap], chunks: list[tuple[float, str, float]] | None = None
+) -> list[tuple[float, float, dict[str, float], float]]:
+    """(total s, silent s, silent s by cause, first-sentence audio s) for each
+    panelist → panelist handover that goes through the host's open-floor / intro /
+    direct-call lines only."""
     seq = [(gb.line_kind(s.step), s) for s in speech]
     out = []
     for i, (kind, sp) in enumerate(seq):
@@ -76,7 +111,7 @@ def moderated_handovers(speech: list[gb.Speech], gaps: list[gb.Gap]) -> list[tup
                 silent += g.dur
                 for c in CAUSES:
                     parts[c] += g.parts.get(c, 0.0)
-        out.append((b - a, silent, parts))
+        out.append((b - a, silent, parts, first_sentence_s(chunks or [], a, b)))
     return out
 
 
@@ -90,10 +125,14 @@ def add_session(arm: ArmStats, path: Path) -> None:
     wall = speech[-1].end - speech[0].start
     human = sum(b - a for a, b in gb.human_windows(rows) if speech[0].start <= a <= speech[-1].end)
     arm.dead_pct.append(100 * sum(g.dur for g in gaps) / max(wall - human, 1e-9))
-    for total, silent, parts in moderated_handovers(speech, gaps):
+    handovers = moderated_handovers(speech, gaps, first_chunks(rows))
+    for total, silent, parts, first_s in handovers:
         arm.handover_total.append(total)
         arm.handover_silent.append(silent)
         arm.handover_parts.append(parts)
+        arm.handover_first_s.append(first_s)
+    if handovers:
+        arm.session_silent.append(statistics.fmean(sum(h[2].values()) for h in handovers))
     arm.gap_a += [g.dur for g in gaps if g.kind == "after_human"]
     arm.mid_line += [g.dur for g in gaps if g.kind == "mid_line"]
     for r in rows:
@@ -125,6 +164,35 @@ def med(xs: list[float]) -> float:
 def mean_parts(arm: ArmStats) -> dict[str, float]:
     n = len(arm.handover_parts)
     return {c: (sum(p[c] for p in arm.handover_parts) / n if n else float("nan")) for c in CAUSES}
+
+
+def length_corrected(arms: list[ArmStats]) -> tuple[float, dict[str, tuple[float, float, float]]]:
+    """Mean silence per handover at the pooled mean first-sentence length.
+
+    Returns (reference length s, {arm: (corrected mean s, slope s per s, mean length s)}).
+    Each arm uses its own least-squares slope of silence on first-sentence length,
+    floored at 0: where a fix hides the render (speak-ahead) the slope is near 0, and
+    a longer first sentence can't make the wait shorter.
+    """
+    pairs = {
+        a.name: [(x, sum(p.values())) for x, p in zip(a.handover_first_s, a.handover_parts) if not math.isnan(x)]
+        for a in arms
+    }
+    xs_all = [x for ps in pairs.values() for x, _ in ps]
+    if not xs_all:
+        return math.nan, {}
+    ref = statistics.fmean(xs_all)
+    out: dict[str, tuple[float, float, float]] = {}
+    for name, ps in pairs.items():
+        if len(ps) < 3:
+            out[name] = (math.nan, math.nan, math.nan)
+            continue
+        mx = statistics.fmean(x for x, _ in ps)
+        my = statistics.fmean(y for _, y in ps)
+        var = sum((x - mx) ** 2 for x, _ in ps)
+        slope = max(0.0, sum((x - mx) * (y - my) for x, y in ps) / var) if var > 0 else 0.0
+        out[name] = (my + slope * (ref - mx), slope, mx)
+    return ref, out
 
 
 def load_arms(args: argparse.Namespace) -> list[ArmStats]:
@@ -170,6 +238,19 @@ def main() -> None:
         print("  ".join(f"{c:>9}" if i else f"{c:<10}" for i, c in enumerate(cells)))
         table.append((a, parts, total))
 
+    ref_len, corrected = length_corrected(arms)
+    if corrected:
+        print(f"\n== Corrected to the same first-sentence length ({fmt(ref_len)} s of audio per handover)")
+        print(f"{'arm':<10}  {'silent':>7}  {'1st sent':>8}  {'slope':>6}  {'corrected':>9}  {'Δ':>6}  {'sessions':>11}")
+        ref_corr = corrected.get(arms[0].name, (math.nan,))[0]
+        for a, _, total in table:
+            c, slope, mx = corrected.get(a.name, (math.nan, math.nan, math.nan))
+            spread = f"{fmt(min(a.session_silent))}–{fmt(max(a.session_silent))}" if a.session_silent else "—"
+            delta = fmt(c - ref_corr) if a is not arms[0] else ""
+            print(f"{a.name:<10}  {fmt(total):>7}  {fmt(mx):>8}  {fmt(slope):>6}  {fmt(c):>9}  {delta:>6}  {spread:>11}")
+        print("  1st sent: mean audio s of the first chunks starting in a handover; slope: s of silence per s of it;")
+        print("  sessions: lowest and highest session mean, the run-to-run spread")
+
     print("\n== Show level (medians)")
     print(f"{'arm':<10}  {'dead%':>6}  {'handover':>9}  {'silent':>7}  {'gapA':>6}  {'mid-line':>8}  {'avatar fps':>10}")
     for a in arms:
@@ -200,11 +281,19 @@ def main() -> None:
         with args.csv.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["arm", "sessions", "handovers", "silent_per_handover_s", *CAUSES,
+                        "first_sentence_s_mean", "length_slope", "silent_corrected_s",
+                        "session_silent_min_s", "session_silent_max_s",
                         "dead_pct_median", "handover_median_s", "handover_silent_median_s", "gap_a_median_s",
                         "avatar_fps_median", *keys])
             for a, parts, total in table:
                 w.writerow([a.name, len(a.sessions), len(a.handover_parts), round(total, 3),
-                            *[round(parts[c], 3) for c in CAUSES], round(med(a.dead_pct), 1),
+                            *[round(parts[c], 3) for c in CAUSES],
+                            *[round(v, 3) for v in (corrected.get(a.name, (math.nan,) * 3)[2],
+                                                    corrected.get(a.name, (math.nan,) * 3)[1],
+                                                    corrected.get(a.name, (math.nan,) * 3)[0])],
+                            round(min(a.session_silent), 3) if a.session_silent else "",
+                            round(max(a.session_silent), 3) if a.session_silent else "",
+                            round(med(a.dead_pct), 1),
                             round(med(a.handover_total), 2), round(med(a.handover_silent), 2),
                             round(med(a.gap_a), 2), round(med(a.gen_fps), 1), *[a.counts.get(k, 0) for k in keys]])
         print(f"\nwrote {args.csv}")
