@@ -15,7 +15,9 @@ load_dotenv()
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create LiveKit access token")
-    parser.add_argument("--room", default="talkshow-dev", help="Room name")
+    parser.add_argument(
+        "--room", default=os.environ.get("TALKSHOW_ROOM", "talkshow-dev"), help="Room name"
+    )
     parser.add_argument("--identity", default="human-host", help="Participant identity")
     parser.add_argument("--name", default=None, help="Display name (defaults to identity)")
     parser.add_argument("--ttl", type=int, default=3600, help="TTL seconds")
@@ -51,11 +53,18 @@ def main() -> None:
             )
         )
         .with_ttl(timedelta(seconds=args.ttl))
-        .to_jwt()
     )
+    # Must match the worker's TALKSHOW_AGENT_NAME, or the room gets no agent.
+    agent_name = os.environ.get("TALKSHOW_AGENT_NAME", "").strip()
+    if agent_name:
+        token = token.with_room_config(
+            api.RoomConfiguration(agents=[api.RoomAgentDispatch(agent_name=agent_name)])
+        )
+    token = token.to_jwt()
 
     print(f"LIVEKIT_URL={url}")
     print(f"ROOM={args.room}")
+    print(f"AGENT={agent_name or '<automatic dispatch>'}")
     print(f"LOCALE={args.locale}")
     print(f"TOKEN={token}")
 

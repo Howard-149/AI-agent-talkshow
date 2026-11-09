@@ -344,6 +344,32 @@ def apply_appraisal(data: TalkShowData, utt: Utterance, result: AppraisalResult)
             raw=result.raw[:300] or None,
             room=getattr(data, "room_name", "") or "",
         )
+    if result.delta is not None:
+        publish_pad_state(data, result.role, feeling=result.word)
+
+
+_ui_tasks: set[asyncio.Task[None]] = set()
+
+
+def publish_pad_state(data: TalkShowData, role: str, *, feeling: str | None = None) -> None:
+    """Fire-and-forget ``pad_state`` UI event (current PAD + spoken label) for talkshow-web."""
+    from agent.emotion.role_pad import get_role_pad
+
+    try:
+        loop = asyncio.get_running_loop()
+        from agent.ui.ui_events import publish_ui_event
+    except (RuntimeError, ImportError):
+        return
+    fields: dict[str, object] = {
+        "role": role,
+        "pad": [round(float(x), 3) for x in get_role_pad(data, role)],
+        "emotion": get_role_emotion(data, role),
+    }
+    if feeling:
+        fields["feeling"] = feeling
+    task = loop.create_task(publish_ui_event("pad_state", **fields))
+    _ui_tasks.add(task)
+    task.add_done_callback(_ui_tasks.discard)
 
 
 # --- scheduling glue (replaced by a graph node later) ---------------------
@@ -399,6 +425,7 @@ def relax_after_expression(data: TalkShowData, speaker: str) -> float | None:
             arousal_after=round(new_a, 4),
             room=getattr(data, "room_name", "") or "",
         )
+    publish_pad_state(data, speaker)
     return new_a
 
 

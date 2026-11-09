@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HumanSeatCard } from '@/lib/talkshow/HumanSeatCard';
 import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
+import { PadMeter, type PadState } from '@/lib/talkshow/PadMeter';
 import { TalkshowMediaControls } from '@/lib/talkshow/TalkshowMediaControls';
 import { ReactivePanel } from './ReactivePanel';
 import { readInterruption, type InterruptionNotice, type SpeakingTurn } from './interruption';
@@ -162,6 +163,8 @@ export function TalkshowView(
   const [queuePhase, setQueuePhase] = useState('');
   const [floorPending, setFloorPending] = useState(false);
   const [showQueueDebug, setShowQueueDebug] = useState(false);
+  const [padByRole, setPadByRole] = useState<Record<string, PadState>>({});
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const localHandUp = !!handRaised.human;
 
   useEffect(() => {
@@ -312,6 +315,16 @@ export function TalkshowView(
       });
       setQueueState((prev) => prev.filter((item) => item.role !== ev.role));
       setFloorPending(false);
+    } else if (ev.type === 'pad_state') {
+      setPadByRole((prev) => ({
+        ...prev,
+        [ev.role]: {
+          pad: ev.pad,
+          emotion: ev.emotion,
+          // Expression-only updates carry no feeling; keep the last appraisal's phrase.
+          feeling: ev.feeling ?? prev[ev.role]?.feeling,
+        },
+      }));
     } else if (ev.type === 'floor_pending') {
       setFloorPending(!!ev.active);
     } else if (ev.type === 'transcript' && ev.final) {
@@ -337,6 +350,11 @@ export function TalkshowView(
     }
     handleUiEventRef.current(ev);
   });
+
+  useEffect(() => {
+    const el = transcriptScrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [lines.length, showTranscript]);
 
   const localName = localParticipant?.name || localParticipant?.identity || 'You';
   const localIdentity = localParticipant?.identity || 'local';
@@ -508,6 +526,7 @@ export function TalkshowView(
                 <strong>{p.name}</strong>
                 <span>{p.label}</span>
               </div>
+              <PadMeter state={padByRole[p.role]} />
             </div>
           ))}
         </div>
@@ -528,7 +547,7 @@ export function TalkshowView(
                 </div>
               )}
             </div>
-            <div className={styles.transcriptScroll}>
+            <div ref={transcriptScrollRef} className={styles.transcriptScroll}>
               {lines.length === 0 && <p className={styles.muted}>Waiting for speech…</p>}
               {lines.map((line) => (
                 <article

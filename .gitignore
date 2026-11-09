@@ -10,6 +10,7 @@ __pycache__/
 node_modules/
 .pnpm-store/
 logs/
+slurm-logs/
 eval/figures/
 eval/results/
 *.log
@@ -26,6 +27,7 @@ avatar/assets/loops/*
 !avatar/assets/loops/README.md
 avatar/runtime/clips/*
 !avatar/runtime/clips/.gitkeep
+avatar/runtime/canned/
 eval/demo_emotions/*
 *.mp4
 poster/

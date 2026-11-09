@@ -9,11 +9,10 @@
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
-#SBATCH --chdir=/home/hsuanhal/AI-agent-talkshow
-#SBATCH --output=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-download-%j.out
-#SBATCH --error=/home/hsuanhal/AI-agent-talkshow/slurm-logs/slurm-download-%j.err
+#SBATCH --output=/home/%u/AI-agent-talkshow/slurm-logs/slurm-download-%j.out
+#SBATCH --error=/home/%u/AI-agent-talkshow/slurm-logs/slurm-download-%j.err
 #SBATCH --mail-type=END
-#SBATCH --mail-user=hsuanhal@andrew.cmu.edu
+# %u = submitting user. Mail: add --mail-user=<you>@andrew.cmu.edu when submitting.
 #
 # Asset downloads on a preempt GPU node (1 GPU required by cluster policy).
 # Modes (DOWNLOAD_MODE env, default: piper_livekit):

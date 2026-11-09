@@ -239,6 +239,11 @@ class LiveSessionHooks:
         if self.data.turn_log is not None:
             self.data.turn_log.log(event, room=self.data.room_name, **fields)
 
+    def shutting_down(self) -> bool:
+        from agent.session.session_lifecycle import should_stop_session_work
+
+        return should_stop_session_work(self.data, self.session)
+
     async def before_beat(self, event: dict[str, Any]) -> None:
         self.data.panel_chain_running = True
         if event["kind"] == "human":

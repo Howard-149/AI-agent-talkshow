@@ -1,0 +1,8 @@
+# Avatar render steps (TALKSHOW_AVATAR_STEPS) with every latency fix except the
+# pacing change, i.e. arm D of latency.arms. Canned host lines play from the cache
+# (warmed at the default 5 steps), so the arms differ only in live-rendered lines.
+# Pair with `python -m eval.avatar_steps_samples` to judge face quality per step count.
+S5 TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_AVATAR_STEPS=5
+S4 TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_AVATAR_STEPS=4
+S3 TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_AVATAR_STEPS=3
+S2 TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_POLL_DURING_OPEN_FLOOR=1 TALKSHOW_DRAFT_AHEAD=1 TALKSHOW_AVATAR_STEPS=2

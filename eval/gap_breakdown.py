@@ -14,16 +14,24 @@ Model:
     Every hole between consecutive intervals is silence, except the human's own
     turn (``floor_grant_human`` → end of human speech), which is excluded.
     End of human speech = ``user_state`` speaking → listening when logged,
-    else ``gemma_stt_start``.
+    else ``gemma_stt_start``. Ghost sessions (eval/ghost_session) inject the
+    human's text: ``ghost_human_start`` / ``ghost_human_done`` stand in for the
+    Gemma audio call, and there is no endpointing.
 
     Each gap is attributed to what ran inside it, by interval overlap:
         endpoint   end of human speech → gemma_stt_start (VAD + turn detector)
-        llm        panel_model_done / gemma_stt_done   [ts - model_latency_s, ts]
+        llm        panel_model_done / gemma_stt_done / ghost_human_done
+                                                       [ts - model_latency_s, ts]
         translate  translate_done                      [ts - model_latency_s, ts]
         poll       hand_raise_poll                     [flash_ts - poll_latency_s, flash_ts]
         sleep      hand_raise_poll_flash, hand_raise_grant_pause, hand_raise_wait_*
         tts        tts_synthesize (of the next chunk when steps are logged)
         avatar     avatar_bake of the next chunk       [ts - preroll_ms, ts]
+        tail       a line's audio has ended but its video is still playing:
+                   last speaking interval of the line → line_end
+        appraisal  show graph: after_speak waits for every listener's PAD
+                   appraisal of the line: line_end → last pad_appraisal /
+                   pad_appraisal_timeout of that line; plus pad_appraisal_wait
         other      remainder (role switch, UI, event loop, logging)
 
 Sessions with neither ``agent_state`` nor ``avatar_chunk_play`` are skipped.
@@ -40,7 +48,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-COMPONENTS = ("endpoint", "llm", "translate", "poll", "sleep", "tts", "avatar", "other")
+COMPONENTS = (
+    "endpoint", "llm", "translate", "poll", "sleep", "tts", "avatar", "tail", "appraisal", "other",
+)
+
+# agent/show_graph/actuators.py DEFAULT_APPRAISE_TIMEOUT_S; pad_appraisal_timeout
+# rows carry no latency, so the appraisal is taken to have started this long before.
+APPRAISAL_TIMEOUT_S = 8.0
+
+# The host starts on the human turn: mic (Gemma audio call) or ghost text inject.
+HUMAN_TURN_START = ("gemma_stt_start", "ghost_human_start")
 
 
 @dataclass
@@ -116,7 +133,7 @@ def component_intervals(rows: list[dict[str, Any]]) -> list[tuple[str, float, fl
     flash_ts: list[float] = []
     for r in rows:
         e, ts = r["event"], r["ts"]
-        if e in ("panel_model_done", "gemma_stt_done") and r.get("model_latency_s"):
+        if e in ("panel_model_done", "gemma_stt_done", "ghost_human_done") and r.get("model_latency_s"):
             out.append(("llm", ts - float(r["model_latency_s"]), ts, ""))
         elif e == "translate_done" and r.get("model_latency_s"):
             out.append(("translate", ts - float(r["model_latency_s"]), ts, ""))
@@ -150,6 +167,53 @@ def component_intervals(rows: list[dict[str, Any]]) -> list[tuple[str, float, fl
         elif r["event"] in ("hand_raise_wait_done", "hand_raise_wait_early") and start:
             out.append(("sleep", start, r["ts"], ""))
             start = None
+    return out
+
+
+def line_bounds(rows: list[dict[str, Any]]) -> list[tuple[str, float, float]]:
+    """(step, line_start ts, line_end ts) for each spoken line, in order."""
+    out: list[tuple[str, float, float]] = []
+    open_step, open_ts = None, 0.0
+    for r in rows:
+        if r["event"] == "line_start":
+            open_step, open_ts = r.get("step", ""), r["ts"]
+        elif r["event"] == "line_end" and open_step is not None and r.get("step") == open_step:
+            out.append((open_step, open_ts, r["ts"]))
+            open_step = None
+    return out
+
+
+def appraisal_intervals(rows: list[dict[str, Any]]) -> list[tuple[float, float]]:
+    """[start, done] of every PAD appraisal call (timeouts end at the timeout)."""
+    out = []
+    for r in rows:
+        if r["event"] == "pad_appraisal" and r.get("latency_s") is not None:
+            out.append((r["ts"] - float(r["latency_s"]), r["ts"]))
+        elif r["event"] == "pad_appraisal_timeout":
+            out.append((r["ts"] - APPRAISAL_TIMEOUT_S, r["ts"]))
+    return out
+
+
+def line_wait_intervals(
+    rows: list[dict[str, Any]], speech: list[Speech]
+) -> list[tuple[str, float, float, str]]:
+    """Silence a finished line still holds: video tail, then the appraisal join."""
+    out: list[tuple[str, float, float, str]] = []
+    # Only the show graph joins appraisals after a line; legacy turn modes appraise
+    # in the background and log any wait as pad_appraisal_wait.
+    graph = any(r["event"] == "show_beat_start" for r in rows)
+    appraisals = appraisal_intervals(rows) if graph else []
+    for step, ls, le in line_bounds(rows):
+        ends = [sp.end for sp in speech if sp.line == step and ls <= sp.start <= le]
+        if ends and le > max(ends):
+            out.append(("tail", max(ends), le, ""))
+        # prepare_speak fans the appraisals out just before speak logs line_start.
+        done = [d for s, d in appraisals if ls - 0.5 <= s <= le]
+        if done and max(done) > le:
+            out.append(("appraisal", le, max(done), ""))
+    for r in rows:
+        if r["event"] == "pad_appraisal_wait" and float(r.get("waited_s") or 0) > 0:
+            out.append(("appraisal", r["ts"] - float(r["waited_s"]), r["ts"], ""))
     return out
 
 
@@ -220,7 +284,7 @@ def human_windows(rows: list[dict[str, Any]]) -> list[tuple[float, float]]:
     for r in rows:
         if r["event"] == "floor_grant_human":
             grant = r["ts"]
-        elif r["event"] == "gemma_stt_start" and grant is not None:
+        elif r["event"] in HUMAN_TURN_START and grant is not None:
             end = _human_end_before(ends, r["ts"], grant) or r["ts"]
             wins.append((grant, end))
             grant = None
@@ -231,9 +295,9 @@ def build_gaps(name: str, rows: list[dict[str, Any]]) -> tuple[list[Gap], list[S
     speech = speech_intervals(rows)
     if not speech:
         return [], []
-    comps = component_intervals(rows)
+    comps = component_intervals(rows) + line_wait_intervals(rows, speech)
     humans = human_windows(rows)
-    stt_starts = [r["ts"] for r in rows if r["event"] == "gemma_stt_start"]
+    stt_starts = [r["ts"] for r in rows if r["event"] in HUMAN_TURN_START]
     for _, human_end in humans:
         stt = next((t for t in stt_starts if t >= human_end), None)
         if stt is not None and stt > human_end:
@@ -294,6 +358,8 @@ def main() -> None:
     args = ap.parse_args()
 
     all_gaps: list[Gap] = []
+    appraisal_lat: list[float] = []
+    appraisal_timeouts = 0
     print("== Sessions ==")
     widths = [26, 7, 7, 7, 7, 6]
     print(fmt_row(["session", "wall_s", "agent_s", "human_s", "silent_s", "dead%"], widths))
@@ -310,6 +376,9 @@ def main() -> None:
             [p.stem, f"{wall:.0f}", f"{talk:.0f}", f"{human:.0f}", f"{silent:.0f}",
              f"{100 * silent / max(wall - human, 1e-9):.0f}"], widths))
         all_gaps.extend(gaps)
+        appraisal_lat += [float(r["latency_s"]) for r in rows
+                          if r["event"] == "pad_appraisal" and r.get("latency_s") is not None]
+        appraisal_timeouts += sum(r["event"] == "pad_appraisal_timeout" for r in rows)
 
     if not all_gaps:
         print("no agent_state or avatar_chunk_play events found")
@@ -319,7 +388,7 @@ def main() -> None:
     by_kind: dict[str, list[Gap]] = defaultdict(list)
     for g in all_gaps:
         by_kind[g.kind].append(g)
-    widths = [26, 4, 6, 6, 6, 7] + [6] * len(COMPONENTS)
+    widths = [26, 4, 6, 6, 6, 7] + [max(6, len(c)) for c in COMPONENTS]
     print(fmt_row(["kind", "n", "p50", "p90", "max", "total"] + list(COMPONENTS), widths))
     for kind, gs in sorted(by_kind.items(), key=lambda kv: -sum(g.dur for g in kv[1])):
         durs = [g.dur for g in gs]
@@ -332,7 +401,14 @@ def main() -> None:
     print(f"\n== Where all {total:.0f} s of silence went ==")
     for c in COMPONENTS:
         s = sum(g.parts[c] for g in all_gaps)
-        print(f"  {c:7s} {s:7.1f} s  {100 * s / total:5.1f}%")
+        print(f"  {c:9s} {s:7.1f} s  {100 * s / total:5.1f}%")
+
+    if appraisal_lat or appraisal_timeouts:
+        print(
+            f"\n== PAD appraisals == n={len(appraisal_lat)}"
+            f"  p50={pct(appraisal_lat, .5):.2f}s  p90={pct(appraisal_lat, .9):.2f}s"
+            f"  max={max(appraisal_lat, default=float('nan')):.2f}s  timeouts={appraisal_timeouts}"
+        )
 
     if args.gaps:
         print("\n== Every gap ==")

@@ -152,8 +152,11 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
     if act.should_stop():
         return _finish(stopped=True)
     if state.get("moderations", 0) >= state.get("max_moderations", 8):
-        logger.info("show_graph: moderation cap reached")
-        return _finish()
+        # Hand the floor back to the human instead of ending the beat with nobody
+        # holding it (nothing else re-opens the floor while the session idles).
+        logger.info("show_graph: moderation cap reached — floor back to the human")
+        act.log("moderation_cap", moderations=state.get("moderations", 0))
+        return Command(goto="grant_human", update={"grant_reason": "moderation_cap"})
     trigger = state.get("trigger") or "host_moderate"
     await act.return_to_host(trigger)
     queue = act.queue_roles()
@@ -170,6 +173,7 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
         "kind": "open_floor",
         "procedural": True,
     }
+    act.prefetch_hand_raise_poll()  # no-op unless TALKSHOW_POLL_DURING_OPEN_FLOOR=1
     return _say(line, "hand_raise")
 
 
@@ -277,6 +281,10 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
     if getattr(act, "uses_reactive", lambda _: False)(line):
         return Command(goto="reactive_speak")
     utt = act.record_line(line)
+    if line.get("kind") == "intro" and line.get("target"):
+        # Same step panelist_line will use; no-op unless TALKSHOW_DRAFT_AHEAD=1.
+        target = line["target"]
+        act.start_panelist_draft(target, f"speech_{target}_{state.get('turn_idx', 0)}")
     if not line.get("procedural"):
         act.relax(line["role"])
     jobs: list[dict[str, Any]] = []

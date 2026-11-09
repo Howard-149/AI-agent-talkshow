@@ -55,6 +55,29 @@ def _drain_on_human_leave() -> bool:
     )
 
 
+def _delete_room_on_exit() -> bool:
+    return os.environ.get("TALKSHOW_DELETE_ROOM_ON_EXIT", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+async def _delete_room(job_ctx: JobContext | None, room_name: str) -> None:
+    """Close the LiveKit room so a rejoin creates a new room and gets a new dispatch.
+
+    Otherwise the empty room stays open for its departure timeout (~20 s), and a human
+    who rejoins in that window lands in a room with no agent.
+    """
+    if job_ctx is None or not _delete_room_on_exit():
+        return
+    try:
+        await asyncio.wait_for(job_ctx.delete_room(room_name), timeout=5.0)
+        logger.info("deleted room=%s on session exit", room_name)
+    except Exception:
+        logger.warning("room delete failed room=%s", room_name, exc_info=True)
+
+
 def should_stop_session_work(
     data: TalkShowData, session: AgentSession | None = None
 ) -> bool:
@@ -91,6 +114,7 @@ async def shutdown_session_when_alone(
     data.speak_line_busy = False
     data.panel_followup_deferred = False
     if not session_is_active(session):
+        await _delete_room(job_ctx, room_name)
         if job_ctx is not None:
             try:
                 job_ctx.shutdown(reason=reason)
@@ -108,6 +132,9 @@ async def shutdown_session_when_alone(
         session.shutdown(drain=drain)
     except Exception:
         logger.debug("session.shutdown skipped room=%s", room_name, exc_info=True)
+    if not drain:
+        # Deleting disconnects everyone at once, which would cut a TTS drain short.
+        await _delete_room(job_ctx, room_name)
     if job_ctx is not None:
         try:
             job_ctx.shutdown(reason=reason)

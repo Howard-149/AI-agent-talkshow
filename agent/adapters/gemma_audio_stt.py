@@ -150,7 +150,7 @@ class GemmaAudioSTT(stt.STT):
             return _empty_transcript_event()
 
         if data is None:
-            parsed = await self._client.complete_from_wav(wav)
+            parsed = await self._client.complete_from_wav(wav, output_role="host")
             self._turn_store.set_turn(parsed.heard, parsed.reply, handoff_to=parsed.handoff_to)
             return self._final_event(parsed.heard, language)
 
@@ -205,7 +205,7 @@ class GemmaAudioSTT(stt.STT):
         hist = data.show_history.prior_messages(perspective=ctrl.listen_role())
         t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
-            wav, user_text=user_hint, history_messages=hist
+            wav, user_text=user_hint, history_messages=hist, output_role="host"
         )
         model_latency_s = time.monotonic() - t0
 

@@ -85,6 +85,16 @@ export type UiEvent =
       source: 'playout_sync';
     }
   | {
+      type: 'pad_state';
+      role: PanelRole;
+      /** Current (P, A, D) in [-1, 1]. */
+      pad: [number, number, number];
+      /** Spoken MSP label (what TTS uses). */
+      emotion: string;
+      /** Last appraisal feeling phrase, when this update came from an appraisal. */
+      feeling?: string;
+    }
+  | {
       type: 'transcript';
       role: string;
       speaker: string;

@@ -11,6 +11,13 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COSYVOICE_PROMPTS_DIR = REPO_ROOT / "cosyvoice-prompts"
 
+def text_only_enabled() -> bool:
+    return os.environ.get("TALKSHOW_TEXT_ONLY", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 def _expand_path(path: str) -> str:
     """Expand ``${USER}`` in absolute/cluster paths (Piper ONNX, etc.)."""
