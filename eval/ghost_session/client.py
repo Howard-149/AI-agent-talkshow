@@ -35,6 +35,9 @@ class GhostScript:
     locale: str = "en"
     identity: str = "ghost-guest"
     turns: list[ScriptedTurn] = field(default_factory=list)
+    # Replay mode (worker needs TALKSHOW_GHOST_REPLAY=1): sent with the first turn;
+    # the worker swaps in this history / mood state before handling the turn.
+    prefix: dict[str, Any] | None = None
 
 
 def load_script(path: Path) -> GhostScript:
@@ -55,10 +58,23 @@ def load_script(path: Path) -> GhostScript:
             continue
         if text:
             turns.append(ScriptedTurn(text=text, topic=topic))
+    prefix: dict[str, Any] | None = None
+    if raw.get("prefix_file"):
+        prefix_path = Path(str(raw["prefix_file"]))
+        if not prefix_path.is_absolute():
+            prefix_path = _REPO_ROOT / prefix_path
+        prefix = json.loads(prefix_path.read_text(encoding="utf-8"))
+    if raw.get("persona_swap"):
+        prefix = dict(prefix or {})
+        prefix["persona_swap"] = True
+    if raw.get("flags"):
+        prefix = dict(prefix or {})
+        prefix["flags"] = dict(raw["flags"])
     return GhostScript(
         locale=str(raw.get("locale") or "en").strip() or "en",
         identity=str(raw.get("identity") or "ghost-guest").strip() or "ghost-guest",
         turns=turns,
+        prefix=prefix,
     )
 
 
@@ -139,6 +155,9 @@ class GhostRoomClient:
         self.room: Any = None
         self.welcome = asyncio.Event()
         self.human_floor = asyncio.Event()
+        self.transcript_seen = asyncio.Event()
+        self.last_transcript_t = 0.0
+        self.panel_transcripts = 0  # guest/commentator transcript events seen
         self._ui_types: list[str] = []
         self._audio_tap = audio_tap
 
@@ -167,6 +186,10 @@ class GhostRoomClient:
                 self.human_floor.set()
                 logger.info("human floor granted reason=%s", ev.get("reason"))
             if ev_type == "transcript":
+                self.transcript_seen.set()
+                self.last_transcript_t = time.monotonic()
+                if ev.get("role") in ("guest", "commentator"):
+                    self.panel_transcripts += 1
                 speaker = ev.get("speaker") or ev.get("role")
                 text = (ev.get("text") or "")[:80]
                 logger.info("ui transcript %s step=%s %r", speaker, ev.get("step"), text)
@@ -202,8 +225,11 @@ class GhostRoomClient:
         )
         logger.info("hand raised topic=%r", topic)
 
-    async def inject_turn(self, text: str) -> None:
-        await self.publish_control({"type": "ghost_human_turn", "text": text})
+    async def inject_turn(self, text: str, *, prefix: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {"type": "ghost_human_turn", "text": text}
+        if prefix:
+            payload["prefix"] = prefix
+        await self.publish_control(payload)
         logger.info("injected ghost turn chars=%d %r", len(text), text[:80])
 
     async def disconnect(self) -> None:
@@ -242,6 +268,64 @@ async def _wait_human_floor(
                 await client.raise_hand(topic=topic)
 
 
+async def _inject_until_heard(
+    client: GhostRoomClient,
+    text: str,
+    *,
+    settle_sec: float = 2.0,
+    ack_timeout_sec: float = 30.0,
+    attempts: int = 8,
+    prefix: dict[str, Any] | None = None,
+) -> None:
+    """Inject, then re-inject until a new transcript (the host reply) shows up.
+
+    The human ``floor_grant`` is emitted while the show beat is still finishing; an
+    inject that lands then is dropped by the worker ("panel chain running") with no
+    reply on the wire. Extra injects after acceptance are dropped the same way.
+    """
+    await asyncio.sleep(settle_sec)
+    for attempt in range(1, attempts + 1):
+        client.transcript_seen.clear()
+        await client.inject_turn(text, prefix=prefix)
+        try:
+            await asyncio.wait_for(client.transcript_seen.wait(), timeout=ack_timeout_sec)
+            return
+        except asyncio.TimeoutError:
+            logger.warning(
+                "no transcript %.0fs after inject (attempt %d/%d) — re-injecting",
+                ack_timeout_sec,
+                attempt,
+                attempts,
+            )
+    raise TimeoutError(f"ghost turn never acknowledged after {attempts} injects")
+
+
+async def _wait_quiet(
+    client: GhostRoomClient,
+    *,
+    quiet_sec: float,
+    max_sec: float,
+    stop_after_panel: int = 0,
+    panel_base: int = 0,
+) -> None:
+    """Return once the panel beat is over: ``stop_after_panel`` panelist lines since
+    ``panel_base`` (0 = off), or no transcript for ``quiet_sec``, or ``max_sec``.
+
+    Silence alone is a poor end signal: one line can take ~60 s to synthesise and play
+    under load, while 60 s after a beat the worker's idle loop starts the next one.
+    """
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < max_sec:
+        if stop_after_panel and client.panel_transcripts - panel_base >= stop_after_panel:
+            await asyncio.sleep(2.0)
+            return
+        last = max(client.last_transcript_t, t0)
+        if time.monotonic() - last >= quiet_sec:
+            return
+        await asyncio.sleep(1.0)
+    logger.warning("panel still talking after %.0fs — moving on", max_sec)
+
+
 async def run_ghost_session(
     *,
     room: str,
@@ -250,6 +334,10 @@ async def run_ghost_session(
     welcome_timeout_sec: float = 90.0,
     floor_timeout_sec: float = 180.0,
     hold_sec: float = 8.0,
+    grant_wait_sec: float = 120.0,
+    quiet_sec: float = 90.0,
+    stop_after_panel: int = 0,
+    beat_panel: int = 0,
     record: bool = False,
     frontend_url: str = "http://localhost:3000",
     start_frontend: bool = False,
@@ -332,30 +420,45 @@ async def run_ghost_session(
                 if idx > 1:
                     client.human_floor.clear()
                     await client.raise_hand(topic=topic)
+                    # Raise once: every raise resets the worker's idle timer, and the
+                    # idle moderation beat is what grants the queued human. A beat that
+                    # ends on a panelist's [next: human] leaves the floor with the human
+                    # but emits no floor_grant — so inject anyway after the wait.
+                    wait_sec = min(floor_timeout_sec, grant_wait_sec)
+                    raise_every = 0.0
+                else:
+                    wait_sec = floor_timeout_sec
+                    raise_every = 8.0
                 granted = await _wait_human_floor(
                     client,
                     topic=topic,
-                    timeout_sec=floor_timeout_sec,
-                    raise_every_sec=8.0,
+                    timeout_sec=wait_sec,
+                    raise_every_sec=raise_every,
                 )
                 if not granted:
-                    raise TimeoutError(
-                        f"timed out waiting for human floor before turn {idx}"
+                    if idx == 1:
+                        raise TimeoutError(
+                            f"timed out waiting for human floor before turn {idx}"
+                        )
+                    logger.info(
+                        "turn %d: no floor_grant after %.0fs — injecting anyway", idx, wait_sec
                     )
                 client.human_floor.clear()
-                await client.inject_turn(turn.text)
-                granted = await _wait_human_floor(
+                panel_base = client.panel_transcripts
+                await _inject_until_heard(
                     client,
-                    topic=topic,
-                    timeout_sec=floor_timeout_sec,
-                    raise_every_sec=0.0,
+                    turn.text,
+                    prefix=script.prefix if idx == 1 else None,
                 )
-                if not granted:
-                    logger.warning(
-                        "turn %d: no next human floor grant after %.0fs",
-                        idx,
-                        floor_timeout_sec,
-                    )
+                await _wait_quiet(
+                    client,
+                    quiet_sec=quiet_sec,
+                    max_sec=floor_timeout_sec * 3,
+                    # Last turn: leave after N panel lines. Earlier turns: let the beat run
+                    # to N panel lines (its full length) before raising the hand again.
+                    stop_after_panel=stop_after_panel if idx == len(script.turns) else beat_panel,
+                    panel_base=panel_base,
+                )
             await asyncio.sleep(max(0.0, hold_sec))
     finally:
         wav: Path | None = None
@@ -420,6 +523,26 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=8.0,
         help="Stay connected after the last beat so TTS can finish",
+    )
+    parser.add_argument(
+        "--quiet-sec",
+        type=float,
+        default=90.0,
+        help="A beat counts as over after this long without a transcript (the room "
+        "closes when the ghost leaves — keep it above the slowest line under load)",
+    )
+    parser.add_argument(
+        "--stop-after-panel",
+        type=int,
+        default=0,
+        help="After the LAST scripted turn, leave once this many panelist lines were heard (0 = off)",
+    )
+    parser.add_argument(
+        "--beat-panel",
+        type=int,
+        default=0,
+        help="Before a NON-final scripted turn, wait for this many panelist lines (a full beat) — "
+        "with --quiet-sec as fallback for beats that end early (0 = silence only)",
     )
     parser.add_argument(
         "--log-dir",
@@ -497,6 +620,9 @@ def main(argv: list[str] | None = None) -> int:
             welcome_timeout_sec=args.welcome_timeout,
             floor_timeout_sec=args.floor_timeout,
             hold_sec=args.hold_sec,
+            quiet_sec=args.quiet_sec,
+            stop_after_panel=args.stop_after_panel,
+            beat_panel=args.beat_panel,
             record=args.record,
             frontend_url=args.frontend_url,
             start_frontend=args.start_frontend,

@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Should non-compete agreements be banned?: the mic is yours whenever you're ready.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My sister couldn't take a better job across town because of a non-compete she signed at a sandwich shop. I think non-competes should be illegal.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a very real-world example, and it certainly brings up a big debate about worker mobility.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "That sandwich shop example is visceral, but we have to ask if banning them entirely solves the real problem of market power, or just the symptom.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's point about the bigger picture, but I think we have to start with the people who are actually feeling the pinch, like the sister in the sandwich shop example. Those personal barriers feel very real right now.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's right that the personal impact is huge, but we can't just legislate away every contract; we need surgical precision, not a total ban.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear you, Ryan, and I agree that nuance is important, but I wonder if focusing too much on surgical precision risks missing the fundamental issue of power imbalance when someone is in a vulnerable position",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, I get the power imbalance argument, but if we ban everything, we just give monopolies a free pass to dictate terms to the *next* generation of workers.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear your concern about monopolies, Ryan, but I worry that if we only focus on the big corporations, we ignore the countless small businesses and workers who are being held back by these agreements in everyday jobs",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy keeps bringing it back to the small business, but the issue isn't just the size of the company; it's the inherent leverage they hold over a person signing the contract.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Amy.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I understand the concern about leverage, Ryan, but for me, the core of this is about giving people the freedom to build a life and find better opportunities without being tied down by a single agreement",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Should non-compete agreements be banned? — go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.10289886398142203,
+   0.08358184152487212,
+   0.0800480667775339
+  ],
+  "commentator": [
+   -0.17989457293099415,
+   0.17197590953432906,
+   -0.19339360765247782
+  ],
+  "guest": [
+   -0.16127748086967872,
+   0.1084223805383037,
+   -0.15584200918186544
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "commentator": "neutral",
+  "guest": "neutral"
+ },
+ "dialogue_example_index": 0
+}

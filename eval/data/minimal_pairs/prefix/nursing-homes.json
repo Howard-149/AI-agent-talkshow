@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should families care for aging parents at home? — over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "We moved my grandmother into a nursing home and she declined fast. I think families should care for their parents at home whenever they possibly can.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a really heartfelt perspective, and it brings up a massive topic for so many people.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The sentiment is clear, but we have to talk about the practical reality of that \"whenever possible\" part.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan bringing up the practicalities, and I think that's a really important piece of the puzzle. While the desire to care for our loved ones at home is so strong, we also have to acknowledge the immense strain that can put on families.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's right about the strain, but we can't let the fear of burnout become the default answer when the system is clearly failing to support that care.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I really do agree that the system needs to step up, because the emotional weight of caring for a parent is something that shouldn't fall entirely on one or two people. I think we need to look at how we can build more community support around those family caregivers",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, building community support is the goal, but we need to stop treating it like a nice add-on and start treating it like essential infrastructure",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I think that framing it as essential infrastructure is exactly the right way to look at it; it moves the conversation from just being a personal favor to a necessary societal support structure. I hope we can find ways to make that happen so that families aren't forced into impossible choices",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Exactly, Amy, it has to be treated like infrastructure, otherwise we're just asking individuals to absorb a massive economic and emotional burden.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "I think we've established the need for support, but we still haven't talked about the actual financial barriers that prevent people from even *accessing* that infrastructure.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Should families care for aging parents at home? — go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.24973381192662433,
+   0.2000005420570036,
+   0.15266576093134848
+  ],
+  "commentator": [
+   0.24869077179386742,
+   0.08811753543387228,
+   0.1780140090284956
+  ],
+  "guest": [
+   0.40365228985837365,
+   0.1412258896024991,
+   0.12202394428503735
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "commentator": "neutral",
+  "guest": "neutral"
+ },
+ "dialogue_example_index": 0
+}

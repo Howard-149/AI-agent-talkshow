@@ -93,6 +93,19 @@ turns:
 
 `--script` can point at another YAML. Raise-hand happens on join so opening FIFO grants the human instead of a host direct-call.
 
+Replay scripts (the listening test, `eval/README.md`) add a saved show state to the first turn:
+
+```yaml
+prefix_file: eval/data/minimal_pairs/prefix/tipping.json   # history + mood to swap in before turn 1
+persona_swap: true                                         # optional: panelists swap personality traits
+flags: {TALKSHOW_ADDRESSEE_FLOOR: "1"}                     # optional: dialogue-quality flags for this session
+```
+
+The worker applies them only with `TALKSHOW_GHOST_REPLAY=1`, and then also logs a `history_snapshot` event before each
+ghost turn. With the flag off the prefix is ignored. The client re-sends a turn that got no reply within 30 s; the
+worker drops a ghost turn whose text equals the previous ghost turn. `--stop-after-panel N` leaves after N panel lines
+following the last turn.
+
 ## Record the frontend (no tab)
 
 Laptop only — `talkshow-web` is not synced to Babel. Playwright opens `/custom` as `ghost-viewer` (hidden on the panel), records the stage + transcript, and muxes LiveKit TTS audio into an MP4.

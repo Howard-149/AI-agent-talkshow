@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Has video review ruined football?: the mic is yours whenever you're ready.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "I used to love going to matches, but now every goal gets paused while some referee watches a monitor. I think video review has killed the joy of the sport.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a really strong sentiment, and it certainly sparks a lot of debate in the sports world.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "I get the sentiment, but \"killed the joy\" is a pretty dramatic way to put it; it's more like the sport is evolving to be more accurate, which is a different conversation entirely.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan saying it's about accuracy, and I can see how that's the technical argument for it. I'd also consider that for some fans, the ritual of the pause is part of the tension, even if it slows things down.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's point about tension is valid, but I think we're confusing the *pace* of the game with the *integrity* of the outcome; you can have both, if the review process is efficient.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Lessac, the core issue isn't the pause itself, it's when the review becomes the *defining* moment instead of just a necessary check.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan suggesting the issue is when the review becomes the defining moment, and I wonder if that's where the real feeling of lost joy comes from for fans. It feels like the focus shifts from the flow of the game to the mechanics of the decision",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you've nailed the crux of it—it's the narrative shift, not the technology itself that's killing the vibe",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I think what Ryan is pointing to about the narrative shift is really what I feel when I think about the experience of being there; it feels less like a shared moment and more like a waiting period for a technical ruling",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "It's that sense of manufactured drama, Amy, that turns a sporting moment into a procedural delay, and that's where the magic leaks out.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Has video review ruined football? — over to you.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.3090002938628517,
+   0.1517662587498755,
+   0.2211298799814692
+  ],
+  "guest": [
+   0.2805047264854715,
+   0.1403284739928849,
+   0.05243859677662483
+  ],
+  "commentator": [
+   0.27077627935936815,
+   0.1326066486593705,
+   0.15927683376352844
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

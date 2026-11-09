@@ -12,7 +12,7 @@ import time
 from typing import TYPE_CHECKING
 
 from agent.floor.floor_control import peek_floor_next
-from agent.session.ghost_flags import ghost_turns_allowed
+from agent.session.ghost_flags import ghost_replay_enabled, ghost_turns_allowed
 from agent.session.human_turn import ensure_listen_role_for_human, finalize_human_turn
 
 if TYPE_CHECKING:
@@ -30,8 +30,12 @@ async def run_ghost_human_turn(
     controller: TurnController,
     *,
     text: str,
+    prefix: dict | None = None,
 ) -> bool:
-    """Treat ``text`` as the human transcript and run host + panel actuators."""
+    """Treat ``text`` as the human transcript and run host + panel actuators.
+
+    ``prefix`` (replay mode only) replaces the show state first; see ghost_replay.
+    """
     heard = (text or "").strip()
     if not ghost_turns_allowed():
         logger.warning("ghost_human_turn ignored — TALKSHOW_GHOST_TURNS=0")
@@ -57,6 +61,18 @@ async def run_ghost_human_turn(
         return False
 
     async with data.human_turn_lock:
+        # Clients re-send an inject they saw no reply to; one queued behind the lock
+        # while the first copy ran must not replay the same turn.
+        if getattr(data, "ghost_last_heard", None) == heard:
+            logger.info("ghost_human_turn skip: duplicate of the last ghost turn")
+            return False
+        data.ghost_last_heard = heard  # type: ignore[attr-defined]
+        if prefix and ghost_replay_enabled():
+            from agent.session.ghost_replay import apply_prefix
+
+            apply_prefix(data, prefix)
+        elif prefix:
+            logger.warning("ghost_human_turn prefix ignored: TALKSHOW_GHOST_REPLAY is off")
         return await _run_ghost_human_turn_locked(
             session, data, controller, heard=heard
         )
@@ -88,6 +104,11 @@ async def _run_ghost_human_turn_locked(
             panel_turn=panel_turn,
             heard=heard[:200],
         )
+        if ghost_replay_enabled():
+            from agent.session.ghost_replay import snapshot_state
+
+            # State the reply is generated from: the prefix for later replays.
+            data.turn_log.log("history_snapshot", room=data.room_name, **snapshot_state(data))
 
     from agent.adapters.response_parser import ParsedTurn, parse_host_speech
     from agent.emotion import mood_prompt_block

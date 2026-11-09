@@ -1,0 +1,272 @@
+"""Episodes for the quality ruler: one JSON object per episode, `lines` = [{role, speaker, text}] in show order.
+
+role ∈ host | commentator (Ryan) | guest (Amy) | human. A *beat* = the panel lines between two human/host-topic turns.
+
+Sources
+- system   : model-only multi-beat episodes on the public test motions, generated with the production panel prompts
+             (eval/model_only.build_request) by `generate` (GPU). Host lines are the production tee-up templates
+             (agent/floor/host_lines._INTRO_SPEAKER), not LLM host replies (a simplification, stated in the README).
+- anchor   : real IQ2 panel exchanges on the same motions (eval/data/public_set/build/anchors*.jsonl).
+- live     : live ghost replay sessions (live_episodes), with real LLM host replies.
+- perturbed: known-bad versions of system/anchor/live beats (perturb.py).
+"""
+
+from __future__ import annotations
+
+import json
+import random
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+PUBLIC = ROOT / "eval" / "data" / "public_set"
+PANEL = ("commentator", "guest")
+NAMES = {"commentator": "Ryan", "guest": "Amy", "host": "Lessac", "human": "Human guest"}
+
+
+def model_name(m: str) -> str:
+    """Readable model name, also for a resolved local snapshot path (…/models--org--name/snapshots/<hash>)."""
+    import re as _re
+
+    hit = _re.search(r"models--[^/]+--([^/]+)/snapshots", m)
+    return hit.group(1) if hit else m.rstrip("/").split("/")[-1]
+
+
+def load(path: Path) -> list[dict]:
+    return [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
+
+
+def save(path: Path, eps: list[dict]) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in eps))
+
+
+def panel_idx(ep: dict) -> list[int]:
+    return [i for i, l in enumerate(ep["lines"]) if l["role"] in PANEL]
+
+
+def beats(ep: dict) -> list[list[int]]:
+    """Indices of panel lines grouped into beats (a beat ends at a human line)."""
+    out, cur = [], []
+    for i, l in enumerate(ep["lines"]):
+        if l["role"] == "human" and cur:
+            out.append(cur)
+            cur = []
+        elif l["role"] in PANEL:
+            cur.append(i)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def beat_episode(ep: dict, b: int, tag: str) -> dict:
+    """A one-beat episode: everything up to and including beat b (earlier lines stay as context)."""
+    bs = beats(ep)
+    end = bs[b][-1] + 1
+    start_ctx = 0
+    return {**ep, "id": f"{ep['id']}#b{b}{tag}", "base_id": ep["id"], "lines": ep["lines"][start_ctx:end],
+            "scored": bs[b]}
+
+
+def anchors(version: str = "") -> list[dict]:
+    """Human anchors → one-beat episodes: [human turn1 (template)] + host + 4 panel lines.
+    version="_v2": the most interactive discussion windows (`build.py anchors --v2`)."""
+    p = PUBLIC / "build" / f"anchors{version}.jsonl"
+    if not p.is_file():
+        sys.exit(f"missing {p}: run `python -m eval.data.public_set.build anchors` first (eval/data/public_set/README.md)")
+    out = []
+    for a in load(p):
+        lines = [{"role": "human", "speaker": NAMES["human"],
+                  "text": f'I want to put a motion to the panel: "{a["topic"].rstrip(".")}." Where do the two of you land?'}]
+        for l in a["lines"]:
+            lines.append({"role": l["role_id"], "speaker": l["speaker"], "text": l["text"],
+                          **({"side": l["side"]} if l.get("side") else {})})
+        ep = {"id": f"anchor:{a['topic_id']}", "topic_id": a["topic_id"], "topic": a["topic"], "source": "anchor",
+              "lines": lines}
+        ep["scored"] = panel_idx(ep)
+        out.append(ep)
+    return out
+
+
+# --------------------------------------------------------------------------------------------- live episodes
+
+def _host_template_res() -> list:
+    """Regexes for every production host template (agent/floor/host_lines.py tuples + the welcome line): a host line
+    matching one is procedural floor management; anything else is a real (LLM) host reply."""
+    import re as _re
+
+    from agent.floor import host_lines as H
+
+    pats = [_re.escape("Welcome — I'm Lessac, your host.") + ".*"]
+    for name in dir(H):
+        v = getattr(H, name)
+        if name.startswith("_") and isinstance(v, tuple) and v and all(isinstance(x, str) for x in v):
+            for tmpl in v:
+                esc = _re.escape(tmpl)
+                esc = esc.replace(_re.escape("{name}"), r"\w+").replace(_re.escape("{topic}"), r".+")
+                pats.append(esc)
+    return [_re.compile("^" + p + "$") for p in pats]
+
+
+def live_episodes(log_dir: Path, arm: str = "A", limit: int = 0, seed: int = 0) -> list[dict]:
+    """One episode per live ghost session of the given arm (room suffix __v<arm>; "" = sessions without a suffix): the
+    replayed prefix (history_snapshot), the human's
+    turn 2, then every spoken line in order (line_start). Host lines that match a production template are marked
+    procedural; the others (the host LLM's replies) are `host_scored` for the host-craft items."""
+    import ast
+    import re as _re
+
+    res = _host_template_res()
+    out = []
+    for f in sorted(Path(log_dir).glob("session-*.jsonl")):
+        ev = []
+        for line in f.read_text().splitlines():
+            try:
+                ev.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        room = next((e.get("room", "") for e in ev if e.get("room")), "")
+        m = _re.match(r"ghost-(?P<slug>[\w-]+?)__(?P<cond>\w+?)__k(?P<k>\d+)(?:__v(?P<v>[A-Za-z0-9]+))?", room)
+        if not m or (m["v"] or "") != arm:
+            continue
+        snap = next((e for e in ev if e.get("event") == "history_snapshot"), None)
+        human = next((e for e in ev if e.get("event") == "ghost_human_start"), None)
+        if snap is None or human is None:
+            continue
+        prefix = snap["lines"] if isinstance(snap["lines"], list) else ast.literal_eval(snap["lines"])
+        lines = [{"role": l["role_id"], "speaker": NAMES.get(l["role_id"], l.get("speaker", "")), "text": l["text"],
+                  **({"procedural": True} if l.get("procedural") else {})} for l in prefix]
+        lines.append({"role": "human", "speaker": NAMES["human"], "text": human.get("heard", "")})
+        t_h = human.get("ts", 0)
+        for e in ev:
+            if e.get("event") == "line_start" and e.get("ts", 0) > t_h and e.get("text"):
+                role = e.get("role")
+                if role not in ("host", "commentator", "guest"):
+                    continue
+                l = {"role": role, "speaker": NAMES[role], "text": e["text"]}
+                if role == "host" and any(r.match(e["text"].strip()) for r in res):
+                    l["procedural"] = True
+                lines.append(l)
+        h = max(i for i, l in enumerate(lines) if l["role"] == "human")
+        ep = {"id": f"live:{m['slug']}:{m['cond']}:k{m['k']}:v{arm}", "topic_id": m["slug"], "topic": m["slug"],
+              "source": "live", "lines": lines,
+              "scored": [i for i in range(h + 1, len(lines)) if lines[i]["role"] in PANEL],
+              "host_scored": [i for i in range(h + 1, len(lines)) if lines[i]["role"] == "host"
+                              and not lines[i].get("procedural")]}
+        if ep["scored"]:
+            out.append(ep)
+    if limit and len(out) > limit:
+        out = sorted(random.Random(seed).sample(out, limit), key=lambda e: e["id"])
+    return out
+
+
+# --------------------------------------------------------------------------------------------- generation (GPU)
+
+def generate(args) -> None:
+    """Model-only episodes: turn 1 → beat 1 (4 panel lines) → turn 2 (orig) → beat 2 (4 lines), production panel prompts.
+    Panel speakers alternate starting with Ryan; before each panel line the host says a production tee-up line.
+    `--arm` / `--arm-spec` (eval/quality_ruler/arms.py) set the generation knobs; `--pairs` picks the topic set (the 30
+    hand-written topics in minimal_pairs/pairs.yaml, or the public test set build/pairs_public.yaml). Seeds are per
+    (topic, k, step), shared across arms."""
+    import hashlib
+    import json as _json
+    import re
+
+    import yaml
+    from vllm import LLM, SamplingParams
+
+    from agent.floor.host_lines import _INTRO_SPEAKER
+    from eval.model_only import TEMPERATURE, add_plan, build_request, planner_messages, postprocess
+    from eval.quality_ruler.arms import ARMS, BANNED_OPENERS, ban_text, opener, opener_plan_text, rerank_score
+
+    arm = dict(ARMS.get(args.arm, {})) if args.arm in ARMS else {}
+    if args.arm_spec:
+        arm.update(_json.loads(args.arm_spec))
+    pairs = yaml.safe_load(Path(args.pairs).read_text())["topics"]
+    if args.topics:
+        keep = set(args.topics.split(","))
+        pairs = [t for t in pairs if t["slug"] in keep]
+    llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=8192, gpu_memory_utilization=0.88,
+              seed=args.seed, disable_custom_all_reduce=args.tp > 1)
+    chat_kwargs = {"enable_thinking": False} if "qwen3" in args.model.lower() else None
+
+    def chat(convs, sps):
+        return llm.chat(convs, sps, chat_template_kwargs=chat_kwargs) if chat_kwargs else llm.chat(convs, sps)
+
+    def seed_of(*parts) -> int:
+        return int(hashlib.sha256(":".join(map(str, parts)).encode()).hexdigest()[:8], 16)
+
+    rng = random.Random(args.seed)
+    temp = arm.get("temperature", TEMPERATURE)
+    bad_words = [v for w in BANNED_OPENERS for v in (w, " " + w)]
+    n = int(arm.get("best_of", 1))
+    eps = []
+    for t in pairs:
+        for k in range(args.k):
+            eps.append({"id": f"{args.arm}:{t['slug']}:k{k}", "topic_id": t["slug"], "topic": t["topic"],
+                        "source": "system", "arm": args.arm, "arm_spec": arm, "model": model_name(args.model), "k": k,
+                        "plan": [t["turn1"], t["turn2"]["orig"]], "fact_plan": {},
+                        "lines": [{"role": "host", "speaker": "Lessac", "procedural": True,
+                                   "text": f"You wanted to talk about {t['topic'].rstrip('.?')} — the floor is yours, go ahead."},
+                                  {"role": "human", "speaker": NAMES["human"], "text": t["turn1"]}]})
+    for beat in range(2):
+        if beat == 1:
+            for e in eps:
+                e["lines"].append({"role": "human", "speaker": NAMES["human"], "text": e["plan"][1]})
+        if arm.get("lite_plan"):  # one plan per beat from the latest human turn (production planner prompt, temp 0)
+            texts = sorted({e["plan"][beat] for e in eps})
+            outs = chat([planner_messages(x) for x in texts], SamplingParams(temperature=0.0, max_tokens=160))
+            plans = {x: re.sub(r"<think>.*?</think>", "", o.outputs[0].text, flags=re.S).strip() for x, o in zip(texts, outs)}
+            for e in eps:
+                e["fact_plan"][beat] = plans[e["plan"][beat]]
+        for step in range(args.lines_per_beat):
+            role = PANEL[step % 2]
+            convs, reqs, sps = [], [], []
+            for e in eps:
+                e["lines"].append({"role": "host", "speaker": "Lessac", "procedural": True,
+                                   "text": rng.choice(_INTRO_SPEAKER).format(name=NAMES[role])})
+                prefix = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
+                                     "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
+                r = build_request(prefix, "", role, False, include_human=False,
+                                  dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"))
+                msgs = [dict(m) for m in r["messages"]]
+                extra = []
+                if arm.get("instruction"):
+                    extra.append(arm["instruction"])
+                if arm.get("opener_ban"):
+                    extra.append(ban_text([opener(l["text"]) for l in e["lines"] if l["role"] in PANEL]))
+                if arm.get("opener_plan"):
+                    extra.append(opener_plan_text(seed_of("plan", e["topic_id"], e["k"], beat, step),
+                                                  role if arm["opener_plan"] == "persona" else None))
+                if extra:
+                    msgs[-1]["content"] = msgs[-1]["content"] + "\n\n" + "\n".join(extra)
+                if arm.get("lite_plan"):
+                    msgs = add_plan(msgs, e["fact_plan"][beat], lite=True)
+                reqs.append(r)
+                convs.append(msgs)
+                sps.append(SamplingParams(temperature=temp, min_p=arm.get("min_p", 0.0), max_tokens=512, n=n,
+                                          seed=seed_of(e["topic_id"], e["k"], beat, step),
+                                          **({"bad_words": bad_words} if arm.get("ban_openers") else {})))
+            outs = chat(convs, sps)
+            for e, r, o in zip(eps, reqs, outs):
+                cands = []
+                for comp in o.outputs:
+                    raw = re.sub(r"<think>.*?</think>", "", comp.text, flags=re.S).strip()
+                    line = postprocess(raw, role, r["panel_roles"], r["data"].show_history)
+                    if line:
+                        cands.append(line)
+                if not cands:
+                    cands = ["…"]
+                if len(cands) > 1:
+                    earlier = [l["text"] for l in e["lines"] if l["role"] in PANEL]
+                    used = {opener(x) for x in earlier}
+                    cands.sort(key=lambda c: -rerank_score(c, earlier, used, arm.get("opener_penalty", 1.0)))
+                e["lines"].append({"role": role, "speaker": NAMES[role], "text": cands[0],
+                                   **({"n_candidates": len(cands)} if n > 1 else {})})
+            print(f"[{args.arm}] beat {beat} step {step} done ({len(eps)} episodes)", flush=True)
+    for e in eps:
+        e.pop("plan")
+        e["scored"] = panel_idx(e)
+    save(Path(args.out), eps)
+    print(f"wrote {len(eps)} episodes → {args.out}")

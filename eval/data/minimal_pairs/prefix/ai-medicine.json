@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted to talk about Should AI be allowed to diagnose patients? — the floor is yours, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My mother's cancer was missed by two doctors before a third caught it. I think AI should be reading every scan because humans clearly miss things.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That is a powerful and deeply personal story, thank you for sharing that with us. It certainly brings the conversation about diagnostic accuracy into sharp focus",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The personal story is compelling, I grant you that, but jumping straight to \"AI should read every scan\" is a massive leap of faith.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's caution about making such a huge leap, and I think that's a very important place to start. When I think about the experience the guest shared, it makes me wonder if we can look at AI as a kind of tireless second set of eyes, rather than a replacement for the doctor.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, \"second set of eyes\" is a nice framing, but we have to be careful not to let that become a shield for systemic failures in human training or workflow",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan, and I understand the need to keep us grounded in the system, but I worry that focusing too much on workflow might distract us from the immediate human cost of missed diagnoses. For people who are already scared, the promise of a tool that *might* catch what a tired human missed feels incredibly important",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, the human cost is real, I get that, but we can't let the fear of current failure become a mandate for unvetted technological deployment",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The promise is huge, but we need to talk about the liability when the AI *is* wrong, because that's where the real risk lands.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's concern about liability, and that is a very real and serious hurdle we need to address. But I wonder if we can approach the risk not just as a legal problem, but as a way to force better standards across the board, making the entire diagnostic process safer for everyone",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, using liability as a lever for better standards is a pragmatic angle, but we have to ensure that the focus doesn't just become about shifting blame from the doctor to the algorithm",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Should AI be allowed to diagnose patients?: the mic is yours whenever you're ready.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.2035005126792607,
+   0.22299557873248663,
+   0.11636479061005375
+  ],
+  "commentator": [
+   -0.13239061695951473,
+   0.13139113716080003,
+   -0.08994034256009331
+  ],
+  "guest": [
+   -0.41811644229936484,
+   0.216393863693436,
+   -0.3289742459521616
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "commentator": "neutral",
+  "guest": "neutral"
+ },
+ "dialogue_example_index": 0
+}
