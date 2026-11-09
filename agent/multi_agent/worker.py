@@ -45,12 +45,12 @@ class PersonaWorker:
 
         # Concrete panel lines (flags default off): move library / instruction / best-of-N.
         from agent.panel.concrete import (
-            CONCRETE,
             best_of,
             concrete_instruction_enabled,
             dialogue_library_override,
             pick_best,
         )
+        from agent.panel.fact_pack import finish_turn_prompt
 
         dialogue_hint = ""
         next_dialogue_index: int | None = None
@@ -104,8 +104,8 @@ class PersonaWorker:
             if plan:
                 prompt += plan_block(plan)
             uptake_info.update(plan_used=bool(plan), plan_wait_s=round(waited, 3))
-        if concrete_instruction_enabled():
-            prompt += "\n\n" + CONCRETE
+        # Fact pack (flag default off), then the concrete instruction; shared with the offline prompt builders.
+        prompt, fact_info = finish_turn_prompt(data, prompt)
         n_best = best_of()
         logger.info(
             "panel draft prompt role=%s step=%s system_chars=%d user_chars=%d hint_chars=%d pick=%s",
@@ -206,6 +206,7 @@ class PersonaWorker:
                 room=getattr(data, "room_name", ""),
                 **uptake_info,
                 **concrete_info,
+                **fact_info,
             )
 
         return AgentDraft(

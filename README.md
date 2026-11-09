@@ -149,6 +149,7 @@ Three panel fixes, all off by default. Turn them on in the repo-root `.env` (age
 | `TALKSHOW_UPTAKE_PLANNER=lite` + `TALKSHOW_PANEL_SCAFFOLD_FIX=1` | The first panel line after a human turn is pointed at what the human just said (their figures, names and stance), instead of the previous panelist. |
 | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete` + `TALKSHOW_PANEL_CONCRETE=1` | Style examples that carry facts, plus a rule asking for one concrete fact per line. |
 | `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. |
+| `TALKSHOW_FACT_PACK=<path to json>` | Under test: each panel line gets the most relevant checked facts for the topic (from Wikipedia) and may take specific numbers, names, studies and cases only from them or from what was said in the show. `TALKSHOW_FACT_PACK_K` sets how many facts (default 6); `TALKSHOW_FACT_PACK_TOPIC` pins the topic id. See `agent/panel/fact_pack.py`. |
 
 `deploy/arms/dialogue-quality.arms` has the current show (A), the recommended set without best-of (FAST, about +0.6 s on the slowest lines) and the full set (FULL), for `deploy/ghost-arms.sh`.
 

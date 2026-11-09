@@ -112,6 +112,31 @@ done
 python -m eval.quality_ruler.ruler score $R/production.jsonl $R/live_B.jsonl
 ```
 
+### Fact pack: production vs fast vs fast + pack
+
+Arms `production`, `fast` (the live FAST flags, `deploy/arms/dialogue-quality.arms`) and `concrete_fact_pack` (fast +
+`TALKSHOW_FACT_PACK`). The two live-flag arms build each prompt with the live worker's own code, so an offline episode
+sees exactly the live prompt. The pack path comes from the environment. Topics: the 30 tuning topics plus the 42 public
+ones (a comma list of pairs files).
+
+```bash
+export TALKSHOW_FACT_PACK=<path to the fact pack json> TALKSHOW_ROOT=$PWD
+R=eval/results/ruler-factpack P=eval/data/minimal_pairs/pairs.yaml,eval/data/public_set/build/pairs_public.yaml
+# CPU first: every prompt, no model (read <dir>/*.txt)
+python -m eval.quality_ruler.ruler generate --arm concrete_fact_pack -k 1 --topics nuclear-power,iq2-1595 \
+  --pairs $P --dry-run $R/dry
+for A in production fast concrete_fact_pack; do
+  RULER_CMD="generate --model google/gemma-4-E4B-it -k 2 --arm $A --pairs $P --out $R/$A.jsonl" RULER_OVERLAY=1 \
+    $SB --gpus=1 deploy/slurm-eval-ruler.sh
+done
+# then embed + the two juries over the three files as above, and
+python -m eval.quality_ruler.ruler score $R/production.jsonl $R/fast.jsonl $R/concrete_fact_pack.jsonl  # adds specifics.*
+python -m eval.quality_ruler.specifics $R/production.jsonl $R/fast.jsonl $R/concrete_fact_pack.jsonl --out $R/specifics.json
+```
+
+`specifics.py` counts, per arm, specifics per 100 words, the share supported by the pack or by an earlier line of
+someone else, and the share of lines with at least one unsupported specific. Every arm is checked against the same pack.
+
 Validate the ruler again (after changing items, judges or perturbations):
 
 ```bash

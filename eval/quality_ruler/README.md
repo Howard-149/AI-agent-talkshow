@@ -8,10 +8,11 @@ Scores panel dialogue line by line and was validated before use. How to run it: 
 | `items.py` | wording of every yes/no question, the persona cards, the generic-filler pool |
 | `jury.py` | one judge model per run; answers read from next-token logprobs (no sampling); resumes after a requeue |
 | `auto.py` | counted metrics (no judge): figures and names, generic similarity, novelty, repetition, opener reuse |
+| `specifics.py` | unsupported specifics (no judge): numbers, years, money and names in a panel line that are neither in the topic's fact pack nor said earlier by someone else |
 | `perturb.py` | known-bad edits of an episode, each with the measures it should lower |
 | `stats.py` | Krippendorff's alpha, Bradley–Terry with bootstrap, length-controlled logistic fit, Pearson r |
 | `episodes.py` | episode format; model-only generation, human anchors, live session logs |
-| `arms.py` | generation knobs for model-only episodes (`production` = no knobs) |
+| `arms.py` | generation knobs for model-only episodes (`production` = no knobs; `fast` and `concrete_fact_pack` use the live flags and the live prompt code) |
 | `ruler.py` | the command line: generate, live, embed, jury, score, and the validation stages |
 
 ## Measures

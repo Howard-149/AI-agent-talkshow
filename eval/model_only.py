@@ -33,6 +33,7 @@ PAIRS = ROOT / "eval" / "data" / "minimal_pairs" / "pairs.yaml"
 PREFIX_DIR = ROOT / "eval" / "data" / "minimal_pairs" / "prefix"
 CONDITIONS = ("orig", "paraphrase", "negate", "number", "entity", "addressee", "persona_swap")
 TEMPERATURE = 0.45  # GemmaMMClient.complete_text default (panel worker passes none)
+PLAN_PLACEHOLDER = "- (trace: the planner's extracted points appear here; no model is called)"
 
 
 def _data_for(prefix: dict, human_text: str, include_human: bool = True):
@@ -78,12 +79,18 @@ def build_minimal_request(prefix: dict, human_text: str, role: str, persona_swap
 
 
 def build_request(prefix: dict, human_text: str, role: str, persona_swap: bool, include_human: bool = True,
-                  dialogue_pick: str | None = None, dialogue_library: str | None = None) -> dict:
+                  dialogue_pick: str | None = None, dialogue_library: str | None = None,
+                  live_fixes: bool = False, plan: str = "", topic_id: str | None = None) -> dict:
     """Production panel prompt. dialogue_pick / dialogue_library override the scenario's move catalogue (generation
     knobs; defaults = production). include_human=False: no new human line (the prefix already ends where the panelist
-    speaks)."""
+    speaks).
+
+    live_fixes=True: also apply the panel fixes exactly as the live worker does (agent/multi_agent/worker.py), read from
+    the same environment flags: move library override, scaffold fix, uptake plan (`plan`, the planner output, used only
+    on the first panel line after a human turn), fact pack (topic `topic_id`) and concrete instruction."""
     from agent.config import load_persona_name, set_persona_swap
     from agent.floor import TurnController
+    from agent.panel.concrete import dialogue_library_override
     from agent.panel.dialogue_library import format_dialogue_hint
     from agent.panel.panel_prompts import panel_speech_prompt, panelist_system_prompt
 
@@ -93,6 +100,8 @@ def build_request(prefix: dict, human_text: str, role: str, persona_swap: bool, 
     panel_roles = controller.panel_speaker_roles()
     dialogue_hint = ""
     dlg = data.scenario.dialogue
+    if live_fixes:
+        dialogue_library = dialogue_library or dialogue_library_override()
     if dlg and dlg.library:
         dialogue_hint, _ = format_dialogue_hint(
             dialogue_library or dlg.library, role=role, pick=dialogue_pick or dlg.pick,
@@ -116,6 +125,9 @@ def build_request(prefix: dict, human_text: str, role: str, persona_swap: bool, 
         dialogue_hint=dialogue_hint,
         data=data,
     )
+    fact_info: dict = {}
+    if live_fixes:
+        system, prompt, fact_info = live_prompt_fixes(data, system, prompt, plan, topic_id)
     hist = data.show_history.prior_messages(perspective=role)
     # GemmaMMClient._build_messages: fold the instruction into a trailing user turn.
     messages = [{"role": "system", "content": system}, *[dict(m) for m in hist]]
@@ -124,7 +136,21 @@ def build_request(prefix: dict, human_text: str, role: str, persona_swap: bool, 
     else:
         messages.append({"role": "user", "content": prompt})
     set_persona_swap(False)
-    return {"messages": messages, "panel_roles": panel_roles, "data": data}
+    return {"messages": messages, "panel_roles": panel_roles, "data": data, "fact_pack": fact_info}
+
+
+def live_prompt_fixes(data, system: str, prompt: str, plan: str = "",
+                      topic_id: str | None = None) -> tuple[str, str, dict]:
+    """The worker's prompt-side panel fixes, in the worker's order: scaffold fix, uptake plan (first panel line after a
+    human turn only), fact pack block, concrete instruction."""
+    from agent.panel.fact_pack import finish_turn_prompt
+    from agent.panel.uptake import adapt_panel_prompt, first_answer_to_human, plan_block, uptake_planner_enabled
+
+    system, prompt, _ = adapt_panel_prompt(data, system, prompt)
+    if plan and uptake_planner_enabled() and first_answer_to_human(data) is not None:
+        prompt += plan_block(plan)
+    prompt, info = finish_turn_prompt(data, prompt, topic_id)
+    return system, prompt, info
 
 
 # ---- planner prompt (also used by the `lite_plan` generation knob, eval/quality_ruler/arms.py)
@@ -203,12 +229,25 @@ def cmd_trace(args: argparse.Namespace) -> None:
     slug = args.topic
     builder = build_minimal_request if args.scaffold == "minimal" else build_request
     conds = tuple(args.conditions.split(",")) if args.conditions else CONDITIONS
+    arm = {}
+    if args.arm:
+        from eval.quality_ruler.arms import ARMS, apply_env
+
+        arm = ARMS[args.arm]
+        apply_env(arm)
     for t, prefix, cond, text, role in _items(slug, roles=("guest",) if args.guest else ("commentator",),
                                               conditions=conds, pairs=args.pairs):
-        req = builder(prefix, text, role, cond == "persona_swap")
+        if arm.get("live_flags"):
+            # No model on this path: the planner output is a marked placeholder.
+            req = build_request(prefix, text, role, cond == "persona_swap", live_fixes=True, topic_id=t["slug"],
+                                plan=PLAN_PLACEHOLDER)
+        else:
+            req = builder(prefix, text, role, cond == "persona_swap")
         path = out / f"prompt_{slug}__{cond}__{role}.txt"
         with path.open("w") as f:
-            f.write(f"# topic={slug} condition={cond} speaker={role}\n")
+            f.write(f"# topic={slug} condition={cond} speaker={role} arm={args.arm or 'production'}\n")
+            if req.get("fact_pack"):
+                f.write(f"# fact_pack={json.dumps(req['fact_pack'])}\n")
             for m in req["messages"]:
                 f.write(f"\n===== {m['role']} =====\n{m['content']}\n")
         n_human = sum(m["content"].count(text) for m in req["messages"])
@@ -239,7 +278,10 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
         from eval.quality_ruler.arms import ARMS, BANNED_OPENERS, ban_text, opener, opener_plan_text, rerank_score
 
+        from eval.quality_ruler.arms import apply_env
+
         arm = ARMS[args.arm]
+        apply_env(arm)
     n_cand = int(arm.get("best_of", 1))
     params = SamplingParams(temperature=arm.get("temperature", TEMPERATURE), min_p=arm.get("min_p", 0.0),
                             max_tokens=512, seed=None, n=n_cand,
@@ -251,12 +293,26 @@ def cmd_generate(args: argparse.Namespace) -> None:
     def chat(convs, sp):
         return llm.chat(convs, sp, chat_template_kwargs=chat_kwargs) if chat_kwargs else llm.chat(convs, sp)
 
+    plans: dict[str, str] = {}
+    if arm.get("live_flags"):
+        from agent.panel.uptake import uptake_planner_enabled
+
+        if uptake_planner_enabled():  # the live planner call (same prompt, temperature 0), once per human turn text
+            texts = sorted({x[3] for x in _items(args.topics, conditions=tuple(args.conditions.split(",")) if
+                                                 args.conditions else CONDITIONS, pairs=args.pairs)})
+            outs = chat([planner_messages(x) for x in texts], SamplingParams(temperature=0.0, max_tokens=160))
+            plans = {x: re.sub(r"<think>.*?</think>", "", o.outputs[0].text, flags=re.S).strip()
+                     for x, o in zip(texts, outs)}
+
     for scaffold in scaffolds:
         builder = build_minimal_request if scaffold == "minimal" else build_request
         conds = tuple(args.conditions.split(",")) if args.conditions else CONDITIONS
         items, convs = [], []
         for t, prefix, cond, text, role in _items(args.topics, conditions=conds, pairs=args.pairs):
-            if arm:
+            if arm.get("live_flags"):
+                req = build_request(prefix, text, role, cond == "persona_swap", live_fixes=True,
+                                    plan=plans.get(text, ""), topic_id=t["slug"])
+            elif arm:
                 req = build_request(prefix, text, role, cond == "persona_swap",
                                     dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"))
             else:
@@ -308,6 +364,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
                 }
                 if n_cand > 1:
                     row["cands"] = cands
+                if req.get("fact_pack"):
+                    row["fact_pack"] = req["fact_pack"]
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
         print(f"[{args.model} | {scaffold} | {args.arm or 'production'}] generated {len(items)} items "
               f"({n_empty} empty after post-processing) → {out}/{name}")
@@ -324,6 +382,7 @@ def main() -> None:
     p.add_argument("--guest", action="store_true", help="trace Amy's prompt instead of Ryan's")
     p.add_argument("--conditions", default="")
     p.add_argument("--pairs", default=str(PAIRS))
+    p.add_argument("--arm", default="", help="knob preset from eval/quality_ruler/arms.py ARMS (default production)")
     p.set_defaults(fn=cmd_trace)
     p = sub.add_parser("generate", help="generate replies -> lines.jsonl (GPU)")
     p.add_argument("-k", type=int, default=5)

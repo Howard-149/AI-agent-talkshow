@@ -167,28 +167,42 @@ def generate(args) -> None:
     """Model-only episodes: turn 1 → beat 1 (4 panel lines) → turn 2 (orig) → beat 2 (4 lines), production panel prompts.
     Panel speakers alternate starting with Ryan; before each panel line the host says a production tee-up line.
     `--arm` / `--arm-spec` (eval/quality_ruler/arms.py) set the generation knobs; `--pairs` picks the topic set (the 30
-    hand-written topics in minimal_pairs/pairs.yaml, or the public test set build/pairs_public.yaml). Seeds are per
-    (topic, k, step), shared across arms."""
+    hand-written topics in minimal_pairs/pairs.yaml, or the public test set build/pairs_public.yaml; a comma list
+    concatenates files). Seeds are per (topic, k, step), shared across arms.
+
+    Arms with `live_flags` build every panel prompt with the live worker's fixes (model_only.build_request(
+    live_fixes=True)): the uptake plan only on the first panel line after a human turn, the fact pack, the concrete
+    instruction. `--dry-run DIR`: no model; every prompt is written to DIR (prompts.jsonl, one readable .txt per
+    episode) and each panel line is a placeholder, so later prompts show the placeholder in the transcript."""
     import hashlib
     import json as _json
     import re
 
     import yaml
-    from vllm import LLM, SamplingParams
 
     from agent.floor.host_lines import _INTRO_SPEAKER
+    from agent.panel.uptake import uptake_planner_enabled
     from eval.model_only import TEMPERATURE, add_plan, build_request, planner_messages, postprocess
-    from eval.quality_ruler.arms import ARMS, BANNED_OPENERS, ban_text, opener, opener_plan_text, rerank_score
+    from eval.quality_ruler.arms import (ARMS, BANNED_OPENERS, apply_env, ban_text, opener, opener_plan_text,
+                                         rerank_score)
 
     arm = dict(ARMS.get(args.arm, {})) if args.arm in ARMS else {}
     if args.arm_spec:
         arm.update(_json.loads(args.arm_spec))
-    pairs = yaml.safe_load(Path(args.pairs).read_text())["topics"]
+    apply_env(arm)
+    live = bool(arm.get("live_flags"))
+    pairs = [t for f in str(args.pairs).split(",") if f for t in yaml.safe_load(Path(f).read_text())["topics"]]
     if args.topics:
         keep = set(args.topics.split(","))
         pairs = [t for t in pairs if t["slug"] in keep]
-    llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=8192, gpu_memory_utilization=0.88,
-              seed=args.seed, disable_custom_all_reduce=args.tp > 1)
+    dry = Path(args.dry_run) if getattr(args, "dry_run", "") else None
+    if dry:
+        llm, SamplingParams = DryRunLLM(), _DrySampling
+    else:
+        from vllm import LLM, SamplingParams
+
+        llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=8192, gpu_memory_utilization=0.88,
+                  seed=args.seed, disable_custom_all_reduce=args.tp > 1)
     chat_kwargs = {"enable_thinking": False} if "qwen3" in args.model.lower() else None
 
     def chat(convs, sps):
@@ -214,7 +228,8 @@ def generate(args) -> None:
         if beat == 1:
             for e in eps:
                 e["lines"].append({"role": "human", "speaker": NAMES["human"], "text": e["plan"][1]})
-        if arm.get("lite_plan"):  # one plan per beat from the latest human turn (production planner prompt, temp 0)
+        if arm.get("lite_plan") or (live and uptake_planner_enabled()):
+            # one plan per beat from the latest human turn (production planner prompt, temp 0)
             texts = sorted({e["plan"][beat] for e in eps})
             outs = chat([planner_messages(x) for x in texts], SamplingParams(temperature=0.0, max_tokens=160))
             plans = {x: re.sub(r"<think>.*?</think>", "", o.outputs[0].text, flags=re.S).strip() for x, o in zip(texts, outs)}
@@ -229,7 +244,11 @@ def generate(args) -> None:
                 prefix = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
                                      "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
                 r = build_request(prefix, "", role, False, include_human=False,
-                                  dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"))
+                                  dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"),
+                                  live_fixes=live, plan=e["fact_plan"].get(beat, "") if live else "",
+                                  topic_id=e["topic_id"])
+                if r.get("fact_pack"):
+                    e.setdefault("fact_pack", []).append({"line": len(e["lines"]), **r["fact_pack"]})
                 msgs = [dict(m) for m in r["messages"]]
                 extra = []
                 if arm.get("instruction"):
@@ -241,10 +260,12 @@ def generate(args) -> None:
                                                   role if arm["opener_plan"] == "persona" else None))
                 if extra:
                     msgs[-1]["content"] = msgs[-1]["content"] + "\n\n" + "\n".join(extra)
-                if arm.get("lite_plan"):
+                if arm.get("lite_plan") and not live:
                     msgs = add_plan(msgs, e["fact_plan"][beat], lite=True)
                 reqs.append(r)
                 convs.append(msgs)
+                if dry:
+                    llm.record(e["id"], len(e["lines"]), role, msgs)
                 sps.append(SamplingParams(temperature=temp, min_p=arm.get("min_p", 0.0), max_tokens=512, n=n,
                                           seed=seed_of(e["topic_id"], e["k"], beat, step),
                                           **({"bad_words": bad_words} if arm.get("ban_openers") else {})))
@@ -268,5 +289,52 @@ def generate(args) -> None:
     for e in eps:
         e.pop("plan")
         e["scored"] = panel_idx(e)
+    if dry:
+        llm.dump(dry, eps)
+        print(f"dry run: {len(llm.rows)} prompts for {len(eps)} episodes → {dry}")
+        return
     save(Path(args.out), eps)
     print(f"wrote {len(eps)} episodes → {args.out}")
+
+
+class _DrySampling:
+    def __init__(self, **kw) -> None:
+        self.kw = kw
+
+
+class DryRunLLM:
+    """Stands in for vllm.LLM in `generate --dry-run`: records prompts, returns placeholder text (no model)."""
+
+    PLACEHOLDER = "[reply]: (dry run: no model was called; the panelist's line goes here)"
+    PLAN = "- (dry run: the planner's extracted points go here)"
+
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+
+    def record(self, eid: str, line: int, role: str, msgs: list[dict]) -> None:
+        self.rows.append({"episode": eid, "line": line, "role": role, "messages": msgs})
+
+    def chat(self, convs, sps, **_kw):
+        from types import SimpleNamespace
+
+        planner = bool(convs) and convs[0][0]["content"].startswith("You extract")
+        text = self.PLAN if planner else self.PLACEHOLDER
+        return [SimpleNamespace(outputs=[SimpleNamespace(text=text)]) for _ in convs]
+
+    def dump(self, out: Path, eps: list[dict]) -> None:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "prompts.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in self.rows))
+        by_ep: dict[str, list[dict]] = {}
+        for r in self.rows:
+            by_ep.setdefault(r["episode"], []).append(r)
+        for e in eps:
+            name = e["id"].replace(":", "__").replace("/", "_") + ".txt"
+            with (out / name).open("w") as f:
+                f.write(f"# episode={e['id']} topic={e['topic']}\n")
+                for r in by_ep.get(e["id"], []):
+                    f.write(f"\n\n######## panel line at index {r['line']} — speaker={r['role']}\n")
+                    offered = next((x for x in e.get("fact_pack", []) if x["line"] == r["line"]), None)
+                    if offered:
+                        f.write(f"# fact pack: {json.dumps({k: v for k, v in offered.items() if k != 'line'})}\n")
+                    for m in r["messages"]:
+                        f.write(f"\n===== {m['role']} =====\n{m['content']}\n")
