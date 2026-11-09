@@ -76,7 +76,14 @@ def resolve_spk_id(
 
 # Same-speaker emotional refs (config/msp_emotion_refs.yaml, baked by
 # deploy/bake_msp_emotion_refs.py): cosyvoice-prompts/msp/<role>/<Emotion>.wav.
+# The audio is not in git (MSP-Podcast licence); COSYVOICE_EMOTION_REFS_DIR points at a
+# shared baked copy instead (on Babel: /data/user_data/hsuanhal/msp_emotion_refs).
 EMOTION_REFS_DIR = Path(__file__).resolve().parent.parent.parent / "cosyvoice-prompts" / "msp"
+
+
+def emotion_refs_dir() -> Path:
+    raw = os.environ.get("COSYVOICE_EMOTION_REFS_DIR", "").strip()
+    return Path(raw) if raw else EMOTION_REFS_DIR
 
 
 def emotion_refs_enabled() -> bool:
@@ -94,7 +101,7 @@ def emotion_prompt_wav(default: str, *, role: str, emotion: str | None) -> str:
         return default
     from agent.emotion.state import normalize_emotion
 
-    role_dir = EMOTION_REFS_DIR / (role or "host").strip().lower()
+    role_dir = emotion_refs_dir() / (role or "host").strip().lower()
     label = normalize_emotion(emotion) or "Neutral"
     for name in (label[:1].upper() + label[1:], "Neutral"):
         path = role_dir / f"{name}.wav"

@@ -24,4 +24,10 @@ Resolved as `<repo>/cosyvoice-prompts/<basename>`.
 `COSYVOICE_EMOTION_REFS=1` picks the reference by the line's emotion from
 `msp/<role>/<Emotion>.wav` — one MSP-Podcast speaker per role, clips listed in
 `config/msp_emotion_refs.yaml`. Labels without a clip use that speaker's `Neutral.wav`.
-Bake where MSP-Podcast is mounted (Babel): `python deploy/bake_msp_emotion_refs.py`.
+The audio is not in git (MSP-Podcast licence: academic use, no redistribution). On Babel,
+point at the shared baked copy (readable by everyone, compute nodes only):
+
+    COSYVOICE_EMOTION_REFS=1
+    COSYVOICE_EMOTION_REFS_DIR=/data/user_data/hsuanhal/msp_emotion_refs
+
+or bake your own where MSP-Podcast is mounted: `python deploy/bake_msp_emotion_refs.py`.

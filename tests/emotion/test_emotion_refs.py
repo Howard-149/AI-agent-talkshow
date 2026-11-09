@@ -37,7 +37,7 @@ class EmotionPromptWavTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def pick(self, emotion, role="guest", flag="1"):
-        with mock.patch.dict(os.environ, {"COSYVOICE_EMOTION_REFS": flag}):
+        with mock.patch.dict(os.environ, {"COSYVOICE_EMOTION_REFS": flag, "COSYVOICE_EMOTION_REFS_DIR": ""}):
             return self.voices.emotion_prompt_wav("/piper/en_guest.wav", role=role, emotion=emotion)
 
     def test_flag_off_keeps_default(self):
@@ -50,6 +50,13 @@ class EmotionPromptWavTest(unittest.TestCase):
     def test_unmapped_label_uses_same_speakers_neutral(self):
         for emotion in ("Fear", "Contempt", "Vague", None, "amused"):
             self.assertEqual(self.pick(emotion), str(self.root / "guest" / "Neutral.wav"), emotion)
+
+    def test_shared_dir_env_overrides_repo_dir(self):
+        self.voices.EMOTION_REFS_DIR = Path("/nonexistent")
+        with mock.patch.dict(os.environ, {"COSYVOICE_EMOTION_REFS": "1",
+                                          "COSYVOICE_EMOTION_REFS_DIR": str(self.root)}):
+            got = self.voices.emotion_prompt_wav("/piper/en_guest.wav", role="guest", emotion="Anger")
+        self.assertEqual(got, str(self.root / "guest" / "Anger.wav"))
 
     def test_role_without_clips_keeps_default(self):
         self.assertEqual(self.pick("Anger", role="host"), "/piper/en_guest.wav")
