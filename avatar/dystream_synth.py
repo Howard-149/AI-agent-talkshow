@@ -19,6 +19,8 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 
+from avatar.dystream_skip import unused_wav2vec_skipped
+
 logger = logging.getLogger(__name__)
 
 
@@ -356,10 +358,13 @@ def iter_synthesize_online(
     cfg_anchor: float = 0.0,
     cfg_all: float = 1.0,
     log_every: int = 25,
+    skip_unused_wav2vec: bool = False,
 ) -> Iterator[OnlineMeta | bytes]:
     """Yield OnlineMeta once, then RGBA frames as each AR stride completes.
 
     GPU working set stays O(window): no full-T motion tensor, no recon_list.
+    ``skip_unused_wav2vec`` drops the wav2vec pass DyStream runs on each window and
+    then discards (avatar/dystream_skip.py); the frames stay the same.
     """
     from app import (  # noqa: WPS433
         _dystream_cfg,
@@ -447,13 +452,16 @@ def iter_synthesize_online(
     w0, h0 = resized_pil.size
 
     restore_hooks = install_model_hooks(_dystream_model, _noise_scheduler, profiler)
+    wav2vec_skipped = False
     try:
         audio_gpu = audio_cpu.to(device)
         audio_other_gpu = audio_other_cpu.to(device)
         # Critical: whole-clip Gradio path uses @torch.no_grad on run_inference.
         # Without this, past_motion=concat(past, out) retains the full AR graph and
         # VRAM grows ~linearly with frame index (streaming OOM; offline does not).
-        with ctx, torch.inference_mode():
+        with ctx, torch.inference_mode(), unused_wav2vec_skipped(
+            _dystream_model, skip_unused_wav2vec
+        ) as wav2vec_skipped:
             t_af = time.monotonic()
             with profiler.maybe("audio2face"):
                 audio2face_fea = _precompute_audio2face(
@@ -572,7 +580,7 @@ def iter_synthesize_online(
         log_summary(profile)
     logger.info(
         "iter_synthesize_online frames=%d expected=%d ttff_ms=%d motion_ms=%d "
-        "render_ms=%d total_ms=%d cuda_mb_before=%s peak=%s",
+        "render_ms=%d total_ms=%d cuda_mb_before=%s peak=%s skip_unused_wav2vec=%s",
         frame_count,
         expected_frames,
         ttff_ms,
@@ -581,6 +589,7 @@ def iter_synthesize_online(
         total_ms,
         mem0,
         peak,
+        wav2vec_skipped,
     )
     iter_synthesize_online.last_stats = OnlineStreamStats(  # type: ignore[attr-defined]
         frame_count=frame_count,

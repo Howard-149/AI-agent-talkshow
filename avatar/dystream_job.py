@@ -211,6 +211,29 @@ def _read_exact(fp, n: int) -> bytes:
     return bytes(buf)
 
 
+def stream_payload(
+    *,
+    portrait: Path,
+    audio_wav: Path,
+    denoising_steps: int,
+    npz: Path | None,
+    cache_key: str,
+    skip_unused_wav2vec: bool = False,
+) -> dict:
+    """JSON body for the sidecar's /synthesize/stream."""
+    payload = {
+        "portrait": str(portrait.resolve()),
+        "audio": str(audio_wav.resolve()),
+        "steps": denoising_steps,
+        "cache_key": cache_key,
+    }
+    if npz is not None and npz.is_file():
+        payload["npz"] = str(npz.resolve())
+    if skip_unused_wav2vec:
+        payload["skip_unused_wav2vec"] = True
+    return payload
+
+
 def iter_sidecar_rgba_stream(
     *,
     sidecar: str,
@@ -220,20 +243,21 @@ def iter_sidecar_rgba_stream(
     npz: Path | None,
     cache_key: str,
     timeout_sec: float,
+    skip_unused_wav2vec: bool = False,
 ):
     """Yield ("meta", dict) once, then ("frame", bytes), then stop at EOS.
 
     Framing: uint32_be 0xFFFFFFFF + uint32_be meta_len + JSON;
     then uint32_be len + RGBA; uint32_be 0 = EOS.
     """
-    payload = {
-        "portrait": str(portrait.resolve()),
-        "audio": str(audio_wav.resolve()),
-        "steps": denoising_steps,
-        "cache_key": cache_key,
-    }
-    if npz is not None and npz.is_file():
-        payload["npz"] = str(npz.resolve())
+    payload = stream_payload(
+        portrait=portrait,
+        audio_wav=audio_wav,
+        denoising_steps=denoising_steps,
+        npz=npz,
+        cache_key=cache_key,
+        skip_unused_wav2vec=skip_unused_wav2vec,
+    )
 
     req = urllib.request.Request(
         f"{sidecar}/synthesize/stream",
@@ -275,6 +299,7 @@ def run_dystream_synthesize_stream(
     npz: Path | None = None,
     cache_key: str = "default",
     timeout_sec: float = 600.0,
+    skip_unused_wav2vec: bool = False,
 ):
     """Online stream iterator via sidecar /synthesize/stream."""
     sidecar = sidecar_url()
@@ -297,4 +322,5 @@ def run_dystream_synthesize_stream(
         npz=npz,
         cache_key=cache_key,
         timeout_sec=timeout_sec,
+        skip_unused_wav2vec=skip_unused_wav2vec,
     )
