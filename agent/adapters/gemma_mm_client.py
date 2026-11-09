@@ -14,10 +14,17 @@ from typing import Any, Callable
 import httpx
 
 from agent.adapters.response_parser import ParsedTurn, parse_heard_reply
-from agent.config import LocaleLLMConfig
+from agent.config import LocaleLLMConfig, show_seed
 from agent.telemetry.model_output_logger import ModelOutputLogger
 
 logger = logging.getLogger(__name__)
+
+
+def _add_seed(payload: dict[str, Any]) -> None:
+    """Sample with TALKSHOW_SEED when it's set, so a repeated prompt gets the same reply."""
+    seed = show_seed()
+    if seed is not None:
+        payload["seed"] = seed
 
 
 def sse_content_delta(line: str) -> str | None:
@@ -174,6 +181,7 @@ class GemmaMMClient:
             "max_tokens": self._cfg.max_tokens,
             "temperature": 0.5,
         }
+        _add_seed(payload)
 
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
@@ -237,6 +245,7 @@ class GemmaMMClient:
             "max_tokens": max_tokens or self._cfg.max_tokens,
             "temperature": 0.45 if temperature is None else temperature,
         }
+        _add_seed(payload)
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0
@@ -339,6 +348,7 @@ class GemmaMMClient:
             "max_tokens": max_tokens or self._cfg.max_tokens,
             "temperature": 0.45 if temperature is None else temperature,
         }
+        _add_seed(payload)
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         resp = await self._http.post(url, json=payload, headers=headers)
