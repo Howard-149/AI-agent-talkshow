@@ -32,6 +32,10 @@ def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -
     return buf.getvalue()
 
 
+def _takes_reasoning_effort(model: str) -> bool:
+    return model.strip().lower().startswith("gpt-6-luna")
+
+
 class GemmaMMClient:
     """vLLM OpenAI-compatible chat with audio_url multimodal input."""
 
@@ -188,12 +192,17 @@ class GemmaMMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         output_role: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> str:
         """Text-only turn with optional prior conversation as chat messages.
 
         ``raw=True`` returns the model output untouched so callers can parse
         control tags ([next]/[pad]/…). Otherwise a [reply]-formatted answer is
         reduced to its spoken reply, which strips those tags.
+
+        ``reasoning_effort`` is sent only to models that take it: callers pass "low"
+        for decisions (floor control, reactions, appraisals) and "none" for plain
+        spoken output. ``OPENAI_REASONING_EFFORT`` overrides it for every call.
         """
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(
@@ -201,12 +210,26 @@ class GemmaMMClient:
             history_messages=history_messages,
             tail_user=user_text,
         )
+        token_limit = max_tokens or self._cfg.max_tokens
+        openai_reasoning = os.environ.get("OPENAI_USE_MAX_COMPLETION_TOKENS") == "1"
+        if openai_reasoning:
+            # Reasoning models spend completion tokens on hidden reasoning first; the
+            # small budgets sized for Gemma's visible output make them fail with 400.
+            token_limit = max(
+                token_limit, int(os.environ.get("OPENAI_MIN_COMPLETION_TOKENS", "4096"))
+            )
         payload: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "max_tokens": max_tokens or self._cfg.max_tokens,
-            "temperature": 0.45 if temperature is None else temperature,
+            ("max_completion_tokens" if openai_reasoning else "max_tokens"): token_limit,
         }
+        effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() or (
+            reasoning_effort if _takes_reasoning_effort(self._cfg.model) else None
+        )
+        if openai_reasoning and effort:
+            payload["reasoning_effort"] = effort
+        if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
+            payload["temperature"] = 0.45 if temperature is None else temperature
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0
