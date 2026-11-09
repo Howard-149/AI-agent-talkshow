@@ -78,6 +78,19 @@ async def _delete_room(job_ctx: JobContext | None, room_name: str) -> None:
         logger.warning("room delete failed room=%s", room_name, exc_info=True)
 
 
+def _leave_grace_sec() -> float:
+    """Seconds to wait after the last human leaves before shutting down.
+
+    A browser reconnect (effect re-run, HMR, refresh with the same identity) shows up
+    as disconnect + connect. Shutting down in between leaves the human in a room whose
+    agent job has exited, and LiveKit won't dispatch a new one while the room is alive.
+    """
+    try:
+        return max(0.0, float(os.environ.get("TALKSHOW_LEAVE_GRACE_SEC", "8")))
+    except ValueError:
+        return 8.0
+
+
 def should_stop_session_work(
     data: TalkShowData, session: AgentSession | None = None
 ) -> bool:
@@ -156,6 +169,8 @@ async def _alone_watchdog(
     """
     interval = 5.0
     seen_human = room_has_humans(room)
+    alone_since: float | None = None
+    loop = asyncio.get_running_loop()
 
     while not data.shutdown_event.is_set():
         try:
@@ -169,9 +184,16 @@ async def _alone_watchdog(
 
         if room_has_humans(room):
             seen_human = True
+            alone_since = None
             continue
 
         if not seen_human:
+            continue
+
+        now = loop.time()
+        if alone_since is None:
+            alone_since = now
+        if now - alone_since < _leave_grace_sec():
             continue
 
         logger.info("alone_watchdog: last human no longer present in room=%s — shutting down", room.name)
@@ -205,20 +227,33 @@ def register_session_lifecycle(
     def _on_participant_disconnected(participant: rtc.RemoteParticipant) -> None:
         if room_has_humans(room):
             return
+        grace = _leave_grace_sec()
         logger.info(
-            "last human left room=%s participant=%s — stopping background work",
+            "last human left room=%s participant=%s — shutting down in %.1fs unless someone rejoins",
             room.name,
             participant.identity,
+            grace,
         )
-        asyncio.create_task(
-            shutdown_session_when_alone(
+
+        async def _shutdown_after_grace() -> None:
+            if grace > 0:
+                try:
+                    await asyncio.wait_for(data.shutdown_event.wait(), timeout=grace)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+            if room_has_humans(room):
+                logger.info("human rejoined room=%s within grace — keeping session", room.name)
+                return
+            await shutdown_session_when_alone(
                 session,
                 data,
                 room_name=room.name,
                 reason="last_human_left",
                 job_ctx=job_ctx,
             )
-        )
+
+        asyncio.create_task(_shutdown_after_grace())
 
     asyncio.create_task(
         _alone_watchdog(session, data, room, job_ctx=job_ctx)
