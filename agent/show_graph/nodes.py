@@ -298,10 +298,13 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
     if not line or not (line.get("text") or "").strip():
         return Command(goto="after_speak")
     utt = act.record_line(line)
-    if line.get("kind") == "intro" and line.get("target"):
-        # Same step panelist_line will use; no-op unless TALKSHOW_DRAFT_AHEAD=1.
+    if line.get("kind") in ("intro", "direct_call") and line.get("target"):
+        # Same step panelist_line will use; no-op unless TALKSHOW_DRAFT_AHEAD=1. The LLM
+        # host's call-out is appraised, so that draft waits for the panelist's new mood.
         target = line["target"]
-        act.start_panelist_draft(target, f"speech_{target}_{state.get('turn_idx', 0)}")
+        act.start_panelist_draft(
+            target, f"speech_{target}_{state.get('turn_idx', 0)}", after_appraisal_of=utt
+        )
     if not line.get("procedural"):
         act.relax(line["role"])
     jobs: list[dict[str, Any]] = []

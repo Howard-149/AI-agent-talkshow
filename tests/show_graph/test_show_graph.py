@@ -53,6 +53,7 @@ class FakeActuators:
         self.events: list[Event] = []
         self.history: list[tuple[str, str, bool]] = []
         self.floor_next = ""
+        self.draft_waits_for: list = []
 
     def _ev(self, kind: str, detail: Any = None) -> None:
         self.events.append(Event(time.monotonic(), kind, detail))
@@ -137,8 +138,9 @@ class FakeActuators:
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
-    def start_panelist_draft(self, role: str, step: str) -> None:
+    def start_panelist_draft(self, role: str, step: str, *, after_appraisal_of=None) -> None:
         self._ev("draft_ahead", (role, step))
+        self.draft_waits_for.append(after_appraisal_of)
 
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
         self._ev("generate", (role, step))
@@ -280,7 +282,7 @@ class ModerationTests(unittest.TestCase):
         self.assertEqual(order[:4], ["speak", "draft_ahead", "speak", "generate"])  # open floor, draft, intro, line
         self.assertEqual(act.kinds("draft_ahead"), [g for g in act.kinds("generate")])
 
-    def test_no_draft_ahead_for_chained_or_direct_call_lines(self) -> None:
+    def test_the_llm_hosts_call_out_starts_a_draft_that_waits_for_its_appraisal(self) -> None:
         act = FakeActuators(
             floor=["host"],
             picks=[
@@ -290,8 +292,16 @@ class ModerationTests(unittest.TestCase):
             tags={"guest": ["commentator"]},
         )
         run(act, entry="panel")
-        self.assertEqual(act.kinds("draft_ahead"), [])
+        # The call-out drafts Amy's line; the line she chains to Ryan isn't drafted ahead.
+        self.assertEqual(act.kinds("draft_ahead"), [act.kinds("generate")[0]])
         self.assertEqual(len(act.kinds("generate")), 2)
+        (waits_for,) = act.draft_waits_for
+        self.assertEqual((waits_for.speaker, waits_for.text), ("host", "Amy, what do you think?"))
+
+    def test_a_canned_intro_draft_waits_for_nothing(self) -> None:
+        act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
+        run(act, entry="moderate", trigger="idle_wait")
+        self.assertEqual(act.draft_waits_for, [None])
 
     def test_nobody_picked_ends_beat(self) -> None:
         act = FakeActuators(picks=[FloorPick(None, "")])

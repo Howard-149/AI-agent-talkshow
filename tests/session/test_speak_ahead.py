@@ -13,11 +13,14 @@ from unittest import mock
 # cycle only resolves in this order (as in agent.main).
 import agent.agents  # noqa: F401
 from agent.config import LocaleTTSConfig
+from agent.emotion import appraisal
+from agent.emotion.appraisal import Utterance
 from agent.floor import host_floor
 from agent.floor.floor_parser import HandRaiseResult
 from agent.multi_agent.types import AgentDraft
 from agent.panel import panel_speech
 from agent.session import session_handoff as sh
+from agent.show_graph import actuators as act_mod
 from agent.show_graph.actuators import LiveActuators
 from agent.show_graph.state import FloorPick
 
@@ -327,3 +330,73 @@ class EarlyDraftTests(_ActuatorCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostCallOutTests(_ActuatorCase):
+    """The LLM host's call-out starts the named panelist's draft once that panelist
+    has appraised it, so the line is written and rendered in the mood it's spoken in."""
+
+    CALL_OUT = Utterance("host", "Amy, does that match what you saw?", seq=7)
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.order: list[str] = []
+        self.listening = ["guest", "commentator"]
+        self.act = LiveActuators(None, self.data, None)  # type: ignore[arg-type]
+        draft = panel_speech.draft_panelist
+
+        async def logged_draft(data: Any, **kw: Any) -> AgentDraft:
+            self.order.append("draft")
+            return await draft(data, **kw)
+
+        async def run_appraisal(data: Any, listener: str, utt: Utterance) -> Any:
+            return SimpleNamespace(delta=None, word=None)
+
+        def apply_appraisal(data: Any, utt: Utterance, result: Any) -> None:
+            self.order.append("appraised")
+
+        for patch in (
+            mock.patch.object(panel_speech, "draft_panelist", logged_draft),
+            mock.patch.object(appraisal, "run_appraisal", run_appraisal),
+            mock.patch.object(appraisal, "apply_appraisal", apply_appraisal),
+            mock.patch.object(LiveActuators, "listeners", lambda _self, speaker: list(self.listening)),
+            mock.patch.dict(os.environ, FLAGS),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.data.show_history.lines.append(SimpleNamespace(text=self.CALL_OUT.text, procedural=False))
+
+    def _call_out(self, *, appraise: bool = True) -> None:
+        async def go() -> None:
+            self.act.start_panelist_draft("guest", "speech_guest_0", after_appraisal_of=self.CALL_OUT)
+            await asyncio.sleep(0.01)
+            # A panelist who appraises the call-out hasn't started drafting yet.
+            self.assertEqual(self.drafts, 0 if "guest" in self.listening else 1)
+            if appraise:
+                await self.act.appraise(self.CALL_OUT, "guest")
+            line = await self.act.generate_panelist_line("guest", "speech_guest_0")
+            await self.act.speak({"role": "guest", "text": line.text, "step": "speech_guest_0", "kind": "panelist"})
+
+        asyncio.run(go())
+
+    def test_the_draft_waits_for_the_appraisal_then_speaks_ahead(self) -> None:
+        self._call_out()
+        self.assertEqual(self.order, ["appraised", "draft"])
+        self.assertEqual(self.started, [LINE])
+        self.assertIsNotNone(self.spoken_with[0])
+        (logged,) = self.log.events("draft_ahead_from_host_line")
+        self.assertFalse(logged["appraisal_timed_out"])
+        self.assertEqual(self.log.events("draft_ahead_dropped"), [])
+
+    def test_a_missing_appraisal_only_delays_the_draft(self) -> None:
+        with mock.patch.object(act_mod, "DRAFT_AFTER_APPRAISAL_WAIT_S", 0.05):
+            self._call_out(appraise=False)
+        self.assertEqual(self.drafts, 1)
+        self.assertIsNotNone(self.spoken_with[0])
+        self.assertTrue(self.log.events("draft_ahead_from_host_line")[0]["appraisal_timed_out"])
+
+    def test_a_panelist_who_doesnt_appraise_drafts_at_once(self) -> None:
+        self.listening = ["commentator"]
+        self._call_out(appraise=False)
+        self.assertEqual(self.drafts, 1)
+        self.assertEqual(self.log.events("draft_ahead_from_host_line"), [])

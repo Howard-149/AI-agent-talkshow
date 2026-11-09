@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_APPRAISE_TIMEOUT_S = 8.0
+# How long an early draft waits for its panelist to appraise the host's call-out
+# (0.29 s median, 0.36 s max on Nov 3) before drafting with the mood it has.
+DRAFT_AFTER_APPRAISAL_WAIT_S = 2.0
 
 
 class Actuators(Protocol):
@@ -53,7 +56,9 @@ class Actuators(Protocol):
     ) -> FloorPick: ...
     def llm_host(self) -> bool: ...
     async def grant_panelist(self, role: str, reason: str) -> None: ...
-    def start_panelist_draft(self, role: str, step: str) -> None: ...
+    def start_panelist_draft(
+        self, role: str, step: str, *, after_appraisal_of: Utterance | None = None
+    ) -> None: ...
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine: ...
 
     # --- canned host lines
@@ -82,6 +87,9 @@ class LiveActuators:
         # (role, step, task → PreparedLineStart | None): that draft's first chunk, started
         # as soon as the draft lands (speak-ahead).
         self._speak_ahead: tuple[str, str, asyncio.Task] | None = None
+        # (utterance seq, listener) → set once that listener's appraisal of it is done:
+        # an early draft from the LLM host's call-out waits on it.
+        self._appraised: dict[tuple[int, str], asyncio.Event] = {}
 
     # --- session / logging -------------------------------------------------
 
@@ -189,15 +197,22 @@ class LiveActuators:
         )
 
         timeout = _env_float("TALKSHOW_PAD_APPRAISAL_TIMEOUT_S", DEFAULT_APPRAISE_TIMEOUT_S)
+        # An early draft may be waiting for this listener's new mood: release it once
+        # the appraisal is applied, or has failed.
+        done = self._appraised.pop((utt.seq, listener), None)
         try:
-            result = await asyncio.wait_for(
-                run_appraisal(self.data, listener, utt), timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            logger.warning("appraisal timed out listener=%s after %.1fs", listener, timeout)
-            self.log("pad_appraisal_timeout", role=listener, speaker=utt.speaker, seq=utt.seq)
-            return {"role": listener, "ok": False, "timeout": True}
-        apply_appraisal(self.data, utt, result)
+            try:
+                result = await asyncio.wait_for(
+                    run_appraisal(self.data, listener, utt), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("appraisal timed out listener=%s after %.1fs", listener, timeout)
+                self.log("pad_appraisal_timeout", role=listener, speaker=utt.speaker, seq=utt.seq)
+                return {"role": listener, "ok": False, "timeout": True}
+            apply_appraisal(self.data, utt, result)
+        finally:
+            if done is not None:
+                done.set()
         return {
             "role": listener,
             "speaker": utt.speaker,
@@ -321,13 +336,14 @@ class LiveActuators:
         lines = self.data.show_history.lines
         return next((ln for ln in reversed(lines) if not getattr(ln, "procedural", False)), None)
 
-    def start_panelist_draft(self, role: str, step: str) -> None:
-        """Start drafting ``role``'s line now, while the host's intro plays (opt-in)."""
-        from agent.panel.panel_speech import (
-            draft_ahead_enabled,
-            draft_panelist,
-            speak_ahead_enabled,
-        )
+    def start_panelist_draft(
+        self, role: str, step: str, *, after_appraisal_of: Utterance | None = None
+    ) -> None:
+        """Start drafting ``role``'s line now, while the host's intro or call-out plays
+        (opt-in). With ``after_appraisal_of`` (the LLM host's call-out), the draft first
+        waits for ``role`` to appraise that line, so it's written in the mood it will be
+        spoken in; speak-ahead drops a first sentence whose emotion has changed."""
+        from agent.panel.panel_speech import draft_ahead_enabled, speak_ahead_enabled
 
         if not draft_ahead_enabled():
             return
@@ -336,8 +352,12 @@ class LiveActuators:
                 return  # already drafting it: started when the poll landed
             self._draft_ahead[3].cancel()
         self._drop_speak_ahead()
+        appraised: asyncio.Event | None = None
+        if after_appraisal_of is not None and role in self.listeners(after_appraisal_of.speaker):
+            appraised = asyncio.Event()
+            self._appraised[(after_appraisal_of.seq, role)] = appraised
         task = asyncio.create_task(
-            draft_panelist(self.data, speak_role=role, step=step), name=f"draft_ahead:{role}"
+            self._draft_when_appraised(role, step, appraised), name=f"draft_ahead:{role}"
         )
         self._draft_ahead = (role, step, self._transcript_signature(), task)
         if speak_ahead_enabled():
@@ -348,6 +368,28 @@ class LiveActuators:
                     self._start_drafted_line(role, step, task), name=f"speak_ahead:{role}"
                 ),
             )
+
+    async def _draft_when_appraised(
+        self, role: str, step: str, appraised: asyncio.Event | None
+    ) -> AgentDraft:
+        from agent.panel.panel_speech import draft_panelist
+
+        if appraised is not None:
+            loop = asyncio.get_running_loop()
+            t0 = loop.time()
+            try:
+                await asyncio.wait_for(appraised.wait(), timeout=DRAFT_AFTER_APPRAISAL_WAIT_S)
+                waited_out = False
+            except asyncio.TimeoutError:
+                waited_out = True
+            self.log(
+                "draft_ahead_from_host_line",
+                role=role,
+                step=step,
+                appraisal_wait_s=round(loop.time() - t0, 3),
+                appraisal_timed_out=waited_out,
+            )
+        return await draft_panelist(self.data, speak_role=role, step=step)
 
     async def _start_drafted_line(
         self, role: str, step: str, draft_task: asyncio.Task[AgentDraft]
