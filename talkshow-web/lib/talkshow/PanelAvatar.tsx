@@ -69,6 +69,14 @@ export function PanelAvatar({
   const portraitUrl = localPortraitUrl(panelist.role) ?? avatar?.portrait;
   const idleVideoUrl = localIdleUrl(panelist.role) ?? avatar?.idle_video;
 
+  if (process.env.NEXT_PUBLIC_DYSTREAM_ENABLED === '0') {
+    return (
+      <div className={styles.avatarName} data-avatar-mode="name" data-compact={compact}>
+        {panelist.name}
+      </div>
+    );
+  }
+
   if (idleVideoUrl || agentVideoTrackRef) {
     return (
       <div
