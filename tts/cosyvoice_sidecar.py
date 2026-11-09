@@ -175,7 +175,8 @@ def _discover_prompt_wavs() -> list[Path]:
         or str(_repo_root() / "cosyvoice-prompts")
     )
     if prompts_dir.is_dir():
-        for wav in sorted(prompts_dir.glob("*.wav")):
+        # rglob: also the per-emotion refs under msp/<role>/ (deploy/bake_msp_emotion_refs.py).
+        for wav in sorted(prompts_dir.rglob("*.wav")):
             _add(wav)
 
     # Absolute env overrides (same keys agent/config.py understands).

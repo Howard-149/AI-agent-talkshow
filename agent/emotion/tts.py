@@ -32,18 +32,26 @@ _LEGACY_INSTRUCT_ZH: dict[str, str] = {
     "surprised": "请用略带惊讶的语气说这句话。",
 }
 
-# Primary MSP classes — richer phrasing than the generic template. Intensified wording
-# ("strong_en" in eval/voice_emotion.py, adopted 2026-10-16): the mild v1 wording
-# ("Speak with controlled anger …") moved the voice too little to be heard.
+# Primary MSP classes. Per-label best of three English wordings, picked 2026-11-08 with the
+# same-speaker MSP refs on (eval/voice_emotion.py variants strong_en / vivid_en / short_en,
+# categorical hit rate on the controlled lines): the acted "vivid" wording wins for
+# Happiness and Contempt; upstream's short "say this very <adverb>" shape wins for Anger,
+# Surprise, Fear and Disgust. Neutral keeps the strong_en sentence (short_en's "say this
+# calmly" sounded less neutral). Re-checked on held-out lines (eval/fixtures/
+# voice_emotion_lines_holdout.yaml, vs strong_en): Happiness hit 13% → 37%, Anger 20% → 44%;
+# vivid Sadness did not hold up there (28% → 19%, smaller arousal drop), so Sadness keeps
+# the strong_en sentence.
 _MSP_INSTRUCT_EN: dict[str, str] = {
     "Neutral": "Speak in a calm, natural conversational tone.",
-    "Happiness": "Speak very happily and cheerfully, with a bright, smiling, upbeat voice.",
-    "Anger": "Speak very angrily, with a loud, sharp, tense and forceful voice.",
+    "Happiness": "Act it out with exaggerated joy: laughing and delighted, big smile in the voice, "
+                 "high bouncy pitch, quick and lively.",
+    "Anger": "Please say this very angrily.",
     "Sadness": "Speak very sadly, with a low, slow, heavy, tearful voice.",
-    "Surprise": "Speak with great surprise and astonishment, in a high, excited voice.",
-    "Fear": "Speak fearfully and nervously, with a trembling, anxious voice.",
-    "Disgust": "Speak with strong disgust and revulsion in your voice.",
-    "Contempt": "Speak with cold contempt, sneering and scornful.",
+    "Surprise": "Please say this in great surprise.",
+    "Fear": "Please say this very fearfully.",
+    "Disgust": "Please say this with great disgust.",
+    "Contempt": "Act it out with exaggerated contempt: cold, slow, sneering and dripping with "
+                "scorn.",
     "Vague": "Speak in a calm, natural conversational tone.",
 }
 

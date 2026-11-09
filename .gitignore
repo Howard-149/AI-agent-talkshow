@@ -37,5 +37,6 @@ poster/
 
 # CosyVoice clone prompts (baked from Piper; see cosyvoice-prompts/README.md)
 cosyvoice-prompts/*.wav
+cosyvoice-prompts/**/*.wav
 !cosyvoice-prompts/README.md
 

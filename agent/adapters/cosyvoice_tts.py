@@ -12,7 +12,12 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
 from agent.adapters.cosyvoice_client import synthesize_pcm_via_sidecar
 from agent.config import LocaleTTSConfig
-from agent.adapters.cosyvoice_voices import cosyvoice_mode, mode_needs_prompt_wav, resolve_spk_id
+from agent.adapters.cosyvoice_voices import (
+    cosyvoice_mode,
+    emotion_prompt_wav,
+    mode_needs_prompt_wav,
+    resolve_spk_id,
+)
 from agent.emotion.tts import emotion_instruct
 
 if TYPE_CHECKING:
@@ -84,7 +89,7 @@ class _CosyVoiceChunkedStream(tts.ChunkedStream):
         instruct = emotion_instruct(emotion=impl._emotion, locale=impl._locale)
         prompt_wav = ""
         if mode_needs_prompt_wav(impl._mode):
-            prompt_wav = impl._cfg.model_path
+            prompt_wav = emotion_prompt_wav(impl._cfg.model_path, role=impl._role, emotion=impl._emotion)
         t0 = time.monotonic()
         pcm_bytes, sample_rate, num_channels = await synthesize_pcm_via_sidecar(
             text=text,

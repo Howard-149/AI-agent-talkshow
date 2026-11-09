@@ -18,3 +18,10 @@ Expected files (basenames in `config/personas/*.yaml` → `tts.cosyvoice.prompt_
 
 Resolved as `<repo>/cosyvoice-prompts/<basename>`.  
 `.env` only needs `TALKSHOW_TTS_ENGINE=cosyvoice`, `COSYVOICE_MODE=instruct2`, sidecar URL / model dir.
+
+## Per-emotion refs (optional)
+
+`COSYVOICE_EMOTION_REFS=1` picks the reference by the line's emotion from
+`msp/<role>/<Emotion>.wav` — one MSP-Podcast speaker per role, clips listed in
+`config/msp_emotion_refs.yaml`. Labels without a clip use that speaker's `Neutral.wav`.
+Bake where MSP-Podcast is mounted (Babel): `python deploy/bake_msp_emotion_refs.py`.

@@ -343,9 +343,32 @@ def pad_prompt_block(data: TalkShowData, role: str) -> str:
     return (
         f"Your current mood: {affect_descriptor(pad, neighbors)}."
         f"{_other_moods_line(data, role)}\n"
-        f"- Let this mood color your wording and stance naturally; do not name it "
-        f"or describe your feelings explicitly."
+        f"{_MOOD_WORDING_SUBTLE if mood_wording() == 'subtle' else _MOOD_WORDING_EXPRESSIVE}"
     )
+
+
+# The TTS voices a line mostly from its wording (CosyVoice 3 paper: emotion is inferred
+# mainly from text sentiment; the instruct sentence and reference clip move it far less),
+# so a mood hidden in neutral wording comes out flat. "subtle" is the wording used before
+# 2026-11-08, kept for A/B runs (TALKSHOW_MOOD_WORDING=subtle).
+_MOOD_WORDING_SUBTLE = (
+    "- Let this mood color your wording and stance naturally; do not name it "
+    "or describe your feelings explicitly."
+)
+_MOOD_WORDING_EXPRESSIVE = (
+    "- Let this mood come through in your words, so a listener could hear it when the line "
+    "is read aloud: match its intensity (mild = a hint, strong = unmistakable). Use the words "
+    "and punctuation people use when they feel this way, e.g. a short exclamation or "
+    "interjection when energized or angry (\"Oh, come on!\", \"Wow!\"), slower, trailing "
+    "sentences when subdued or sad (\"I just... I don't know.\"). You may say how something "
+    "makes you feel, as people do in conversation, but don't report a mood label "
+    "(not \"I feel anger\"). No stage directions, emoji or asterisks."
+)
+
+
+def mood_wording() -> str:
+    """``expressive`` (default): let the mood show in the line's wording; ``subtle``: the old rule."""
+    return (os.environ.get("TALKSHOW_MOOD_WORDING") or "expressive").strip().lower()
 
 
 def mood_persona_addon() -> str:

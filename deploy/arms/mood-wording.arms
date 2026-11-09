@@ -1,0 +1,12 @@
+# Mood wording in the dialogue prompt (agent/emotion/state.py pad_prompt_block):
+#   SUB  old rule: "color your wording … do not name it or describe your feelings"
+#   EXP  expressive: let the mood show in the words so the TTS can voice it
+# Same voice refs in both (Piper, COSYVOICE_EMOTION_REFS=0). Interleaved, ARMS_RUNS=1.
+# Score: python -m eval.text_emotion (text) and eval/voice_emotion.py --session (audio).
+#   sbatch --gpus=L40S:3 --export=ALL,TALKSHOW_ARMS_FILE=deploy/arms/mood-wording.arms,ARMS_RUNS=1,GHOST_ARGS="--script eval/ghost_session/scripts/pad_swing.yaml" deploy/slurm-talkshow-3gpu.sh
+SUB_a TALKSHOW_MOOD_WORDING=subtle COSYVOICE_EMOTION_REFS=0
+EXP_a TALKSHOW_MOOD_WORDING=expressive COSYVOICE_EMOTION_REFS=0
+SUB_b TALKSHOW_MOOD_WORDING=subtle COSYVOICE_EMOTION_REFS=0
+EXP_b TALKSHOW_MOOD_WORDING=expressive COSYVOICE_EMOTION_REFS=0
+SUB_c TALKSHOW_MOOD_WORDING=subtle COSYVOICE_EMOTION_REFS=0
+EXP_c TALKSHOW_MOOD_WORDING=expressive COSYVOICE_EMOTION_REFS=0

@@ -59,6 +59,7 @@ async def synthesize_pcm_for_config(
         else:
             from agent.adapters.cosyvoice_voices import (
                 cosyvoice_mode,
+                emotion_prompt_wav,
                 mode_needs_prompt_wav,
                 resolve_spk_id,
             )
@@ -70,7 +71,7 @@ async def synthesize_pcm_for_config(
             )
             prompt_wav = ""
             if mode_needs_prompt_wav(mode):
-                prompt_wav = cfg.model_path
+                prompt_wav = emotion_prompt_wav(cfg.model_path, role=role, emotion=emotion)
             pcm, sample_rate, num_channels = await synthesize_pcm_via_sidecar(
                 text=text,
                 instruct=instruct,

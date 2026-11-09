@@ -106,7 +106,40 @@ _STRONG_ZH = {
     "Disgust": "请用非常厌恶的语气说这句话。",
     "Contempt": "请用非常轻蔑的语气说这句话。",
 }
-VARIANTS = ("live", "zh", "strong_en", "strong_zh")
+# Candidates beyond strong_en (2026-11-08, with same-speaker MSP refs on):
+# vivid_en spells out the acoustic cues the SER scores move on (pitch, loudness, rate,
+# laughter / tears) and asks for an exaggerated, acted delivery; short_en mirrors the
+# short "say it very <adverb>" shape of upstream's trained instruct list, in English.
+_VIVID_EN = {
+    "Neutral": "Speak in a calm, natural conversational tone.",
+    "Happiness": "Act it out with exaggerated joy: laughing and delighted, big smile in the voice, "
+                 "high bouncy pitch, quick and lively.",
+    "Anger": "Act it out with exaggerated fury: shouting, loud and harsh, sharp stressed words, "
+             "fast and tense, barely holding back.",
+    "Sadness": "Act it out with exaggerated grief: close to tears, quiet and breaking, very low "
+               "pitch, slow with long sighing pauses.",
+    "Surprise": "Act it out with exaggerated shock: gasping, pitch jumping up high, loud and "
+                "breathless, as if you can't believe it.",
+    "Fear": "Act it out with exaggerated terror: shaky, breathless whisper, trembling voice, "
+            "fast and panicked.",
+    "Disgust": "Act it out with exaggerated disgust: grossed out, groaning, nasal and recoiling "
+               "as you speak.",
+    "Contempt": "Act it out with exaggerated contempt: cold, slow, sneering and dripping with "
+                "scorn.",
+}
+_SHORT_EN = {
+    "Neutral": "Please say this calmly.",
+    "Happiness": "Please say this very happily.",
+    "Anger": "Please say this very angrily.",
+    "Sadness": "Please say this very sadly.",
+    "Surprise": "Please say this in great surprise.",
+    "Fear": "Please say this very fearfully.",
+    "Disgust": "Please say this with great disgust.",
+    "Contempt": "Please say this with great contempt.",
+}
+_EN_VARIANTS = {"strong_en": _STRONG_EN, "vivid_en": _VIVID_EN, "short_en": _SHORT_EN}
+VARIANTS = ("live", "zh", "strong_en", "strong_zh", "vivid_en", "short_en")
+DEFAULT_LINES = "eval/fixtures/voice_emotion_lines.yaml"
 
 
 def variant_instruct(variant: str, label: str) -> str:
@@ -116,7 +149,7 @@ def variant_instruct(variant: str, label: str) -> str:
         return emotion_instruct(emotion=label, locale="en")
     if variant == "zh":
         return emotion_instruct(emotion=label, locale="zh")
-    body = (_STRONG_EN if variant == "strong_en" else _STRONG_ZH)[label]
+    body = _EN_VARIANTS.get(variant, _STRONG_ZH)[label]
     return f"You are a helpful assistant. {body}<|endofprompt|>"
 
 
@@ -133,18 +166,19 @@ def _controlled_items(lines: list[str], repeats: int, variant: str = "live") -> 
 
 
 async def synth(
-    out: Path, *, repeats: int, sessions: list[Path], concurrency: int, variants: list[str]
+    out: Path, *, repeats: int, sessions: list[Path], concurrency: int, variants: list[str],
+    lines_file: str = DEFAULT_LINES,
 ) -> None:
     import yaml
     from dotenv import load_dotenv
 
     load_dotenv(_REPO / ".env")
     from agent.adapters.cosyvoice_client import synthesize_pcm_via_sidecar
-    from agent.adapters.cosyvoice_voices import cosyvoice_mode
+    from agent.adapters.cosyvoice_voices import cosyvoice_mode, emotion_prompt_wav
     from agent.adapters.tts_synthesize import synthesize_pcm_for_config
     from agent.config import load_config, load_persona_tts
 
-    lines = yaml.safe_load((_REPO / "eval/fixtures/voice_emotion_lines.yaml").read_text())["lines"]
+    lines = yaml.safe_load((_REPO / lines_file).read_text())["lines"]
     items = [it for v in variants for it in _controlled_items(lines, repeats, v)]
     for log in sessions:
         items += _session_items(log)
@@ -168,10 +202,12 @@ async def synth(
                     cfgs[item["role"]], item["text"], emotion=item["label"], locale="en",
                     role=item["role"], step="voice_emotion",
                 )
-            else:  # same voice + prompt wav as live; only the instruct differs
+            else:  # same voice + prompt wav as live (incl. COSYVOICE_EMOTION_REFS); only the instruct differs
                 pcm, rate, _ = await synthesize_pcm_via_sidecar(
                     text=item["text"], instruct=variant_instruct(item["variant"], item["label"]),
-                    prompt_wav=cfgs[item["role"]].model_path, mode=cosyvoice_mode(),
+                    prompt_wav=emotion_prompt_wav(cfgs[item["role"]].model_path, role=item["role"],
+                                                  emotion=item["label"]),
+                    mode=cosyvoice_mode(),
                 )
         path = out / "wav" / f"{hashlib.md5(item_id.encode()).hexdigest()[:12]}.wav"
         _write_wav(path, pcm, rate)
@@ -428,6 +464,9 @@ def main() -> None:
     p.add_argument("--session", type=Path, action="append", default=[])
     p.add_argument("--concurrency", type=int, default=2)
     p.add_argument("--variants", default="live", help=f"comma list of {VARIANTS}")
+    p.add_argument("--lines", default=DEFAULT_LINES,
+                   help="controlled line set (eval/fixtures/voice_emotion_lines_holdout.yaml re-checks a "
+                        "wording picked on the default set)")
     p = sub.add_parser("score")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--device", default="cuda" if _has_cuda() else "cpu")
@@ -446,7 +485,8 @@ def main() -> None:
     a = ap.parse_args()
     if a.cmd == "synth":
         asyncio.run(synth(a.out, repeats=a.repeats, sessions=a.session, concurrency=a.concurrency,
-                          variants=[v.strip() for v in a.variants.split(",") if v.strip()]))
+                          variants=[v.strip() for v in a.variants.split(",") if v.strip()],
+                          lines_file=a.lines))
     elif a.cmd == "score":
         score(a.out, device=a.device, model=a.model)
     elif a.cmd == "msp":

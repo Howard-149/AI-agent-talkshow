@@ -21,6 +21,8 @@
 # Options: VOICE_OUT=eval/results/voice_emotion/<name>  VOICE_REPEATS=2
 #          VOICE_VARIANTS=live,zh,strong_en,strong_zh  (instruct wordings to compare)
 #          VOICE_SESSIONS="logs/session-1.jsonl logs/session-2.jsonl"  (adds live lines)
+#          VOICE_LINES=eval/fixtures/voice_emotion_lines_holdout.yaml  (fresh lines for a re-check)
+#          VOICE_MODE=zero_shot  (overrides .env COSYVOICE_MODE)  COSYVOICE_EMOTION_REFS=1  (per-emotion refs)
 #          Re-running with the same VOICE_OUT resumes (synth and score skip finished clips).
 #
 set -euo pipefail
@@ -28,6 +30,8 @@ set -euo pipefail
 source "${TALKSHOW_ROOT:-${HOME}/AI-agent-talkshow}/deploy/slurm_common.sh"
 talkshow_cd
 talkshow_source_env
+# .env sets COSYVOICE_MODE; VOICE_MODE overrides it for this run (e.g. zero_shot).
+[[ -n "${VOICE_MODE:-}" ]] && export COSYVOICE_MODE="${VOICE_MODE}"
 
 OUT="${VOICE_OUT:-eval/results/voice_emotion/run-${SLURM_JOB_ID:-local}}"
 LOG_DIR="logs/slurm-${SLURM_JOB_ID:-local}"
@@ -62,7 +66,8 @@ if has synth; then
   SESSION_ARGS=()
   for s in ${VOICE_SESSIONS:-}; do SESSION_ARGS+=(--session "${s}"); done
   python eval/voice_emotion.py synth --out "${OUT}" --repeats "${VOICE_REPEATS:-2}" \
-    --variants "${VOICE_VARIANTS:-live}" "${SESSION_ARGS[@]}"
+    --variants "${VOICE_VARIANTS:-live}" --lines "${VOICE_LINES:-eval/fixtures/voice_emotion_lines.yaml}" \
+    "${SESSION_ARGS[@]}"
   # Free the GPU for the SER models.
   kill "${SIDECAR_PID}" 2>/dev/null || true
   pkill -f "port ${COSYVOICE_SIDECAR_PORT}" 2>/dev/null || true
