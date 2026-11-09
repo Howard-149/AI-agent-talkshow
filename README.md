@@ -129,6 +129,12 @@ python cli/text_session_control.py restart --job <jobid>
 
 `stop` stops the current text session but leaves the SLURM job and vLLM running. To stop the whole job, run `scancel <jobid>`.
 
+Speak as the human (interrupts whoever is talking; the agents then react to your line):
+
+```bash
+python cli/text_session_control.py human --job <jobid> --text "What about rural schools?"
+```
+
 Logs:
 
 - `slurm-logs/slurm-talkshow-text-<jobid>.{out,err}`
