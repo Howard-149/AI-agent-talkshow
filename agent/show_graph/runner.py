@@ -71,9 +71,12 @@ async def run_show_beat(
     """
     from agent.session.session_lifecycle import should_stop_session_work
 
+    from agent.interaction import apply_pending_rollback
+
     act = LiveActuators(session, data, controller)
     owns_busy = claimed or not data.panel_chain_running
     data.panel_chain_running = True
+    apply_pending_rollback(data)
     if should_stop_session_work(data, session):
         if owns_busy:
             data.panel_chain_running = False
@@ -125,12 +128,21 @@ async def submit_human_turn(
 
     ``background=True`` (mic path) returns immediately so the STT can hand its
     transcript back to LiveKit; the ghost path awaits the whole beat.
+
+    After a barge-in the running beat is being cut; the human turn runs right
+    after it instead of being dropped.
     """
-    if data.panel_chain_running:
+    from agent.interaction import human_transcript_arrived
+
+    human_transcript_arrived(data)
+    barge_in = bool(getattr(getattr(data, "floor_interaction", None), "human_floor_pending", False))
+    if data.panel_chain_running and not barge_in:
         logger.info("human turn ignored — show beat already running")
         if data.turn_log is not None:
             data.turn_log.log("human_turn_skip", reason="beat_running", room=data.room_name)
         return False
+    if data.panel_chain_running and _live_session(data) is None:
+        await _wait_beat_stopped(data)
     data.panel_chain_running = True  # claim before scheduling: no double start
 
     show = _live_session(data)
@@ -141,6 +153,8 @@ async def submit_human_turn(
         return True
 
     async def _run() -> None:
+        from agent.interaction import playout_idle
+
         listen = controller.listen_role()
         try:
             if data.turn_log is not None:
@@ -154,7 +168,7 @@ async def submit_human_turn(
                 session, data, controller, entry="human", trigger="after_human",
                 human_event=event, claimed=True,
             )
-            if data.active_role != listen:
+            if data.active_role != listen and playout_idle(data):
                 from agent.session.session_handoff import switch_to_role
 
                 await switch_to_role(session, data, listen, reason="panel_wait_human")
@@ -172,6 +186,24 @@ async def submit_human_turn(
     else:
         await _run()
     return True
+
+
+async def _wait_beat_stopped(data: TalkShowData, timeout: float = 30.0) -> None:
+    """A cut beat stops at its next node; wait for it before starting the human turn."""
+    deadline = time.monotonic() + timeout
+    while data.panel_chain_running and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+
+
+def abandon_human_turn(data: TalkShowData) -> None:
+    """A barge-in produced no usable transcript (noise): resume the show it cut."""
+    release = getattr(getattr(data, "floor_interaction", None), "human_turn_abandoned", None)
+    if release is None or not release():
+        return
+    logger.info("barge-in without transcript — resuming the show")
+    show = _live_session(data)
+    if show is not None:
+        show.post("moderate", trigger="human_noise", skip_open_floor=True)
 
 
 # --- compatibility entry points (callers outside the graph) ----------------
@@ -245,7 +277,10 @@ class LiveSessionHooks:
         return should_stop_session_work(self.data, self.session)
 
     async def before_beat(self, event: dict[str, Any]) -> None:
+        from agent.interaction import apply_pending_rollback
+
         self.data.panel_chain_running = True
+        apply_pending_rollback(self.data)
         if event["kind"] == "human":
             self._log(
                 "panel_start",
@@ -264,8 +299,11 @@ class LiveSessionHooks:
         r = result or {}
         try:
             if event["kind"] == "human":
+                from agent.interaction import playout_idle
+
                 listen = self.controller.listen_role()
-                if self.data.active_role != listen:
+                # While script is still playing the speech consumer owns the role.
+                if self.data.active_role != listen and playout_idle(self.data):
                     from agent.session.session_handoff import switch_to_role
 
                     await switch_to_role(self.session, self.data, listen, reason="panel_wait_human")
@@ -337,8 +375,8 @@ async def open_show_session(
         await wait_for_remote_humans(room)
         needed = recompute_needed_locales(data, room)
         logger.info("session opening locales=%s", sorted(needed))
-    from agent.floor.host_floor import session_welcome_line
+    from agent.floor.host_floor import host_opening_line, topic_announcement
 
-    text, texts = session_welcome_line(data)
-    await show.post("opening", text=text, texts=texts)
+    text = await host_opening_line(data)
+    await show.post("opening", text=text, topic=topic_announcement(), generated=True)
     return True

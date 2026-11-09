@@ -406,7 +406,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
 | `config/scenarios/panel_fixed.yaml` | Legacy fixed Ryan → Amy |
 
-Turn modes: **`host_moderated`** (hand-raise + FIFO; the `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals in parallel with TTS; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
+Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interaction`: the interaction *generates* each agent line and discloses it interval by interval to the other agents, who think and may request an interrupt, speak, or backchannel; a controller arbitrates. Speech is *consumed* separately — printed in text-only mode, TTS + avatar video live — and a human can speak at any time, cutting the current line. The `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
 
 ---
 

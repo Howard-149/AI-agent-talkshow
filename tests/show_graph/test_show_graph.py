@@ -44,6 +44,8 @@ class FakeActuators:
         self.speak_s = speak_s
         self.appraise_s = appraise_s
         self.stop_after_lines = stop_after_lines
+        self.interval_floor_mode = False
+        self.grace_turn = False
         self.events: list[Event] = []
         self.history: list[tuple[str, str, bool]] = []
         self.floor_next = ""
@@ -103,6 +105,9 @@ class FakeActuators:
             self.floor_next = "human"
 
     # floor
+    def grant_interrupt_grace_turn(self) -> bool:
+        return self.grace_turn
+
     def consume_floor_next(self) -> str:
         if self.floor:
             return self.floor.pop(0)
@@ -115,11 +120,8 @@ class FakeActuators:
     async def return_to_host(self, trigger: str) -> None:
         self._ev("return_to_host", trigger)
 
-    def prefetch_hand_raise_poll(self) -> None:
-        self._ev("prefetch_poll", None)
-
-    async def hand_raise_round(self, turn_idx, spoken_roles) -> FloorPick:
-        self._ev("hand_raise", turn_idx)
+    async def select_next_speaker(self, turn_idx, spoken_roles) -> FloorPick:
+        self._ev("select_speaker", turn_idx)
         self.queue = []
         return self.picks.pop(0) if self.picks else FloorPick(None, "")
 
@@ -144,7 +146,7 @@ class FakeActuators:
     def human_floor_line(self) -> str:
         return "Back to you."
 
-    def close_line(self) -> str:
+    async def close_line(self) -> str:
         return "That wraps it."
 
 
@@ -158,6 +160,33 @@ HUMAN = {"heard": "Should we freeze senior hiring?", "parsed": None}
 
 
 class HumanTurnFlowTests(unittest.TestCase):
+    def test_text_only_floor_can_route_selected_host_to_speak(self) -> None:
+        from agent.show_graph.nodes import select_speaker
+
+        class TextOnlyActuators:
+            interval_floor_mode = True
+
+            def should_stop(self):
+                return False
+
+            async def select_next_speaker(self, turn_idx, spoken_roles):
+                return FloorPick("host", "text_intention")
+
+        state = {
+            "turn_idx": 0,
+            "spoken_roles": [],
+            "listen_role": "host",
+            "panel_roles": PANEL,
+            "trigger": "host_moderate",
+            "moderations": 0,
+        }
+        command = asyncio.run(
+            select_speaker(state, {"configurable": {"act": TextOnlyActuators()}})
+        )
+
+        self.assertEqual(command.goto, "panelist_line")
+        self.assertEqual(command.update["next_role"], "host")
+
     def test_full_beat_order_and_outcome(self) -> None:
         act = FakeActuators(
             picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "queue_fifo")],
@@ -222,6 +251,18 @@ class HumanTurnFlowTests(unittest.TestCase):
 
 
 class ModerationTests(unittest.TestCase):
+    def test_interval_floor_moderation_skips_open_floor_announcement(self) -> None:
+        act = FakeActuators(
+            picks=[FloorPick("guest", "text_intention")],
+            stop_after_lines=1,
+        )
+        act.interval_floor_mode = True
+
+        run(act, entry="moderate", trigger="after_human")
+
+        self.assertNotIn("open_floor", [kind for kind, _ in act.kinds("speak")])
+        self.assertIn("select_speaker", [event.kind for event in act.events])
+
     def test_direct_call_line_replaces_intro_and_is_appraised(self) -> None:
         act = FakeActuators(
             floor=["host"],
@@ -248,17 +289,6 @@ class ModerationTests(unittest.TestCase):
         final = run(act, entry="moderate", trigger="session_start", skip_open_floor=True)
         self.assertEqual([k for k, _ in act.kinds("speak")], ["grant_human"])
         self.assertEqual(final["outcome"], "human")
-
-    def test_poll_prefetch_starts_before_the_open_floor_line(self) -> None:
-        act = FakeActuators(picks=[FloorPick("human", "queue_fifo")])
-        run(act, entry="moderate", trigger="idle_wait")
-        order = [e.kind for e in act.events if e.kind in ("prefetch_poll", "speak", "hand_raise")]
-        self.assertEqual(order[:3], ["prefetch_poll", "speak", "hand_raise"])
-
-    def test_no_prefetch_when_the_open_floor_line_is_skipped(self) -> None:
-        act = FakeActuators(queue=["guest"], picks=[FloorPick("human", "queue_fifo")])
-        run(act, entry="moderate", trigger="idle_wait")
-        self.assertEqual(act.kinds("prefetch_poll"), [])
 
     def test_draft_ahead_starts_with_the_intro_for_the_line_it_drafts(self) -> None:
         act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
@@ -308,6 +338,21 @@ class LimitTests(unittest.TestCase):
         self.assertEqual(kinds, ["panelist"] * 4 + ["close"])
         self.assertEqual(final["outcome"], "close")
 
+    def test_interrupt_at_turn_cap_gets_one_grace_turn(self) -> None:
+        import os
+        from unittest import mock
+
+        act = FakeActuators(
+            floor=["guest"],
+            tags={"guest": ["commentator"] * 10, "commentator": ["guest"] * 10},
+        )
+        act.grace_turn = True  # the capped line was cut by an approved interrupt
+        with mock.patch.dict(os.environ, {"TALKSHOW_PANEL_MAX_TURNS": "4"}):
+            final = run(act, entry="panel")
+        kinds = [k for k, _ in act.kinds("speak")]
+        self.assertEqual(kinds, ["panelist"] * 5 + ["close"])
+        self.assertEqual(final["outcome"], "close")
+
     def test_moderation_cap(self) -> None:
         import os
         from unittest import mock
@@ -317,7 +362,7 @@ class LimitTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TALKSHOW_HOST_MODERATE_MAX_DEPTH": "3"}):
             final = run(act, entry="moderate", trigger="idle_wait")
         self.assertEqual(final["moderations"], 3)
-        self.assertEqual(len(act.kinds("hand_raise")), 3)
+        self.assertEqual(len(act.kinds("select_speaker")), 3)
         # The cap hands the floor back to the human instead of going silent.
         self.assertEqual(act.kinds("speak")[-1][0], "grant_human")
         self.assertEqual(final["outcome"], "human")

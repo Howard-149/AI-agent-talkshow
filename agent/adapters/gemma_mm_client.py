@@ -8,6 +8,7 @@ import logging
 import os
 import time
 import wave
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -48,6 +49,14 @@ class GemmaMMClient:
 
     def set_output_logger(self, output_logger: ModelOutputLogger) -> None:
         self._output_logger = output_logger
+
+    @property
+    def output_log_path(self) -> Path | None:
+        return self._output_logger.path if self._output_logger is not None else None
+
+    def log_text_only_event(self, role: str, kind: str, **fields: Any) -> None:
+        if self._output_logger is not None:
+            self._output_logger.event(role, kind, **fields)
 
     @property
     def active_persona_id(self) -> str:
@@ -177,8 +186,6 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
-        if self._output_logger is not None and output_role is not None:
-            self._output_logger.log(output_role, content)
 
         return parse_heard_reply(content)
 
@@ -252,8 +259,6 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
-        if self._output_logger is not None and output_role is not None:
-            self._output_logger.log(output_role, content)
         text = content.strip()
         if raw:
             return text

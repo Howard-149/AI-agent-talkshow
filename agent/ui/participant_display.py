@@ -7,6 +7,7 @@ import logging
 
 from agent.config import ScenarioConfig
 from agent.panel.panel_roster import panel_roster_entries
+from agent.show.show_topic import show_topic
 from agent.ui.room_connect import local_participant_ready, wait_for_local_participant
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,10 @@ async def set_agent_display_name(role: str) -> None:
 
 
 async def publish_agent_panel_metadata(scenario: ScenarioConfig) -> None:
-    """Expose roster on agent RTC participant for clients that join late."""
+    """Expose roster and topic on agent RTC participant for clients that join late."""
     try:
         from livekit.agents.job import get_job_context
+
 
         ctx = get_job_context()
         room = ctx.room
@@ -57,6 +59,7 @@ async def publish_agent_panel_metadata(scenario: ScenarioConfig) -> None:
                 "talkshowAgent": True,
                 "scenario": scenario.id,
                 "panelRoster": panel_roster_entries(scenario),
+                "topic": show_topic(),
             },
             ensure_ascii=False,
         )

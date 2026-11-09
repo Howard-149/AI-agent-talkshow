@@ -55,6 +55,9 @@ def prewarm(proc: JobProcess) -> None:
         prewarm_piper_voices()
     except Exception as exc:
         logger.warning("Piper prewarm failed: %s", exc)
+    from agent.adapters.word_align import warm_word_aligner
+
+    warm_word_aligner()
 
 
 server.setup_fnc = prewarm
@@ -88,6 +91,7 @@ async def entrypoint(ctx: JobContext) -> None:
         "session_start",
         room=ctx.room.name,
         log_file=turn_log.path.name,
+        model_output_log=str(runtime.gemma_client.output_log_path or ""),
         scenario_id=scenario.id,
         turn_mode=scenario.turn_control.mode,
         dialogue_library=dlg.library if dlg else None,
@@ -95,15 +99,16 @@ async def entrypoint(ctx: JobContext) -> None:
         **run_metadata(),
     )
     controller = TurnController(scenario, data)
-    data.ensure_panel_priority(
-        scenario.turn_control.order,
-        scenario.turn_control.listen_role,
-    )
 
     session = build_agent_session(
         runtime, data, prewarmed_vad=ctx.proc.userdata.get("vad")
     )
     data.agent_session = session
+    if controller.is_host_moderated_mode():
+        from agent.interaction import ensure_floor_interaction
+
+        # Text generator for the show; the session's TTS + avatar consume it.
+        ensure_floor_interaction(data, session)
 
     @session.on("user_input_transcribed")
     def _on_user_transcript(ev) -> None:  # type: ignore[no-untyped-def]
@@ -212,12 +217,22 @@ async def entrypoint(ctx: JobContext) -> None:
     @session.on("user_state_changed")
     def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
         # speaking → listening = VAD end of human speech (start of endpointing).
+        state = _state_name(getattr(ev, "new_state", ""))
         turn_log.log(
             "user_state",
-            state=_state_name(getattr(ev, "new_state", "")),
+            state=state,
             old_state=_state_name(getattr(ev, "old_state", "")),
             room=ctx.room.name,
         )
+        if state == "speaking":
+            from agent.interaction import human_barge_in
+
+            # The human may talk at any time: whoever holds the floor stops now.
+            human_barge_in(data)
+        else:
+            from agent.interaction import human_speech_ended
+
+            human_speech_ended(data)
 
     @session.on("agent_state_changed")
     def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
@@ -278,6 +293,8 @@ async def entrypoint(ctx: JobContext) -> None:
         from agent.ui.ui_events import emit_role_active, emit_transcript
 
         await emit_role_active(role, emotion=get_role_emotion(data, role))
+        if data.take_announced_transcript(role, step):
+            return  # the speech consumer announced it before the audio started
         if text.strip() or (texts and any(v.strip() for v in texts.values())):
             await emit_transcript(role, text, step=step, texts=texts)
 

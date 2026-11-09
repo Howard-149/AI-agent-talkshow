@@ -100,6 +100,7 @@ class PersonaWorker:
             history_messages=hist,
             output_role=role,
             raw=True,  # parse [next] from the full output, not the stripped reply
+            reasoning_effort="none",
         )
         model_latency_s = time.monotonic() - t0
 

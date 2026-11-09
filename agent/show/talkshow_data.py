@@ -42,14 +42,14 @@ class TalkShowData:
     last_host_panel_tee: str = ""
     floor_next_speaker: str = ""  # Gemma [next]: — direct grant or host=pending
     hand_raise_queue: HandRaiseQueue = field(default_factory=HandRaiseQueue)
-    # Poll tie-break order among AI panelists (rotates after multi-yes polls).
-    panel_priority: list[str] = field(default_factory=list)
     last_activity_ts: float = 0.0
     show_history: ShowHistory = field(default_factory=ShowHistory)
     # (role, text, step, texts?) — popped when agent enters "speaking"
     pending_speech_ui: deque[tuple[str, str, str, dict[str, str] | None]] = field(
         default_factory=deque
     )
+    # (role, step) whose streaming transcript was announced before its audio.
+    announced_transcripts: set[tuple[str, str]] = field(default_factory=set)
     # Demand-driven delivery locales from live humans (default English).
     needed_locales: frozenset[str] = field(default_factory=lambda: frozenset({"en"}))
     # Explicit locale from talkshow/control set_locale (identity → locale).
@@ -67,6 +67,9 @@ class TalkShowData:
     # Long-lived show graph driver (agent.show_graph.session.ShowSession) when the
     # session graph is running; None → one-shot beats.
     show_session: Any = field(default=None, repr=False)
+    # Think & Action floor interaction (agent.interaction) — generates and discloses
+    # every agent line; created by the show actuators on first use.
+    floor_interaction: Any = field(default=None, repr=False)
     # Host reply after human STT — spoken via speak_panel_line (not StoredReplyLLM+TTS).
     pending_host_speak: str = ""
     # Wired in main.entrypoint — used to hand off before human-turn LLM/TTS
@@ -102,6 +105,14 @@ class TalkShowData:
         # Empty text allowed: re-assert role_active between avatar chunks without
         # duplicating transcript (emit skips blank text).
         self.pending_speech_ui.append((role, text.strip(), step, texts))
+
+    def take_announced_transcript(self, role: str, step: str) -> bool:
+        """True (once) when this line's transcript already went out before its audio."""
+        key = (role, step)
+        if key in self.announced_transcripts:
+            self.announced_transcripts.discard(key)
+            return True
+        return False
 
     def pop_pending_speech_ui(
         self,
@@ -141,26 +152,3 @@ class TalkShowData:
         import time
 
         self.last_activity_ts = time.time()
-
-    def ensure_panel_priority(self, order: list[str], listen_role: str) -> None:
-        """Initialize poll tie-break order from scenario turn order (excludes human/host)."""
-        if self.panel_priority:
-            return
-        self.panel_priority = [
-            r for r in order if r not in ("human", listen_role)
-        ]
-
-    def rotate_panel_priority(self, winner: str) -> None:
-        """Move poll winner to tail so the next tie favors other panelists."""
-        winner = winner.strip().lower()
-        if winner not in self.panel_priority:
-            return
-        rest = [r for r in self.panel_priority if r != winner]
-        self.panel_priority = rest + [winner]
-        if self.turn_log:
-            self.turn_log.log(
-                "panel_priority_rotate",
-                winner=winner,
-                priority=list(self.panel_priority),
-                room=self.room_name,
-            )
