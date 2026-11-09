@@ -98,6 +98,9 @@ class LiveActuators:
         from agent.session.human_turn import commit_human_turn
 
         heard = (event.get("heard") or "").strip()
+        from agent.panel.uptake import start_uptake_plan
+
+        start_uptake_plan(self.data, heard)  # no-op unless TALKSHOW_UPTAKE_PLANNER; dedups by text
         reply = await commit_human_turn(
             self.data,
             heard=heard,

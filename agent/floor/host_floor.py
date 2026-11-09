@@ -64,6 +64,22 @@ def _eligible_panel_raises(
     ]
 
 
+def _addressed_after_human(data: TalkShowData, panel_roles: list[str]) -> str | None:
+    """TALKSHOW_ADDRESSEE_FLOOR: panelist the human named, if no panelist has spoken since that turn."""
+    from agent.floor.addressee import addressed_role, addressee_floor_enabled
+
+    if not addressee_floor_enabled():
+        return None
+    for line in reversed(data.show_history.lines):
+        if line.role_id == "host":
+            continue
+        if line.role_id != "human":
+            return None  # a panelist already answered this human turn
+        names = {r: load_persona_name(r) for r in panel_roles}
+        return addressed_role(line.text, names)
+    return None
+
+
 async def run_hand_raise_round(
     session: AgentSession,
     data: TalkShowData,
@@ -94,12 +110,22 @@ async def run_hand_raise_round(
             # With a prefetched poll this is only the wait left after the open-floor line.
             poll_latency_s = time.monotonic() - t0
             await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
-            winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
-                poll,
-                data.panel_priority,
-            )
-            if had_tie and winner:
-                data.rotate_panel_priority(winner)
+            addressed = _addressed_after_human(data, panel_roles)
+            if addressed:
+                from agent.floor.addressee import pick_with_addressee
+
+                winner, yes_roles, had_tie, _ = pick_with_addressee(
+                    data.hand_raise_queue, poll, data.panel_priority, addressed
+                )
+                if winner:
+                    data.rotate_panel_priority(winner)  # same rotation pick_with_addressee computed; logs it
+            else:
+                winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
+                    poll,
+                    data.panel_priority,
+                )
+                if had_tie and winner:
+                    data.rotate_panel_priority(winner)
             await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
             if data.turn_log:
                 data.turn_log.log(
@@ -116,6 +142,7 @@ async def run_hand_raise_round(
                     panel_priority=list(data.panel_priority),
                     room=data.room_name,
                     queue=data.hand_raise_queue.roles(),
+                    addressed=addressed,
                 )
         else:
             if prefetched_poll is not None:

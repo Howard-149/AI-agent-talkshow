@@ -1,0 +1,8 @@
+# Dialogue quality fixes (all flags default off). A is the current show.
+# FAST: the panelist the human named answers first, the panel prompt points at what the
+# human just said, and each line is asked to carry one concrete fact. About +0.6 s on the
+# slowest lines in our live A/B.
+# FULL: FAST plus 4 candidate lines per turn, keeping the most specific one (about +1.7 s).
+A    TALKSHOW_ADDRESSEE_FLOOR=0
+FAST TALKSHOW_ADDRESSEE_FLOOR=1 TALKSHOW_UPTAKE_PLANNER=lite TALKSHOW_PANEL_SCAFFOLD_FIX=1 TALKSHOW_DIALOGUE_LIBRARY=panel_concrete TALKSHOW_PANEL_CONCRETE=1
+FULL TALKSHOW_ADDRESSEE_FLOOR=1 TALKSHOW_UPTAKE_PLANNER=lite TALKSHOW_PANEL_SCAFFOLD_FIX=1 TALKSHOW_DIALOGUE_LIBRARY=panel_concrete TALKSHOW_PANEL_CONCRETE=1 TALKSHOW_PANEL_BEST_OF=4

@@ -160,7 +160,7 @@ class GemmaMMClient:
             self._cfg.model,
             hist_n,
         )
-        resp = await self._http.post(url, json=payload, headers=headers)
+        resp = await self._post(url, payload, headers)
         if resp.status_code >= 400:
             logger.error(
                 "Gemma MM HTTP %s model=%s body=%.500s",
@@ -177,6 +177,15 @@ class GemmaMMClient:
             self._output_logger.log(output_role, content)
 
         return parse_heard_reply(content)
+
+    async def _post(self, url: str, payload: dict[str, Any], headers: dict[str, str]) -> httpx.Response:
+        """POST with one retry on a dropped connection (e.g. a pooled keep-alive socket
+        the vLLM server already closed — seen with several concurrent rooms)."""
+        try:
+            return await self._http.post(url, json=payload, headers=headers)
+        except httpx.TransportError as exc:
+            logger.warning("Gemma request transport error (%r) — retrying once", exc)
+            return await self._http.post(url, json=payload, headers=headers)
 
     async def complete_text(
         self,
@@ -216,7 +225,7 @@ class GemmaMMClient:
             self.active_persona_id,
             hist_n,
         )
-        resp = await self._http.post(url, json=payload, headers=headers)
+        resp = await self._post(url, payload, headers)
         if resp.status_code >= 400:
             logger.error(
                 "Gemma text HTTP %s model=%s body=%.500s",
@@ -239,3 +248,41 @@ class GemmaMMClient:
                 parsed = parse_heard_reply(text)
                 return parsed.reply or text
         return text
+
+    async def complete_text_n(
+        self,
+        user_text: str,
+        n: int,
+        *,
+        system_prompt: str | None = None,
+        history_messages: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        output_role: str | None = None,
+    ) -> list[str]:
+        """``n`` raw samples of the same text turn in ONE request (vLLM ``n``: shared prefill, parallel decode).
+        Used by best-of-N panel drafting (TALKSHOW_PANEL_BEST_OF); same payload as complete_text otherwise."""
+        system = system_prompt if system_prompt is not None else self._system_prompt
+        messages = self._build_messages(system, history_messages=history_messages, tail_user=user_text)
+        payload: dict[str, Any] = {
+            "model": self._cfg.model,
+            "messages": messages,
+            "max_tokens": max_tokens or self._cfg.max_tokens,
+            "temperature": 0.45 if temperature is None else temperature,
+            "n": int(n),
+        }
+        url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
+        logger.info("Gemma text request (n=%d) → %s persona=%s", n, url, self.active_persona_id)
+        resp = await self._post(url, payload, headers)
+        if resp.status_code >= 400:
+            logger.error("Gemma text HTTP %s model=%s body=%.500s", resp.status_code, self._cfg.model, resp.text)
+        resp.raise_for_status()
+        out = []
+        for ch in resp.json()["choices"]:
+            content = ch["message"]["content"]
+            content = content if isinstance(content, str) else str(content)
+            if self._output_logger is not None and output_role is not None:
+                self._output_logger.log(output_role, content)
+            out.append(content.strip())
+        return out
