@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import time
+from typing import Any
 
 from livekit.agents import AgentSession
 
@@ -74,26 +75,33 @@ async def run_hand_raise_round(
     turn_idx: int,
     human_must_go: bool = False,
     prefetched_poll: asyncio.Task | None = None,
+    decision_ahead: asyncio.Task | None = None,
 ) -> FloorPick:
     """
     Pick next speaker. Hand raises (human UI + AI poll) are collected either way;
     the LLM host decides (phase 4) unless ``TALKSHOW_HOST_DECIDE=fifo``, in which
     case the FIFO queue does. Poll only when the queue is empty; in FIFO mode wait
     (5 s by default) only when still empty after the poll.
-    ``prefetched_poll`` = a poll already started during the open-floor line.
+    ``prefetched_poll`` = a poll already started during the open-floor line (or the
+    last panelist's line). ``decision_ahead`` = the LLM host's pick started then too
+    (→ DecisionAhead), used only if it was made from the request made now.
     """
     from agent.floor.host_decide import llm_host_enabled
 
     if should_stop_session_work(data, session):
         if prefetched_poll is not None:
             prefetched_poll.cancel()
+        if decision_ahead is not None:
+            decision_ahead.cancel()
         return FloorPick(None, "")
     if llm_host_enabled():
         return await _run_llm_host_round(
             session, data, controller,
             panel_roles=panel_roles, spoken_roles=spoken_roles, human_must_go=human_must_go,
-            prefetched_poll=prefetched_poll,
+            prefetched_poll=prefetched_poll, decision_ahead=decision_ahead,
         )
+    if decision_ahead is not None:
+        decision_ahead.cancel()
     await emit_floor_pending(active=True)
     try:
         await _poll_into_queue(data, panel_roles, prefetched_poll)
@@ -214,21 +222,32 @@ async def _run_llm_host_round(
     spoken_roles: set[str],
     human_must_go: bool,
     prefetched_poll: asyncio.Task | None = None,
+    decision_ahead: asyncio.Task | None = None,
 ) -> FloorPick:
     """Collect raises, then the LLM host picks (FIFO queue on any failure)."""
-    from agent.floor.host_decide import host_decide
+    from agent.floor.host_decide import build_decide_request, run_decide
 
     await emit_floor_pending(active=True)
     try:
-        await _poll_into_queue(data, panel_roles, prefetched_poll)
+        try:
+            await _poll_into_queue(data, panel_roles, prefetched_poll)
+        except BaseException:
+            if decision_ahead is not None:
+                decision_ahead.cancel()
+            raise
         if should_stop_session_work(data, session):
+            if decision_ahead is not None:
+                decision_ahead.cancel()
             return FloorPick(None, "")
-        decision = await host_decide(
+        request = build_decide_request(
             data,
             panel_roles=panel_roles,
             human_must_go=human_must_go,
             perspective=controller.listen_role(),
         )
+        decision = await _decision_made_ahead(data, decision_ahead, request)
+        if decision is _NOT_AHEAD:
+            decision = await run_decide(data, request)
         if decision is not None:
             return FloorPick(decision.role, "host_llm", decision.line)
         if human_must_go:
@@ -239,6 +258,51 @@ async def _run_llm_host_round(
         return FloorPick(role, reason)
     finally:
         await emit_floor_pending(active=False)
+
+
+_NOT_AHEAD = object()
+
+
+async def _decision_made_ahead(data: TalkShowData, ahead_task: asyncio.Task | None, request: Any) -> Any:
+    """The pick made while the last line played, if it was made from ``request`` exactly
+    (same prompt, transcript, tools): it's then the pick the host would make now.
+    Otherwise ``_NOT_AHEAD``, and the caller asks now."""
+    if ahead_task is None:
+        return _NOT_AHEAD
+    reason = ""
+    ahead = None
+    try:
+        ahead = await asyncio.shield(ahead_task)
+    except asyncio.CancelledError:
+        if not ahead_task.cancelled():
+            raise  # this round was cancelled, not the pick made ahead
+        reason = "cancelled"
+    except Exception:
+        logger.exception("host pick ahead failed — deciding now")
+        reason = "error"
+    if not reason and not ahead.request.same_as(request):
+        ahead.task.cancel()
+        reason = "changed"
+    if not reason:
+        t0 = time.monotonic()
+        try:
+            decision = await asyncio.shield(ahead.task)
+        except asyncio.CancelledError:
+            if not ahead.task.cancelled():
+                raise
+            reason = "cancelled"
+        else:
+            if data.turn_log:
+                data.turn_log.log(
+                    "host_decide_ahead_used",
+                    wait_s=round(time.monotonic() - t0, 3),
+                    role=decision.role if decision else None,
+                    room=data.room_name,
+                )
+            return decision
+    if data.turn_log:
+        data.turn_log.log("host_decide_ahead_dropped", reason=reason, room=data.room_name)
+    return _NOT_AHEAD
 
 
 async def _poll_one_hand_raise(data: TalkShowData, role: str) -> HandRaiseResult:

@@ -400,3 +400,109 @@ class HostCallOutTests(_ActuatorCase):
         self._call_out(appraise=False)
         self.assertEqual(self.drafts, 1)
         self.assertEqual(self.log.events("draft_ahead_from_host_line"), [])
+
+
+class HostPickAheadTests(_ActuatorCase):
+    """Under the LLM host, the next pick starts while a panelist's line plays: the poll
+    at once, the decision once every listener has appraised the line, then the
+    call-out's first sentence. The pick is used when the request made when it's due
+    matches the one made ahead."""
+
+    LINE_UTT = Utterance("commentator", "Hiring freezes backfire.", seq=3)
+    CALL_OUT = "Amy, does that match what you saw?"
+
+    def setUp(self) -> None:
+        super().setUp()
+        from agent.floor import host_decide
+        from agent.floor.hand_raise_queue import HandRaiseQueue
+
+        self.data.hand_raise_queue = HandRaiseQueue()
+        self.data.panel_priority = ["guest", "commentator"]
+        self.data.show_history.lines.append(SimpleNamespace(text=self.LINE_UTT.text, procedural=False))
+        self.act = LiveActuators(  # type: ignore[arg-type]
+            None,
+            self.data,
+            SimpleNamespace(panel_speaker_roles=lambda: ["guest", "commentator"], listen_role=lambda: "host"),
+        )
+        self.decided: list[bool] = []  # ahead=True / False, per decision request
+        self.prompt = "Who speaks next?"
+
+        async def poll(data: Any, roles: list[str]) -> dict[str, HandRaiseResult]:
+            return {"guest": HandRaiseResult("guest", True), "commentator": HandRaiseResult("commentator", False)}
+
+        def build(data: Any, *, queue: Any = None, **kw: Any) -> host_decide.DecideRequest:
+            raised = (queue or data.hand_raise_queue).snapshot(["guest", "commentator"])["guest"].raised
+            return host_decide.DecideRequest(
+                prompt=f"{self.prompt} Amy raised: {raised}", system="host", history=[], tools=[],
+                names={"guest": "Amy"}, raises=(), human=host_decide.Raise("Human guest", False),
+                turns={}, human_must_go=kw["human_must_go"],
+            )
+
+        async def run_decide(data: Any, req: Any, *, ahead: bool = False) -> host_decide.HostDecision:
+            self.decided.append(ahead)
+            return host_decide.HostDecision("guest", self.CALL_OUT, host_decide.CALL_ON)
+
+        async def run_appraisal(data: Any, listener: str, utt: Utterance) -> Any:
+            return SimpleNamespace(delta=None, word=None)
+
+        for patch in (
+            mock.patch.object(host_floor, "poll_panel_hand_raises", poll),
+            mock.patch.object(host_decide, "build_decide_request", build),
+            mock.patch.object(host_decide, "run_decide", run_decide),
+            mock.patch.object(appraisal, "run_appraisal", run_appraisal),
+            mock.patch.object(appraisal, "apply_appraisal", lambda *a: None),
+            mock.patch.object(LiveActuators, "listeners", lambda _self, speaker: ["guest", "host"]),
+            mock.patch.dict(os.environ, {**FLAGS, "TALKSHOW_POLL_DURING_OPEN_FLOOR": "1", "TALKSHOW_HOST_DECIDE": "llm"}),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _round(self, *, said_meanwhile: bool = False, prompt_now: str | None = None) -> None:
+        from agent.floor.host_decide import build_decide_request, run_decide
+
+        async def round_(*args: Any, **kw: Any) -> FloorPick:
+            # As _run_llm_host_round: the poll lands in the queue, then the pick request.
+            poll = await kw["prefetched_poll"] if kw["prefetched_poll"] is not None else None
+            if poll:
+                self.data.hand_raise_queue.apply_poll_batch(poll, self.data.panel_priority)
+            if prompt_now is not None:
+                self.prompt = prompt_now
+            req = build_decide_request(self.data, human_must_go=False)
+            decision = await host_floor._decision_made_ahead(self.data, kw["decision_ahead"], req)
+            if decision is host_floor._NOT_AHEAD:
+                decision = await run_decide(self.data, req)
+            return FloorPick(decision.role, "host_llm", decision.line)
+
+        async def go() -> None:
+            self.act.prefetch_host_pick(1, after_appraisal_of=self.LINE_UTT)
+            await asyncio.sleep(0.01)
+            self.assertEqual(self.decided, [])  # waits for the listeners' appraisals
+            for listener in ("guest", "host"):
+                await self.act.appraise(self.LINE_UTT, listener)
+            await asyncio.sleep(0.01)
+            if said_meanwhile:
+                self.data.show_history.lines.append(SimpleNamespace(text="Wait, one more thing.", procedural=False))
+            with mock.patch.object(host_floor, "run_hand_raise_round", round_):
+                pick = await self.act.hand_raise_round(1, ["commentator"])
+            await self.act.speak({"role": "host", "text": pick.host_line, "step": "direct_call_host_llm_1",
+                                  "kind": "direct_call", "target": pick.role})
+
+        asyncio.run(go())
+
+    def test_the_pick_made_ahead_is_used_and_its_call_out_spoken_ahead(self) -> None:
+        self._round()
+        self.assertEqual(self.decided, [True])  # one request, made ahead
+        self.assertEqual(self.started, [self.CALL_OUT])
+        self.assertIsNotNone(self.spoken_with[0])
+        self.assertEqual(len(self.log.events("host_decide_ahead_used")), 1)
+
+    def test_a_changed_request_is_decided_again(self) -> None:
+        self._round(prompt_now="The human raised a hand.")
+        self.assertEqual(self.decided, [True, False])
+        self.assertEqual([f["reason"] for f in self.log.events("host_decide_ahead_dropped")], ["changed"])
+
+    def test_anything_said_meanwhile_drops_the_pick(self) -> None:
+        self._round(said_meanwhile=True)
+        self.assertEqual(self.decided, [True, False])
+        self.assertEqual([f["reason"] for f in self.log.events("host_decide_ahead_dropped")], ["stale"])
+        self.assertEqual(self.spoken_with, [None])  # its call-out start went with it

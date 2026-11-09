@@ -12,6 +12,7 @@ caller falls back to the FIFO hand-raise queue.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -195,49 +196,107 @@ def panel_turns_since_human(data: TalkShowData, panel_roles: Sequence[str]) -> t
     return counts, last
 
 
-async def host_decide(
+@dataclass(frozen=True)
+class DecisionAhead:
+    """A pick started before it was due: the request it was made from, and the task
+    answering it (→ HostDecision | None)."""
+
+    request: DecideRequest
+    task: Any
+
+
+@dataclass(frozen=True)
+class DecideRequest:
+    """Everything one host pick is computed from. Two requests that are ``same_as``
+    each other send the model the same thing, so either one's answer serves both."""
+
+    prompt: str
+    system: str
+    history: list[dict[str, Any]]
+    tools: list[dict[str, Any]]
+    names: dict[str, str]
+    raises: tuple[Raise, ...]
+    human: Raise
+    turns: dict[str, int]
+    human_must_go: bool
+
+    def same_as(self, other: DecideRequest) -> bool:
+        def key(r: DecideRequest) -> tuple:
+            return (
+                r.prompt,
+                r.system,
+                json.dumps(r.history, sort_keys=True, default=str),
+                json.dumps(r.tools, sort_keys=True),
+                r.human_must_go,
+            )
+
+        return key(self) == key(other)
+
+
+def build_decide_request(
     data: TalkShowData,
     *,
     panel_roles: Sequence[str],
     human_must_go: bool,
     perspective: str = "host",
-) -> HostDecision | None:
+    queue: Any = None,
+) -> DecideRequest:
+    """The host's pick request from the show as it stands (``queue``: the hand-raise
+    queue to read instead of the live one, e.g. a copy with a poll applied early)."""
     from agent.config import load_persona_instructions, load_persona_name
     from agent.emotion import mood_prompt_block
 
+    queue = data.hand_raise_queue if queue is None else queue
     host = load_persona_name("host")
     names = {r: load_persona_name(r) for r in panel_roles}
-    snap = data.hand_raise_queue.snapshot(list(panel_roles))
-    raises = [Raise(names[r], snap[r].raised, snap[r].topic) for r in panel_roles]
-    human_entry = data.hand_raise_queue.get("human")
+    snap = queue.snapshot(list(panel_roles))
+    raises = tuple(Raise(names[r], snap[r].raised, snap[r].topic) for r in panel_roles)
+    human_entry = queue.get("human")
     human = Raise("Human guest", human_entry is not None, human_entry.topic if human_entry else "")
     turns, last = panel_turns_since_human(data, panel_roles)
     prompt = render_decide_prompt(
-        host=host, raises=raises, human=human, turns=turns, last_speaker=last,
+        host=host, raises=list(raises), human=human, turns=turns, last_speaker=last,
         human_must_go=human_must_go, mood=mood_prompt_block(data, "host"),
     )
-    tools = build_tools(list(names.values()), human_must_go=human_must_go)
+    return DecideRequest(
+        prompt=prompt,
+        system=load_persona_instructions("host", panel_mode=True),
+        history=data.show_history.prior_messages(perspective=perspective),
+        tools=build_tools(list(names.values()), human_must_go=human_must_go),
+        names=names,
+        raises=raises,
+        human=human,
+        turns=turns,
+        human_must_go=human_must_go,
+    )
+
+
+async def run_decide(
+    data: TalkShowData, req: DecideRequest, *, ahead: bool = False
+) -> HostDecision | None:
+    """Send one pick request (``ahead``: started early, before the pick is due)."""
     t0 = time.monotonic()
     calls: list[tuple[str, dict[str, Any]]] = []
     content = ""
     error = ""
     try:
         content, calls = await data.runtime.gemma_client.complete_tools(
-            prompt,
-            tools=tools,
-            system_prompt=load_persona_instructions("host", panel_mode=True),
-            history_messages=data.show_history.prior_messages(perspective=perspective),
+            req.prompt,
+            tools=req.tools,
+            system_prompt=req.system,
+            history_messages=req.history,
         )
         decision, why = parse_decision(
             calls,
-            name_to_role={n.lower(): r for r, n in names.items()},
-            human_must_go=human_must_go,
+            name_to_role={n.lower(): r for r, n in req.names.items()},
+            human_must_go=req.human_must_go,
         )
     except Exception as exc:
         logger.exception("host_decide request failed")
         decision, why, error = None, "request_failed", f"{type(exc).__name__}: {exc}"[:200]
     latency = time.monotonic() - t0
     if data.turn_log is not None:
+        extra = {"ahead": True} if ahead else {}
         data.turn_log.log(
             "host_decide",
             role=decision.role if decision else None,
@@ -245,20 +304,35 @@ async def host_decide(
             line=decision.line[:300] if decision else None,
             fallback=why or None,
             error=error or None,
-            human_raised=human.raised,
-            human_must_go=human_must_go,
-            raised=[r.name for r in raises if r.raised],
-            turns=turns,
+            human_raised=req.human.raised,
+            human_must_go=req.human_must_go,
+            raised=[r.name for r in req.raises if r.raised],
+            turns=req.turns,
             calls=[{"name": n, "args": a} for n, a in calls][:2],
             content=content[:200] or None,
             latency_s=round(latency, 3),
             room=data.room_name,
+            **extra,
         )
     logger.info(
-        "host_decide → %s (%s) %.2fs fallback=%s",
+        "host_decide → %s (%s) %.2fs fallback=%s%s",
         decision.role if decision else None,
         decision.tool if decision else "-",
         latency,
         why or "-",
+        " (ahead)" if ahead else "",
     )
     return decision
+
+
+async def host_decide(
+    data: TalkShowData,
+    *,
+    panel_roles: Sequence[str],
+    human_must_go: bool,
+    perspective: str = "host",
+) -> HostDecision | None:
+    req = build_decide_request(
+        data, panel_roles=panel_roles, human_must_go=human_must_go, perspective=perspective
+    )
+    return await run_decide(data, req)

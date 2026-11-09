@@ -138,6 +138,9 @@ class FakeActuators:
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
+    def prefetch_host_pick(self, turn_idx: int, *, after_appraisal_of=None) -> None:
+        self._ev("pick_ahead", turn_idx)
+
     def start_panelist_draft(self, role: str, step: str, *, after_appraisal_of=None) -> None:
         self._ev("draft_ahead", (role, step))
         self.draft_waits_for.append(after_appraisal_of)
@@ -356,6 +359,32 @@ class LimitTests(unittest.TestCase):
 
 
 class LlmHostTests(unittest.TestCase):
+    def test_the_next_pick_starts_while_a_panelist_hands_back_to_the_host(self) -> None:
+        act = FakeActuators(
+            llm=True,
+            picks=[
+                FloorPick("guest", "host_llm", "Amy, does that match what you saw?"),
+                FloorPick("human", "host_llm", "Let's go back to our guest on that."),
+            ],
+        )
+        run(act, human_event=HUMAN)
+        self.assertEqual(act.kinds("pick_ahead"), [1])  # started with Amy's line (turn 1)
+        order = [(e.kind, e.detail) for e in act.events if e.kind in ("pick_ahead", "speak", "hand_raise")]
+        start = order.index(("pick_ahead", 1))
+        self.assertEqual(order[start + 1 : start + 3], [("speak", ("panelist", "guest")), ("hand_raise", 1)])
+
+    def test_no_pick_ahead_when_the_panelist_hands_to_another_panelist(self) -> None:
+        act = FakeActuators(
+            llm=True,
+            picks=[
+                FloorPick("guest", "host_llm", "Amy, does that match what you saw?"),
+                FloorPick("human", "host_llm", "Back to our guest."),
+            ],
+            tags={"guest": ["commentator"]},
+        )
+        run(act, human_event=HUMAN)
+        self.assertEqual(act.kinds("pick_ahead"), [2])  # only Ryan's line, which goes back to the host
+
     def test_llm_host_lines_replace_canned_ones(self) -> None:
         act = FakeActuators(
             llm=True,

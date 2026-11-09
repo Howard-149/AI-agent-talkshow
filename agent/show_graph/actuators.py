@@ -51,6 +51,9 @@ class Actuators(Protocol):
     def queue_roles(self) -> list[str]: ...
     async def return_to_host(self, trigger: str) -> None: ...
     def prefetch_hand_raise_poll(self, turn_idx: int) -> None: ...
+    def prefetch_host_pick(
+        self, turn_idx: int, *, after_appraisal_of: Utterance | None = None
+    ) -> None: ...
     async def hand_raise_round(
         self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
     ) -> FloorPick: ...
@@ -90,6 +93,12 @@ class LiveActuators:
         # (utterance seq, listener) → set once that listener's appraisal of it is done:
         # an early draft from the LLM host's call-out waits on it.
         self._appraised: dict[tuple[int, str], asyncio.Event] = {}
+        # (last spoken line, poll task, task → DecisionAhead | None): the LLM host's next
+        # pick, started while a panelist's line plays.
+        self._pick_ahead: tuple[object, asyncio.Task, asyncio.Task] | None = None
+        # (role, step, task → PreparedLineStart | None): that pick's call-out, its first
+        # chunk started as soon as the pick lands (speak-ahead).
+        self._host_ahead: tuple[str, str, asyncio.Task] | None = None
 
     # --- session / logging -------------------------------------------------
 
@@ -173,7 +182,10 @@ class LiveActuators:
         from agent.session.canned_cache import CANNED_KINDS
         from agent.session.session_handoff import speak_panel_line
 
-        ahead = await self._take_speak_ahead(line)
+        if line.get("kind") == "direct_call":
+            ahead = await self._take_host_ahead(line)
+        else:
+            ahead = await self._take_speak_ahead(line)
         try:
             await speak_panel_line(
                 self.session,
@@ -294,12 +306,150 @@ class LiveActuators:
             self.start_panelist_draft(role, step)
             self.log("draft_ahead_early", role=role, step=step)
 
+    def prefetch_host_pick(
+        self, turn_idx: int, *, after_appraisal_of: Utterance | None = None
+    ) -> None:
+        """Under the LLM host, start its next pick while a panelist's line plays (opt-in,
+        with the early poll): the hand-raise poll now, and the host's decision once
+        every listener has appraised the line, as when the pick is made after the line.
+        With speak-ahead, the call-out's first sentence starts as soon as the decision
+        lands. The pick is used only if the request it was made from matches the one the
+        host would send when the pick is due (host_floor); otherwise it's made then."""
+        from agent.floor.host_floor import poll_during_open_floor_enabled, poll_panel_hand_raises
+
+        if not (self.llm_host() and poll_during_open_floor_enabled()):
+            return
+        if self.data.hand_raise_queue.roles():
+            return  # a queued hand skips the poll; the pick is made when due
+        self._drop_pick_ahead()
+        roles = self.controller.panel_speaker_roles()
+        poll = asyncio.create_task(
+            poll_panel_hand_raises(self.data, roles), name="hand_raise_poll:ahead"
+        )
+        if self._prefetched_poll is not None:
+            self._prefetched_poll.cancel()
+        self._prefetched_poll = poll
+        waits: list[asyncio.Event] = []
+        if after_appraisal_of is not None:
+            for listener in self.listeners(after_appraisal_of.speaker):
+                event = asyncio.Event()
+                self._appraised[(after_appraisal_of.seq, listener)] = event
+                waits.append(event)
+        decision = asyncio.create_task(
+            self._decide_ahead(poll, waits, roles, turn_idx), name="host_decide:ahead"
+        )
+        self._pick_ahead = (self._transcript_signature(), poll, decision)
+        self.log("host_decide_ahead_started", turn_idx=turn_idx)
+
+    async def _decide_ahead(
+        self, poll: asyncio.Task, waits: list[asyncio.Event], roles: list[str], turn_idx: int
+    ) -> Any:
+        """The host's pick from the poll applied to a copy of the queue, once the
+        listeners' moods are in (DecisionAhead), with its call-out's first chunk."""
+        import copy
+
+        from agent.floor.host_decide import DecisionAhead, build_decide_request, run_decide
+        from agent.panel.panel_speech import speak_ahead_enabled
+
+        results = await asyncio.shield(poll)
+        if waits:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*(e.wait() for e in waits)), timeout=DRAFT_AFTER_APPRAISAL_WAIT_S
+                )
+            except asyncio.TimeoutError:
+                self.log("host_decide_ahead_appraisal_timeout", turn_idx=turn_idx)
+        queue = copy.deepcopy(self.data.hand_raise_queue)
+        queue.apply_poll_batch(results, list(self.data.panel_priority))
+        request = build_decide_request(
+            self.data,
+            panel_roles=roles,
+            human_must_go=False,  # no queued human hand: prefetch_host_pick checked
+            perspective=self.controller.listen_role(),
+            queue=queue,
+        )
+        task = asyncio.ensure_future(run_decide(self.data, request, ahead=True))
+        if speak_ahead_enabled():
+            host = self.controller.listen_role()
+            step = f"direct_call_host_llm_{turn_idx}"  # the step hand_raise will give it
+            self._drop_host_ahead()
+            self._host_ahead = (
+                host,
+                step,
+                asyncio.create_task(
+                    self._start_host_line(task, roles, host, step), name="speak_ahead:host"
+                ),
+            )
+        return DecisionAhead(request=request, task=task)
+
+    async def _start_host_line(
+        self, decision_task: asyncio.Task, roles: list[str], host: str, step: str
+    ) -> PreparedLineStart | None:
+        from agent.session.session_handoff import prepare_line_start
+
+        decision = await asyncio.shield(decision_task)
+        if decision is None or decision.role not in roles or not decision.line:
+            return None  # no call-out to start: the floor goes to the human, or a close
+        return await prepare_line_start(self.data, speak_role=host, text=decision.line, step=step)
+
+    def _drop_pick_ahead(self) -> None:
+        pending, self._pick_ahead = self._pick_ahead, None
+        if pending is not None:
+            _, poll, decision = pending
+            decision.cancel()
+            poll.cancel()
+        self._drop_host_ahead()
+
+    def _drop_host_ahead(self, reason: str | None = None) -> None:
+        pending, self._host_ahead = self._host_ahead, None
+        if pending is None:
+            return
+        role, step, task = pending
+        if not task.done():
+            task.cancel()
+        elif not task.cancelled() and task.exception() is None and task.result() is not None:
+            task.result().discard()
+        if reason:
+            self.log("speak_ahead_dropped", role=role, step=step, reason=reason)
+
+    async def _take_host_ahead(self, line: LineSpec) -> PreparedLineStart | None:
+        """The speak-ahead start of this call-out, if one was started for it."""
+        pending = self._host_ahead
+        if pending is None:
+            return None
+        role, step, task = pending
+        if (role, step) != (line["role"], line.get("step")):
+            return None
+        self._host_ahead = None
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.cancelled():
+                raise
+        except Exception:
+            logger.exception("host speak ahead failed — speaking live")
+            self.log("speak_ahead_dropped", role=role, step=step, reason="error")
+        return None
+
     async def hand_raise_round(
         self, turn_idx: int, spoken_roles: list[str], *, human_must_go: bool = False
     ) -> FloorPick:
         from agent.floor.host_floor import run_hand_raise_round
 
         prefetched, self._prefetched_poll = self._prefetched_poll, None
+        decision_ahead = None
+        if self._pick_ahead is not None:
+            signature, poll, decision_ahead = self._pick_ahead
+            self._pick_ahead = None
+            if signature is not self._transcript_signature():
+                # Started for an earlier line: something was said since.
+                decision_ahead.cancel()
+                poll.cancel()
+                if prefetched is poll:
+                    prefetched = None
+                decision_ahead = None
+                self.log("host_decide_ahead_dropped", reason="stale")
+                self._drop_host_ahead()
         pick = await run_hand_raise_round(
             self.session,
             self.data,
@@ -309,7 +459,10 @@ class LiveActuators:
             turn_idx=turn_idx,
             human_must_go=human_must_go,
             prefetched_poll=prefetched,
+            decision_ahead=decision_ahead,
         )
+        if not (pick.host_line and pick.role in self.controller.panel_speaker_roles()):
+            self._drop_host_ahead(reason="not_used")
         if self._draft_ahead is not None and self._draft_ahead[0] != pick.role:
             # Drafted for the poll's winner, but the floor went elsewhere (e.g. the human).
             role, step, _, task = self._draft_ahead

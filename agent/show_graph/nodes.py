@@ -305,6 +305,16 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
         act.start_panelist_draft(
             target, f"speech_{target}_{state.get('turn_idx', 0)}", after_appraisal_of=utt
         )
+    if (
+        line.get("kind") == "panelist"
+        and line.get("next_tag") not in (*state["panel_roles"], "human", "close")
+        and state.get("turn_idx", 0) < state.get("max_turns", 12)
+        and state.get("moderations", 0) < state.get("max_moderations", 8)
+    ):
+        # The host picks next: start that pick while this line plays (no-op unless the
+        # LLM host and TALKSHOW_POLL_DURING_OPEN_FLOOR=1). It waits for this line's
+        # appraisals, as the pick does when made after the line.
+        act.prefetch_host_pick(state.get("turn_idx", 0), after_appraisal_of=utt)
     if not line.get("procedural"):
         act.relax(line["role"])
     jobs: list[dict[str, Any]] = []
