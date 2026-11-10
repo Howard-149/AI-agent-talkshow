@@ -15,6 +15,15 @@ numbers next to a capitalised word that is not a month or a sentence opener (nam
 "4 Day Week Global"), and ages whose double passes 100. Doubling or halving can still make a fact implausible (a
 percentage that "increased to 45.5% from 55%"); that is accepted, the rule stays fixed.
 
+Implausible edits are dropped (``implausible``), by reason:
+- comparison: the sentence has another number of the same kind (percent, money, year, count) and a comparison or
+  direction cue (from/to, increased, fell, higher than, compared with, versus, between ... and, ...): doubling one side
+  of "rose to 91% from 55%" can reverse the claim;
+- year_context: a year edit in a sentence that names another year, a decade or an ordinal century (the order of events
+  could break);
+- bound: the new value breaks an obvious bound (a percentage of 100 or more, a negative value).
+Then the next editable number of the same fact is tried, then the next fact.
+
 An edit is kept only if the unsupported-specifics extractor (eval/quality_ruler/specifics.py) sees exactly one value
 change (old value -> new value), and neither value appears anywhere else the panelist can see (topic, transcript,
 audience turn, the other offered facts). Then a reply that states the new value followed the edited fact, one that
@@ -47,6 +56,18 @@ OPENERS = {"in", "by", "since", "from", "until", "after", "before", "about", "ar
            "for", "to", "the", "a", "an", "and", "but", "with", "every", "each", "per", "than"}
 
 
+ANY_NUMBER = re.compile(r"(?<![\w.])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![\w])")
+COMPARISON_CUE = re.compile(
+    r"\b(?:from|to|increas\w*|decreas\w*|rose|rise[sn]?|rising|fell|fall(?:s|ing|en)?|grew|grow(?:s|n|ing|th)?|"
+    r"drop(?:s|ped|ping)?|up|down|higher|lower|more|less|fewer|greater|over|under|compared|comparison|versus|vs|"
+    r"between|than|doubled|halved|tripled|outpac\w*|exceed\w*)\b", re.I)
+DECADE = re.compile(r"\b\d{3}0s\b|['’]\d0s\b", re.I)
+CENTURY = re.compile(r"\b(?:\d{1,2}(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+                     r"eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|"
+                     r"twentieth|twenty-first)[\s-]+century\b", re.I)
+DROP_REASONS = ("comparison", "year_context", "bound")
+
+
 @dataclass(frozen=True)
 class NumberEdit:
     start: int
@@ -68,6 +89,46 @@ def _fmt(value: float, decimals: int, commas: bool, keep_zero_fraction: bool) ->
     elif decimals and not keep_zero_fraction:
         s = s.rstrip("0").rstrip(".")
     return s
+
+
+def number_kind(text: str, start: int, end: int) -> str:
+    """year | percent | money | count, for the number at text[start:end] (same tests as the edit rule)."""
+    num, before, after = text[start:end], text[:start], text[end:]
+    if PERCENT_AFTER.match(after):
+        return "percent"
+    if before.endswith(("$", "£", "€")) or MONEY_AFTER.match(after):
+        return "money"
+    if re.fullmatch(r"\d{4}", num) and 1000 <= int(num) <= 2100 and not SCALE_AFTER.match(after):
+        return "year"
+    return "count"
+
+
+def sentence_span(text: str, start: int, end: int) -> tuple[int, int]:
+    """The sentence of text that holds text[start:end] (split at ., ! or ? followed by a space and a capital)."""
+    cuts = [0] + [m.end() for m in re.finditer(r"[.!?]\s+(?=[A-Z\"'‘“])", text)] + [len(text) + 1]
+    lo = max(c for c in cuts if c <= start)
+    hi = min(c for c in cuts if c >= end)
+    return lo, min(hi, len(text))
+
+
+def implausible(text: str, c: "NumberEdit") -> str | None:
+    """Why editing number c of text would make an implausible fact (a DROP_REASONS entry), or None."""
+    new_value = float(c.new.replace(",", ""))
+    kind = "count" if c.kind == "number" else c.kind
+    if kind == "count":
+        kind = number_kind(text, c.start, c.end)
+    if new_value < 0 or (c.kind == "percent" and new_value >= 100):
+        return "bound"
+    lo, hi = sentence_span(text, c.start, c.end)
+    sent = text[lo:hi]
+    others = [number_kind(text, lo + m.start(), lo + m.end()) for m in ANY_NUMBER.finditer(sent)
+              if lo + m.start() != c.start]
+    if c.kind == "year":
+        if "year" in others or DECADE.search(sent) or CENTURY.search(sent):
+            return "year_context"
+    elif kind in others and COMPARISON_CUE.search(sent):
+        return "comparison"
+    return None
 
 
 def candidates(text: str) -> list[NumberEdit]:
@@ -113,15 +174,21 @@ def candidates(text: str) -> list[NumberEdit]:
     return out
 
 
-def edit_fact(fact: str, context: Iterable[str] = ()) -> tuple[str, NumberEdit] | None:
+def edit_fact(fact: str, context: Iterable[str] = (), dropped: list | None = None) -> tuple[str, NumberEdit] | None:
     """(edited fact, the edit) for the first number whose edit passes the checks, else None. ``context``: every other
-    text the panelist sees at this turn (neither the old nor the new value may appear there)."""
+    text the panelist sees at this turn (neither the old nor the new value may appear there). ``dropped``: if given,
+    every implausible edit is appended as (reason, original fact, edited fact)."""
     from eval.quality_ruler.specifics import Support, extract
 
     seen = Support(list(context))
     old_keys = Counter(s["key"] for s in extract(fact) if s["kind"] != "name")
     for c in candidates(fact):
         new_fact = c.apply(fact)
+        why = implausible(fact, c)
+        if why:
+            if dropped is not None:
+                dropped.append((why, fact, new_fact))
+            continue
         new_keys = Counter(s["key"] for s in extract(new_fact) if s["kind"] != "name")
         gone, came = old_keys - new_keys, new_keys - old_keys
         if sum(gone.values()) != 1 or sum(came.values()) != 1:

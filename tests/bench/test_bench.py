@@ -14,7 +14,7 @@ from unittest import mock
 import yaml
 
 import agent.agents  # noqa: F401  (import order the app uses; avoids a pre-existing circular import)
-from eval.bench import build, fact_edit, items, run, score, systems
+from eval.bench import build, fact_edit, items, judge, run, score, systems
 
 ROOT = Path(__file__).resolve().parents[2]
 FLAGS = ("TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF", "TALKSHOW_UPTAKE_PLANNER",
@@ -239,6 +239,40 @@ class FactEditTests(unittest.TestCase):
         self.assertEqual(new, "Launched in 2010, it reached 80 states.")
         self.assertEqual((e.old, e.new, e.kind, e.old_key, e.new_key), ("40", "80", "number", "n:40", "n:80"))
 
+    def test_implausible_dropped(self) -> None:
+        cases = {
+            "Incorporating online content increased pass rates to 91% from 55%.": "comparison",
+            "Wages rose to $9 an hour from $7.25.": "comparison",
+            "Sales fell by 9.6% while prices were up 3%.": "comparison",
+            "In 2016 it reversed the 2010 rule.": "year_context",
+            "Founded in 1971, at the height of the 1960s boom.": "year_context",
+            "It was banned in 1923 after a 19th century campaign.": "year_context",
+        }
+        for text, why in cases.items():
+            dropped: list = []
+            self.assertIsNone(fact_edit.edit_fact(text, dropped=dropped), text)
+            self.assertIn(why, {d[0] for d in dropped}, text)
+        c = fact_edit.NumberEdit(0, 2, "60", "120", "percent")
+        self.assertEqual(fact_edit.implausible("60% agreed.", c), "bound")
+
+    def test_implausible_falls_through_to_next_number(self) -> None:
+        # the year has another year in its sentence; the count does not compare with anything
+        new, e = fact_edit.edit_fact("Between 1990 and 2000 the club signed 40 players.")
+        self.assertEqual((e.kind, e.old, e.new), ("number", "40", "80"))
+        dropped: list = []
+        new, e = fact_edit.edit_fact("In 2016 it reversed the 2010 rule on 40 farms.", dropped=dropped)
+        self.assertEqual((e.old, e.new, new), ("40", "80", "In 2016 it reversed the 2010 rule on 80 farms."))
+        self.assertEqual([d[0] for d in dropped], ["year_context", "year_context"])
+
+    def test_plausible_kept(self) -> None:
+        for text, want in (("Up to 25% of U.S. jobs are at risk of automation.", "Up to 50% of U.S. jobs"),
+                           ("Florida allowed autonomous car testing on public roads in 2012.", "in 2002."),
+                           ("Each plant saved 800,000 life years, a study estimated.", "1,600,000"),
+                           ("The trial involved 61 companies and almost 3,000 workers.", "122 companies")):
+            got = fact_edit.edit_fact(text)
+            self.assertIsNotNone(got, text)
+            self.assertIn(want, got[0])
+
     def test_follows(self) -> None:
         _new, e = fact_edit.edit_fact("Debt was 38 percent of GDP.")
         self.assertEqual(fact_edit.follows("Debt at seventy-six percent is a crisis.", e.old_key, e.new_key), "new")
@@ -401,6 +435,101 @@ class RunScoreTests(_Env):
         res = score.follows_fact(rows, its)
         self.assertEqual(res["edited"]["n"], len(rows))
         self.assertGreater(res["edited"]["new"] + res["edited"]["both"], 0.0)
+
+
+class JudgeTests(_Env):
+    def fake_run(self, name: str = "fake", system: str = "think_action") -> Path:
+        path = self.tmp / "dev.jsonl"
+        if not path.exists():
+            items.write_items(path, self.dev_items())
+        out = self.tmp / name
+        with contextlib.redirect_stdout(io.StringIO()):
+            run.main(["--system", system, "--items", str(path), "--split", "dev", "--fake", "--reruns", "2",
+                      "--out", str(out)])
+            score.score(out)
+        return out
+
+    @staticmethod
+    def oracle(reqs):
+        """A judge that always answers right: A/B = the true version, yes for every rubric item."""
+        out = []
+        for r in reqs:
+            tok = ("Yes" if r["request"] == "rubric" else r["true"])
+            other = ("No" if tok == "Yes" else "B" if tok == "A" else "A")
+            lp = {0: mock.Mock(decoded_token=tok, logprob=-0.01), 1: mock.Mock(decoded_token=other, logprob=-5.0)}
+            out.append(mock.Mock(outputs=[mock.Mock(logprobs=[lp])]))
+        return out
+
+    def test_requests_rubric_rerun_0_only(self) -> None:
+        out = self.fake_run()
+        rub = [json.loads(l) for l in (out / "score/judge/rubric.jsonl").read_text().splitlines()]
+        ident = [json.loads(l) for l in (out / "score/judge/identification.jsonl").read_text().splitlines()]
+        self.assertEqual({r["rerun"] for r in rub}, {0})
+        self.assertEqual({r["rerun"] for r in ident}, {0, 1})
+        with contextlib.redirect_stdout(io.StringIO()):
+            score.score(out, rubric_reruns=None)
+        rub_all = (out / "score/judge/rubric.jsonl").read_text().splitlines()
+        self.assertEqual(len(rub_all), 2 * len(rub))
+
+    def test_judge_resumes_and_scores_merge(self) -> None:
+        out = self.fake_run()
+        d = out / "score"
+        n_req = sum(len((d / f"judge/{n}.jsonl").read_text().splitlines()) for n in ("identification", "rubric"))
+        calls = []
+
+        def flaky(reqs):
+            calls.append(len(reqs))
+            if len(calls) == 2:
+                raise RuntimeError("preempted")
+            return self.oracle(reqs)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(RuntimeError):
+                judge.run([d], "oracle", flaky, {0}, chunk=50)
+            seen = []
+            judge.run([d], "oracle", lambda reqs: seen.append(len(reqs)) or self.oracle(reqs), {0}, chunk=50)
+        self.assertEqual(sum(seen), n_req - 50)  # the first chunk was not asked again
+        answers = [json.loads(l) for l in (d / "judge/answers_oracle.jsonl").read_text().splitlines()]
+        self.assertEqual(len(answers), n_req)
+        with contextlib.redirect_stdout(io.StringIO()):
+            judge.main(["--requests", str(d), "--tag", "fake", "--fake"])
+            rep = score.score(out)
+        judged = rep["judged"]
+        self.assertEqual(judged["judges"], ["fake", "oracle"])
+        t1 = judged["tasks"]["T1"]
+        self.assertEqual(t1["oracle"]["J"]["J"], 1.0)
+        self.assertEqual(t1["oracle"]["J_control"]["J"], 1.0)
+        self.assertIn("orig vs paraphrase", t1["oracle"]["J_by_pair"])
+        self.assertTrue(0.0 <= t1["fake"]["J"]["J"] <= 1.0)
+        lo, hi = t1["all"]["J"]["ci95"]
+        self.assertLessEqual(lo, t1["all"]["J"]["J"])
+        self.assertLessEqual(t1["all"]["J"]["J"], hi)
+        self.assertEqual(judged["tasks"]["T4"]["oracle"]["rubric_pass"]["fidelity"], 1.0)
+        self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T3", "T4", "overall"})
+        self.assertIn("right_responder", rep["task_scores"]["T2"]["components"])
+        self.assertIn("# think_action (production)", (d / "report.md").read_text())
+
+    def test_task_score_formula(self) -> None:
+        per_task = {"T1": {}, "T3": {"follows_fact": {"edited": {"new": 0.4}},
+                                     "unsupported_specifics": {"share_lines_unsupported": 0.25}}}
+        judged = {"tasks": {"T1": {"all": {"J": {"J": 0.8}}}, "T3": {"all": {"J": {"J": 0.45}}}}}
+        sc = score.task_scores(per_task, judged)
+        self.assertEqual(sc["T1"]["score"], 60.0)  # 200 * (0.8 - 0.5)
+        self.assertEqual(sc["T3"]["components"], {"identification": 0.0, "follows_fact": 40.0,
+                                                  "supported_specifics": 75.0})
+        self.assertEqual(sc["T3"]["score"], 38.3)
+        self.assertEqual(sc["overall"], round((60.0 + 38.3) / 2, 1))
+
+    def test_leaderboard(self) -> None:
+        a, b = self.fake_run("a"), self.fake_run("b", system="plain")
+        with contextlib.redirect_stdout(io.StringIO()):
+            for d in (a, b):
+                judge.main(["--requests", str(d / "score"), "--tag", "fake", "--fake"])
+                score.score(d)
+            table = score.leaderboard([a / "score", b / "score"])
+        self.assertEqual(len(table.strip().splitlines()), 4)
+        self.assertIn("plain", table)
+        self.assertIn("think_action (production)", table)
 
 
 if __name__ == "__main__":

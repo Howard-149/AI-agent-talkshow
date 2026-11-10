@@ -22,7 +22,10 @@ generated line is checked with the show's own addressee detector (`agent/floor/a
 T3 rule (`fact_edit.py`): the show offers its usual 6 facts for that turn; in reading order, the first number of a fact
 that can be edited is changed: years minus 10, percentages times 2 (divided by 2 if that would reach 100), other numbers
 times 2; units, currency and format are kept. Numbers inside names, ranges, ratios, dates and ages are skipped, and
-neither the old nor the new value may appear anywhere else the panelist sees.
+neither the old nor the new value may appear anywhere else the panelist sees. Implausible edits are dropped and the
+next editable number is tried: a number compared with another number of the same kind in its sentence ("rose to 91%
+from 55%"), a year in a sentence that names another year, a decade or a century, and any value past an obvious bound
+(a percentage of 100 or more, a negative value).
 Example: "employers must pay minimum wage unless employees customarily receive more than $30 a month in tips" becomes
 "... more than $60 a month in tips".
 
@@ -30,8 +33,12 @@ Example: "employers must pay minimum wage unless employees customarily receive m
 
 | split | topics | source | history before the audience line | items (T1 / T2 / T3 / T4) |
 |---|---|---|---|---|
-| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 476 (150 / 120 / 86 / 120) |
-| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 689 (243 / 168 / 110 / 168) |
+| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 473 (150 / 120 / 83 / 120) |
+| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 684 (243 / 168 / 105 / 168) |
+
+Test items start from the host's opening by choice: every test item must be rebuildable from committed data plus the
+public corpus, and a recorded show state (made by our own system) exists for only some test topics. So on test the
+audience member's line opens the discussion; on dev the panel has already discussed the topic.
 
 Dev has no cause edit. Test lacks the number edit on 2 topics and the entity edit on 7 (not applicable to the turn).
 T3 drops topics where no offered fact has an editable number (1 dev, 2 test).
@@ -41,8 +48,8 @@ differ only in the edit.
 
 ## Files
 
-- `eval/data/bench/dev.jsonl`: the dev items (committed). T3 items contain sentences from Wikipedia
-  (CC BY-SA 4.0); each item lists the source page and URL in `meta.fact_sources`.
+- `eval/data/bench/dev.jsonl`: the dev items (committed).
+  Facts are from Wikipedia, CC BY-SA 4.0, see `meta.fact_sources` (page and URL per fact).
 - `eval/data/bench/test_manifest.jsonl`: test item ids, the edit applied (source key, fact indices, old and new
   number) and a content hash. No source text: test items are rebuilt locally into `eval/data/bench/build/` (git-ignored),
   like the public test set itself.
@@ -108,5 +115,22 @@ Scoring (`score.py`): rules where checkable, yes/no judges otherwise, no holisti
 - Response shift R: `DIR/score/R/<task>/lines.jsonl`; embed with `python -m eval.responsiveness --out <that dir>
   embed` (GPU) and score again.
 - Judge requests: `DIR/score/judge/identification.jsonl` (which input version was this reply answering, A/B in both
-  orders, chance 0.5; for T4, which persona card) and `rubric.jsonl` (the quality ruler's kept yes/no items). The judge
-  runner that answers them is not written yet.
+  orders, chance 0.5; for T4, which persona card) and `rubric.jsonl` (the quality ruler's kept yes/no items; rerun 0
+  only by default, `--rubric-reruns all` for every rerun).
+
+Judges (GPU): `python -m eval.bench.judge --requests DIR/score[,DIR2/score] --model <judge> --tag <name> --tp 2`
+answers both files from next-token logprobs (as `eval/judge_context.py` and the quality ruler's jury), checkpointing to
+a partial file so a requeued job resumes. The next `python -m eval.bench.score DIR` merges every `answers_<tag>.jsonl`:
+identification accuracy J per task and pair type with a 95% CI from resampling topics (the paraphrase control
+separately), and rubric pass rates; per judge and pooled.
+
+Task scores (0-100, `score.task_scores`), each the mean of the parts that exist for the run, judges pooled:
+- T1: 200 x (J - 0.5) on the non-control edits.
+- T2: 100 x share right responder (systems that decide the floor); 200 x (J - 0.5) on the addressee pair.
+- T3: 200 x (J - 0.5) on the fact pair; 100 x share of replies stating the new value only; 100 x share of replies with
+  no unsupported specific.
+- T4: 200 x (J - 0.5) on persona attribution; 100 x persona item pass rate.
+- overall: the mean over tasks. Scores are clipped to 0-100.
+
+Outputs: `DIR/score/score.json`, `DIR/score/report.md` (one page per system), and
+`python -m eval.bench.score --leaderboard DIR1/score DIR2/score ... --out board.md` (one table across systems).

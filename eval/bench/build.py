@@ -60,6 +60,7 @@ T1_VERSIONS = (
 T2_TEMPLATE = "{name}, {question}"
 VOCATIVE = re.compile(r"^\s*(?:Ryan|Amy)\s*[,—–:\-]\s*")
 T3_MAX_EDITS = 2
+DROPPED: list[dict] = []  # implausible T3 edits seen by the last build (written to build/t3_dropped_<split>.jsonl)
 REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3": "fact_orig", "T4": "persona_orig"}
 
 # The host's opening lines in the show (the first two lines of every recorded show state).
@@ -246,7 +247,11 @@ def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> li
         for j, fact in enumerate(offered):
             if len(edits) == T3_MAX_EDITS:
                 break
-            got = edit_fact(fact, context + [f for k, f in enumerate(offered) if k != j])
+            dropped: list = []
+            got = edit_fact(fact, context + [f for k, f in enumerate(offered) if k != j], dropped)
+            for why, old_f, new_f in dropped:
+                log[f"T3 edit dropped as implausible: {why}"] += 1
+                DROPPED.append({"split": split, "topic_id": t["slug"], "reason": why, "fact": old_f, "edited": new_f})
             if got:
                 edits.append((j, *got))
         if not edits:
@@ -363,6 +368,10 @@ def main() -> None:
     n = write_items(out, items)
     assert len(read_items(out)) == n
     print(f"wrote {n} items -> {out}")
+    if DROPPED:
+        BUILD.mkdir(parents=True, exist_ok=True)
+        (BUILD / f"t3_dropped_{args.split}.jsonl").write_text(
+            "".join(json.dumps(d, ensure_ascii=False) + "\n" for d in DROPPED))
     print(json.dumps(counts(items), indent=1))
     for k, v in sorted(log.items()):
         print(f"  {k}: {v}")
