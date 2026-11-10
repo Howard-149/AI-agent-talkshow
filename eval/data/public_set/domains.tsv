@@ -1,0 +1,115 @@
+# IQ2 motion → domain. Labeler: an LLM agent (2026-10-06), from the motion title alone, no other
+# input. Domains: economy · politics_law (domestic politics, government, constitution, civil rights, immigration) ·
+# foreign_security (foreign policy, war, terrorism, intelligence/surveillance) · science_health (science, technology, health,
+# energy/environment) · society_education (education, culture, media, social issues, sport) · religion_ethics (religion,
+# morality, bioethics). keyword_check (build.py) flags titles whose keywords suggest a different domain, for spot-checking.
+# dev_overlap = near-duplicate of a pilot/dev topic (eval/data/minimal_pairs/pairs.yaml) → excluded from the test set.
+conversation_id	domain	dev_overlap
+11620	foreign_security
+19373	science_health
+14427	politics_law
+13452	foreign_security
+21535	foreign_security
+23602	society_education
+671	politics_law
+1406	foreign_security
+14199	politics_law
+14990	science_health
+20803	foreign_security
+23945	religion_ethics
+2807	foreign_security
+5977	foreign_security
+8797	foreign_security
+897	society_education
+0	society_education
+11767	science_health
+19607	religion_ethics
+20418	foreign_security
+20897	religion_ethics
+2228	politics_law
+24367	science_health
+24784	foreign_security
+3141	foreign_security
+4395	politics_law
+15258	economy
+16250	foreign_security
+18423	foreign_security
+23312	foreign_security
+3416	science_health
+4626	society_education
+5488	economy
+5703	economy
+6660	religion_ethics
+9437	economy
+13608	religion_ethics
+16500	society_education
+17957	politics_law
+19956	foreign_security
+23135	science_health
+2627	foreign_security
+2960	foreign_security
+5180	foreign_security
+6098	politics_law
+11368	religion_ethics
+12524	politics_law
+14787	society_education	college-worth
+15975	economy
+18864	science_health
+21166	society_education
+22618	science_health
+24929	economy
+25160	economy
+26330	politics_law
+8115	politics_law
+9204	foreign_security
+10924	politics_law
+12797	society_education
+16749	foreign_security
+16966	science_health
+21906	science_health
+24036	foreign_security
+25403	politics_law	drug-decriminalization
+26062	science_health
+356	economy
+6860	religion_ethics
+11978	science_health
+1595	economy
+17262	foreign_security
+17634	politics_law
+18181	foreign_security
+19135	politics_law
+20148	religion_ethics
+3948	foreign_security
+7457	economy
+8444	religion_ethics
+9973	economy
+10612	economy
+12277	science_health
+15726	politics_law
+18672	politics_law
+1897	science_health
+20577	religion_ethics
+22390	society_education
+23707	economy
+2457	society_education
+3735	foreign_security
+4934	foreign_security
+7204	politics_law
+7859	foreign_security
+8958	religion_ethics
+9739	society_education
+10331	society_education
+11136	science_health
+1177	science_health
+13265	politics_law
+13878	foreign_security
+15450	economy
+24565	politics_law
+25836	foreign_security
+4134	religion_ethics
+5347	politics_law
+6389	economy
+21641	economy	minimum-wage
+22130	foreign_security
+22879	foreign_security
+25635	foreign_security

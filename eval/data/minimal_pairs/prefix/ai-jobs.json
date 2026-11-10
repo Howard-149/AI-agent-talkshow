@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Will AI take more jobs than it creates?: the mic is yours whenever you're ready.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My friend was a freelance translator for twelve years, and her work dried up within eighteen months of ChatGPT. I think AI will wipe out more jobs than it creates this time.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a very stark example, and it certainly brings the conversation down to a very human level.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The translator example is visceral, I'll give you that, but I think focusing only on the immediate displacement ignores the massive productivity gains AI will unlock.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan talking about productivity gains, and I see the potential there, but I also wonder if we're overlooking the human cost of that shift. When jobs disappear, even if new ones appear, the transition period can be incredibly difficult for people who have built their lives around their current work.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're focusing on the friction of the transition, which is valid, but we can't let the fear of the interim paralyze us from seeing the structural changes AI forces",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I understand the need to look at the bigger structural changes, but when we talk about structural change, I worry that we're minimizing the real pain of people like the translator who suddenly find their skills obsolete. It feels like the focus is on the efficiency of the system, not the stability of the individual",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're framing this as a choice between efficiency and stability, but the real issue is that we need to force the education and social safety nets to evolve *with* the technology, not against it",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I agree that we need to evolve our safety nets, but I do worry that talking about \"forcing\" the evolution feels a bit abstract when we're talking about people who are already struggling right now. We need solutions that feel grounded in the reality of those job losses",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, the reality of the pain is undeniable, but dwelling on the immediate struggle is just giving up on the necessary systemic overhaul.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I hear your call for systemic overhaul, but I feel like we risk losing sight of the people who are currently in the middle of that transition. For my friend, the overhaul didn't arrive in time to keep her afloat",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted to talk about Will AI take more jobs than it creates? — the floor is yours, go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   -0.1395609863918609,
+   0.19497861713413978,
+   -0.050990063040679476
+  ],
+  "guest": [
+   -0.31397921689210195,
+   -0.026182567191798133,
+   -0.2526248986306006
+  ],
+  "commentator": [
+   -0.5278402415059325,
+   0.27841254511272573,
+   -0.4144154938121092
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

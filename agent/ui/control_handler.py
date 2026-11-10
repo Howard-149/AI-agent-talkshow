@@ -99,7 +99,7 @@ def register_control_channel(
                 return
             asyncio.create_task(
                 run_ghost_human_turn(
-                    session, data, controller, text=parsed.text
+                    session, data, controller, text=parsed.text, prefix=parsed.prefix
                 )
             )
 

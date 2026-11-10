@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should governments give everyone a universal basic income? — over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My friend lost her job to a warehouse robot and is drowning in bills. I think a universal basic income is the only fair answer to automation.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a powerful example of the challenges automation presents to the workforce.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The robot story is compelling, I'll give that, but UBI is a massive sledgehammer for what is arguably a very complex societal shift.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's point about the complexity, and I agree that a big solution can sometimes miss the small, immediate needs. But when I see people like the friend the guest mentioned, who are suddenly facing impossible choices, I wonder if we need something that offers a basic safety net right now, while we figure out the bigger picture.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's right that the immediate need is real, but I worry that a blanket UBI just becomes a subsidy for inertia, not a real fix for the automation problem.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy is focusing on the immediate triage, which is understandable, but we have to ask if UBI is the *only* triage tool, or if it's just the most expensive one.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear you, Ryan, about the risk of inertia, and I certainly don't want to just subsidize inaction. But I wonder if we are assuming that the only path forward involves a massive, top-down program; maybe we could look at smaller, more targeted supports that still offer that essential cushion when a job vanishes unexpectedly",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Targeted supports sound like the pragmatic middle ground, but we still need to address the structural problem: if the job market is fundamentally changing, are we just patching a hole or are we building a new foundation?",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Amy.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I understand the need to build a new foundation, Ryan, and that's the long-term goal we all share. But I worry that while we're designing the perfect new structure, people are still standing in the rubble right now, needing a hand up today",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy keeps framing this as a choice between immediate relief and long-term vision, but I think the real danger is that we let the immediate crisis paralyze the necessary structural overhaul.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Should governments give everyone a universal basic income? — go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.07000684226154695,
+   0.14621362118012754,
+   -0.002929525989306491
+  ],
+  "commentator": [
+   0.09485794506849866,
+   0.08332652859380432,
+   -0.000926610629273168
+  ],
+  "guest": [
+   -0.29476423384919376,
+   -0.00768721182600858,
+   -0.24983035867812262
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "commentator": "neutral",
+  "guest": "neutral"
+ },
+ "dialogue_example_index": 0
+}

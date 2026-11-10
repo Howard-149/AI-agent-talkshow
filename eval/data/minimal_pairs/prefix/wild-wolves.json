@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Should wolves be reintroduced into the wild?: the mic is yours whenever you're ready.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "I hiked in Yellowstone and heard wolves howling at night — it was magical. I think we should bring wolves back to more of their old range.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That sounds like a truly powerful experience. The idea of reintroducing apex predators certainly sparks a lot of debate among conservationists.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The \"magical\" factor is always the easy sell, but we have to move past the postcard view of Yellowstone.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Amy.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's point about looking beyond the initial wonder, and I think that's really important for a balanced conversation. For me, the idea of bringing back these animals is deeply tied to the health of the whole ecosystem, not just the spectacle of seeing them.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're right that the ecosystem is the core issue, but we need to be brutally honest about the human cost of that \"health.\"",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're focusing on the ecosystem, which is fine, but we can't ignore the very real impact on ranchers and local communities when you introduce a top-tier predator",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Amy.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I hear your concern for the ranchers, and I truly understand that the human element of any change is incredibly difficult. I'd also consider that successful reintroduction would need to come with robust support systems for those communities, so the transition feels as fair as possible",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, \"robust support systems\" sounds like a nice PR phrase, but it doesn't magically solve the economic reality for the people whose livelihoods are directly threatened",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I understand that the economic reality is a very serious concern, and it shouldn't be dismissed as just a phrase. But I think we have to acknowledge that if we only focus on the immediate threat, we miss the chance to build a more resilient, balanced way of life for everyone in the long run",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, resilience is great, but we need a concrete plan that doesn't just rely on hope to offset tangible, immediate losses",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should wolves be reintroduced into the wild? — over to you.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.04013522861100664,
+   0.21425148936622135,
+   0.020194057182231096
+  ],
+  "guest": [
+   -0.5060558472141199,
+   -0.06439377845393322,
+   -0.4543729578495006
+  ],
+  "commentator": [
+   -0.07069802171766489,
+   -0.042269896349852266,
+   0.02964279709260808
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

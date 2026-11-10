@@ -157,13 +157,32 @@ def load_persona_avatar(persona_id: str) -> PersonaAvatarConfig:
     )
 
 
-def load_persona_personality(persona_id: str) -> str:
-    """In-character personality for panel turns (speaking + hand-raise polls)."""
+# Ghost replay experiments: guest <-> commentator personality traits swapped for this
+# job process (one room per process). Names, seats and voices stay put.
+_PERSONA_SWAP = False
+_SWAP_PAIR = {"guest": "commentator", "commentator": "guest"}
+_SEAT_TITLE = {"guest": "the guest", "commentator": "the color commentator"}
+
+
+def set_persona_swap(on: bool) -> None:
+    global _PERSONA_SWAP
+    _PERSONA_SWAP = bool(on)
+
+
+def _raw_personality(persona_id: str) -> str:
     data = load_persona_yaml(persona_id)
     raw = data.get("personality") or data.get("panel_voice")  # panel_voice: legacy alias
-    if raw:
-        return str(raw).strip()
-    return ""
+    return str(raw).strip() if raw else ""
+
+
+def load_persona_personality(persona_id: str) -> str:
+    """In-character personality for panel turns (speaking + hand-raise polls)."""
+    other = _SWAP_PAIR.get(persona_id) if _PERSONA_SWAP else None
+    if other is None:
+        return _raw_personality(persona_id)
+    text = _raw_personality(other)
+    text = text.replace(_SEAT_TITLE[other], _SEAT_TITLE[persona_id])
+    return text.replace(load_persona_name(other), load_persona_name(persona_id))
 
 
 @dataclass(frozen=True)

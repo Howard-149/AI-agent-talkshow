@@ -12,6 +12,12 @@ def ghost_turns_allowed() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def ghost_replay_enabled() -> bool:
+    """Prefix replay for controlled experiments (TALKSHOW_GHOST_REPLAY). Default off."""
+    raw = os.environ.get("TALKSHOW_GHOST_REPLAY", "0").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def is_ghost_participant(participant: object | None) -> bool:
     """True for identity ``ghost-*`` or token metadata ``{"ghost": true}``."""
     if participant is None:

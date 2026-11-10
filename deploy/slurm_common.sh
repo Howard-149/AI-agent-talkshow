@@ -52,3 +52,43 @@ talkshow_source_env() {
     echo "WARN: no .env in $(pwd)" >&2
   fi
 }
+
+# Hugging Face cache for eval jobs: HF_HUB_CACHE if set, else ${HF_HOME:-~/.cache/huggingface}/hub.
+talkshow_hf_cache() {
+  export HF_HUB_CACHE="${HF_HUB_CACHE:-${HF_HOME:-${HOME}/.cache/huggingface}/hub}"
+  mkdir -p "${HF_HUB_CACHE}"
+  echo "HF_HUB_CACHE=${HF_HUB_CACHE}"
+}
+
+# vLLM + Gemma-4 needs transformers 5.13 while the env may have a newer one. Prints a PYTHONPATH with
+# VLLM_TF_OVERLAY (default ~/.local/vllm-tf-overlay, made with `pip install --target <dir> transformers==5.13.*`)
+# in front when that directory exists, else the current PYTHONPATH. Use it for the vLLM process only.
+talkshow_tf_overlay_pythonpath() {
+  local overlay="${VLLM_TF_OVERLAY:-${HOME}/.local/vllm-tf-overlay}"
+  if [[ -d "${overlay}" ]]; then
+    echo "${overlay}${PYTHONPATH:+:${PYTHONPATH}}"
+  else
+    echo "${PYTHONPATH:-}"
+  fi
+}
+
+# With HF_HUB_OFFLINE=1, loading by repo id fails on snapshots that lack metadata files
+# (IncompleteSnapshotError) even though the weights are cached. Replace every "org/name" word that has a
+# local snapshot in HF_HUB_CACHE with that snapshot's path (the first one holding config.json).
+talkshow_resolve_models() {
+  local out=() w d snap s
+  for w in $1; do
+    if [[ "${HF_HUB_OFFLINE:-0}" == "1" && "$w" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+      d="${HF_HUB_CACHE:-}/models--${w//\//--}/snapshots"
+      snap=""
+      if [[ -d "$d" ]]; then
+        for s in "$d"/*/; do
+          if [[ -f "${s}config.json" ]]; then snap="${s%/}"; break; fi
+        done
+      fi
+      if [[ -n "$snap" ]]; then w="$snap"; fi
+    fi
+    out+=("$w")
+  done
+  echo "${out[*]}"
+}
