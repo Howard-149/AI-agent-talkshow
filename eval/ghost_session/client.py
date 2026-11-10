@@ -196,6 +196,8 @@ class GhostRoomClient:
     def __init__(self, audio_tap: Any | None = None) -> None:
         self.room: Any = None
         self.first_line = asyncio.Event()
+        # The worker subscribed to the ghost's mic (it linked this participant).
+        self.mic_subscribed = asyncio.Event()
         self._audio_tap = audio_tap
         # Agent lines that started playing (one transcript event per line).
         self.agent_lines = 0
@@ -302,6 +304,7 @@ class GhostRoomClient:
                 self.on_ui_event(ev)
 
         self.room.on("data_received", _on_data)
+        self.room.on("local_track_subscribed", lambda *_: self.mic_subscribed.set())
         if self._audio_tap is not None:
             self._audio_tap.attach(self.room)
         await self.room.connect(url, token)
@@ -533,6 +536,13 @@ async def run_ghost_session(
         if voice and turns:
             await client.open_mic()
         if recorder is not None:
+            if voice and turns:
+                # The worker listens to the first participant it finds; the viewer
+                # joining first would leave the guest's mic unheard all session.
+                try:
+                    await asyncio.wait_for(client.mic_subscribed.wait(), timeout=welcome_timeout_sec)
+                except asyncio.TimeoutError:
+                    logger.warning("worker never subscribed to the ghost mic — recording anyway")
             await recorder.start(page_url)
         try:
             await asyncio.wait_for(client.first_line.wait(), timeout=welcome_timeout_sec)
