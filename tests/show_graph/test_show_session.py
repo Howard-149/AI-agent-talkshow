@@ -55,6 +55,166 @@ def _session(act: FakeActuators, **kw: Any) -> ShowSession:
 HUMAN = {"heard": "Should we freeze senior hiring?", "parsed": ParsedTurn(heard="x", reply="y")}
 
 
+class OpeningTopicTests(unittest.TestCase):
+    def run_opening(self, **event: Any) -> FakeActuators:
+        async def go() -> FakeActuators:
+            act = FakeActuators(picks=[FloorPick("human", "queue_fifo")])
+            show = _session(act)
+            show.start()
+            await show.post("opening", text="Welcome!", texts={"en": "Welcome!"}, **event)
+            await show.stop()
+            return act
+
+        return asyncio.run(go())
+
+    def test_host_announces_topic_right_after_welcome(self) -> None:
+        act = self.run_opening(topic="Today's discussion topic: AI in schools")
+        self.assertEqual(
+            [k for k, _ in act.kinds("speak")], ["welcome", "topic", "grant_human"]
+        )
+        self.assertIn(("host", "Today's discussion topic: AI in schools", False), act.history)
+
+    def test_no_topic_no_extra_line(self) -> None:
+        act = self.run_opening(topic="")
+        self.assertEqual([k for k, _ in act.kinds("speak")], ["welcome", "grant_human"])
+
+    def test_generated_opening_is_one_on_record_line(self) -> None:
+        act = self.run_opening(
+            topic="Today's discussion topic: AI in schools", generated=True
+        )
+        self.assertEqual([k for k, _ in act.kinds("speak")], ["welcome", "grant_human"])
+        self.assertIn(("host", "Welcome!", False), act.history)
+
+
+class TopicConfigTests(unittest.TestCase):
+    def test_topic_env_prefers_new_name_and_keeps_old_one(self) -> None:
+        import importlib
+        from unittest.mock import patch
+
+        importlib.import_module("agent.agents")  # before agent.floor.host_floor (import cycle)
+        from agent.floor.host_floor import show_topic, topic_announcement
+
+        with patch.dict(os.environ, {"TALKSHOW_TOPIC": "", "TALKSHOW_TEXT_TOPIC": "Old"}):
+            self.assertEqual(show_topic(), "Old")
+        with patch.dict(os.environ, {"TALKSHOW_TOPIC": "New", "TALKSHOW_TEXT_TOPIC": "Old"}):
+            self.assertEqual(topic_announcement(), "Today's discussion topic: New")
+        with patch.dict(os.environ, {"TALKSHOW_TOPIC": "", "TALKSHOW_TEXT_TOPIC": ""}):
+            self.assertEqual(topic_announcement(), "")
+            self.assertEqual(show_topic("Default"), "Default")
+
+
+class HostOpeningLineTests(unittest.TestCase):
+    def opening(self, reply: str | Exception, topic: str = "AI in schools") -> str:
+        import importlib
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        importlib.import_module("agent.agents")  # before agent.floor.host_floor (import cycle)
+        from agent.floor import host_floor
+
+        client = SimpleNamespace(
+            complete_text=AsyncMock(
+                side_effect=reply if isinstance(reply, Exception) else None,
+                return_value=None if isinstance(reply, Exception) else reply,
+            )
+        )
+        data = SimpleNamespace(runtime=SimpleNamespace(gemma_client=client))
+        with (
+            patch.dict(os.environ, {"TALKSHOW_TOPIC": topic, "TALKSHOW_TEXT_TOPIC": ""}),
+            patch.object(host_floor, "session_welcome_line", return_value=("Welcome!", {})),
+            patch("agent.config.load_persona_instructions", return_value="host persona"),
+            patch("agent.config.load_persona_name", return_value="Lessac"),
+        ):
+            return asyncio.run(host_floor.host_opening_line(data))
+
+    def test_opening_is_the_generated_reply_only(self) -> None:
+        text = self.opening(
+            "[heard]: You are Lessac, opening today's show.\n"
+            "[reply]: Welcome in! Today we ask whether AI belongs in schools."
+        )
+        self.assertEqual(text, "Welcome in! Today we ask whether AI belongs in schools.")
+
+    def test_opening_falls_back_to_canned_lines(self) -> None:
+        canned = "Welcome! Today's discussion topic: AI in schools"
+        self.assertEqual(self.opening("[heard]: You are Lessac, opening the show."), canned)
+        self.assertEqual(self.opening(RuntimeError("api down")), canned)
+
+    def test_no_topic_keeps_canned_welcome(self) -> None:
+        self.assertEqual(self.opening("Unused.", topic=""), "Welcome!")
+
+    def test_opening_invites_first_panelist(self) -> None:
+        import importlib
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        importlib.import_module("agent.agents")  # before agent.floor.host_floor (import cycle)
+        from agent.floor import host_floor
+
+        client = SimpleNamespace(complete_text=AsyncMock(return_value="Hi, I'm Lessac. Ryan?"))
+        interaction = SimpleNamespace(pending_invitation_target=None, opening_invite_role=None)
+        data = SimpleNamespace(
+            runtime=SimpleNamespace(gemma_client=client),
+            scenario=SimpleNamespace(
+                turn_control=SimpleNamespace(
+                    order=["human", "host", "commentator", "guest"], listen_role="host"
+                )
+            ),
+            floor_interaction=interaction,
+        )
+        with (
+            patch.dict(os.environ, {"TALKSHOW_TOPIC": "AI in schools", "TALKSHOW_TEXT_TOPIC": ""}),
+            patch.object(host_floor, "session_welcome_line", return_value=("Welcome!", {})),
+            patch("agent.config.load_persona_instructions", return_value="host persona"),
+            patch("agent.config.load_persona_name", side_effect=lambda role: role.title()),
+        ):
+            text = asyncio.run(host_floor.host_opening_line(data))
+
+        self.assertEqual(text, "Hi, I'm Lessac. Ryan?")
+        self.assertEqual(interaction.opening_invite_role, "commentator")
+        self.assertEqual(interaction.pending_invitation_target, "commentator")
+        prompt = client.complete_text.await_args.args[0]
+        self.assertIn("introduce yourself", prompt)
+        self.assertIn("inviting Commentator", prompt)
+
+
+class HostClosingLineTests(unittest.TestCase):
+    def closing(self, reply: str | Exception) -> str:
+        import importlib
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        importlib.import_module("agent.agents")  # before agent.floor.host_floor (import cycle)
+        from agent.floor import host_floor
+
+        client = SimpleNamespace(
+            complete_text=AsyncMock(
+                side_effect=reply if isinstance(reply, Exception) else None,
+                return_value=None if isinstance(reply, Exception) else reply,
+            )
+        )
+        data = SimpleNamespace(
+            runtime=SimpleNamespace(gemma_client=client),
+            show_history=SimpleNamespace(prior_messages=lambda perspective: []),
+        )
+        with (
+            patch.dict(os.environ, {"TALKSHOW_TOPIC": "AI in schools", "TALKSHOW_TEXT_TOPIC": ""}),
+            patch("agent.config.load_persona_instructions", return_value="host persona"),
+            patch("agent.config.load_persona_name", return_value="Lessac"),
+        ):
+            return asyncio.run(host_floor.host_closing_line(data))
+
+    def test_closing_is_the_generated_reply(self) -> None:
+        text = self.closing("[reply]: We found real promise and real risk. Thanks, all.")
+        self.assertEqual(text, "We found real promise and real risk. Thanks, all.")
+
+    def test_closing_fallback_asks_nothing(self) -> None:
+        from agent.floor.host_floor import HOST_CLOSE_FALLBACK
+
+        self.assertEqual(self.closing(RuntimeError("api down")), HOST_CLOSE_FALLBACK)
+        self.assertEqual(self.closing(""), HOST_CLOSE_FALLBACK)
+        self.assertNotIn("?", HOST_CLOSE_FALLBACK)
+
+
 class SessionLifecycleTests(unittest.TestCase):
     def test_opening_human_idle_stop(self) -> None:
         async def go() -> tuple[list[Any], ShowSession, FakeActuators, RecordingHooks]:

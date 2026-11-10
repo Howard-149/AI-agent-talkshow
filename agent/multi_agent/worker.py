@@ -128,7 +128,12 @@ class PersonaWorker:
         concrete_info: dict = {}
         if n_best > 1:
             raws = await data.runtime.gemma_client.complete_text_n(
-                prompt, n_best, system_prompt=system_prompt, history_messages=hist, output_role=role
+                prompt,
+                n_best,
+                system_prompt=system_prompt,
+                history_messages=hist,
+                output_role=role,
+                reasoning_effort="none",
             )
             raws = [strip_engages(r) if planner_on else r for r in raws] or [""]
             spoken = [
@@ -153,6 +158,7 @@ class PersonaWorker:
                 history_messages=hist,
                 output_role=role,
                 raw=True,  # parse [next] from the full output, not the stripped reply
+                reasoning_effort="none",
             )
         model_latency_s = time.monotonic() - t0
         if planner_on:

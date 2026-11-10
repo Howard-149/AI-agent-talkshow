@@ -43,6 +43,24 @@ async def run_ghost_human_turn(
     if not heard:
         logger.info("ghost_human_turn skip — empty text")
         return False
+    from agent.interaction import human_may_speak
+
+    if human_may_speak(data) and controller.is_host_moderated_mode():
+        # Like a mic turn: the scripted human takes the floor whenever it speaks
+        # (submit_human_turn hands the transcript over as a barge-in).
+        if getattr(data, "ghost_last_heard", None) == heard:
+            logger.info("ghost_human_turn skip: duplicate of the last ghost turn")
+            return False
+        data.ghost_last_heard = heard  # type: ignore[attr-defined]
+        if prefix and not ghost_replay_enabled():
+            logger.warning("ghost_human_turn prefix ignored: TALKSHOW_GHOST_REPLAY is off")
+            prefix = None
+        # The prefix is applied when the turn is committed (between show beats, after the
+        # barge-in rollback): see LiveActuators.commit_human_turn.
+        ok = await _submit_ghost_transcript(session, data, controller, heard=heard, prefix=prefix)
+        if not ok:
+            data.ghost_last_heard = None  # type: ignore[attr-defined]  # not taken: a re-send may run
+        return ok
     if data.panel_chain_running:
         logger.info("ghost_human_turn skip — panel chain running")
         return False
@@ -76,6 +94,44 @@ async def run_ghost_human_turn(
         return await _run_ghost_human_turn_locked(
             session, data, controller, heard=heard
         )
+
+
+async def _submit_ghost_transcript(
+    session: AgentSession,
+    data: TalkShowData,
+    controller: TurnController,
+    *,
+    heard: str,
+    prefix: dict | None = None,
+) -> bool:
+    """Think & Action floor: the agents react to the transcript (no host draft)."""
+    from agent.adapters.response_parser import ParsedTurn
+    from agent.show_graph import submit_human_turn
+
+    if data.turn_log is not None:
+        data.turn_log.log(
+            "ghost_human_start",
+            room=data.room_name,
+            active_role=data.active_role,
+            panel_turn=True,
+            heard=heard[:200],
+        )
+    ok = await submit_human_turn(
+        session,
+        data,
+        controller,
+        {
+            "heard": heard,
+            "parsed": ParsedTurn(heard=heard, reply=""),
+            "raw": None,
+            "model_latency_s": 0.0,
+            "done_event": "ghost_human_done",
+            **({"prefix": prefix} if prefix else {}),
+        },
+        background=False,
+    )
+    data.touch_activity()
+    return ok
 
 
 async def _run_ghost_human_turn_locked(
@@ -127,6 +183,7 @@ async def _run_ghost_human_turn_locked(
         user_hint,
         history_messages=hist,
         raw=True,
+        reasoning_effort="none",
     )
     model_latency_s = time.monotonic() - t0
     parsed_raw = parse_host_speech(raw)

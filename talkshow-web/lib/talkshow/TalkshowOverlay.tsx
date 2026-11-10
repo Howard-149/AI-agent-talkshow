@@ -58,8 +58,18 @@ export function TalkshowOverlay() {
   const remotes = useRemoteParticipants();
   const [panelists, setPanelists] = useState<PanelistDef[]>([]);
   const agentParticipant = useMemo(() => findAgentParticipant(remotes), [remotes]);
-  const { activeRole, lipSyncActive, lines, onRoleActive, onRoleIdle, pushLine } =
-    usePlayoutSyncedUi(agentParticipant);
+  const {
+    activeRole,
+    lipSyncActive,
+    lines,
+    backchannelRoles,
+    interruptNotice,
+    onRoleActive,
+    onRoleIdle,
+    pushLine,
+    onInterrupt,
+    onBackchannel,
+  } = usePlayoutSyncedUi(agentParticipant);
 
   const applyRoster = useCallback((members: PanelistDef[]) => {
     if (members.length) setPanelists(members);
@@ -77,6 +87,10 @@ export function TalkshowOverlay() {
   handleUiEventRef.current = handleUiEvent;
   const pushLineRef = useRef(pushLine);
   pushLineRef.current = pushLine;
+  const onInterruptRef = useRef(onInterrupt);
+  onInterruptRef.current = onInterrupt;
+  const onBackchannelRef = useRef(onBackchannel);
+  onBackchannelRef.current = onBackchannel;
   const onRoleActiveRef = useRef(onRoleActive);
   onRoleActiveRef.current = onRoleActive;
   const onRoleIdleRef = useRef(onRoleIdle);
@@ -95,7 +109,13 @@ export function TalkshowOverlay() {
       onRoleIdleRef.current();
     } else if (ev.type === 'transcript' && ev.final) {
       const display = pickLocalizedText(ev.text, ev.texts, viewerLocaleRef.current);
-      pushLineRef.current(ev.role, ev.speaker, display);
+      pushLineRef.current(ev.role, ev.speaker, display, {
+        stream: !!ev.stream && display === ev.text,
+      });
+    } else if (ev.type === 'interrupt') {
+      onInterruptRef.current(ev);
+    } else if (ev.type === 'backchannel') {
+      onBackchannelRef.current(ev);
     }
     handleUiEventRef.current(ev);
   });
@@ -125,6 +145,7 @@ export function TalkshowOverlay() {
         panelists={panelists}
         activeRole={activeRole}
         lipSyncActive={lipSyncActive}
+        backchannelRoles={backchannelRoles}
         humans={humans}
         waitingForAgent={waitingForAgent}
         clipForRole={clipForRole}
@@ -132,7 +153,7 @@ export function TalkshowOverlay() {
         agentVideoTrackRef={agentVideoTrackRef}
         compactAvatars
       />
-      <TranscriptPanel lines={lines} />
+      <TranscriptPanel lines={lines} interruptNotice={interruptNotice} />
     </aside>
   );
 }

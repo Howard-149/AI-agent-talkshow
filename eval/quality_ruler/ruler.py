@@ -734,6 +734,9 @@ def main() -> None:
     p.add_argument("--pairs", default=str(E.PUBLIC / "build" / "pairs_public.yaml"),
                    help="topics file(s), comma list (e.g. the 30 tuning topics and the 42 public ones)")
     p.add_argument("--dry-run", default="", help="no model: write every prompt to this dir (CPU)")
+    p.add_argument("--path", choices=("worker", "think_action"), default="worker",
+                   help="panel lines from the worker prompt (default) or from the Think & Action think content "
+                   "(only live_flags / fact_pack arms apply)")
     p.set_defaults(fn=lambda a: E.generate(a))
     sub.add_parser("build", help="validation episode set, first measures (CPU)").set_defaults(fn=cmd_build)
     p = sub.add_parser("invert", help="persona-inversion rewrites for build (GPU)")

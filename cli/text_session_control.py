@@ -11,6 +11,7 @@ from pathlib import Path
 #   python cli/text_session_control.py stop --job SLURM_JOB_ID
 #   python cli/text_session_control.py restart --job SLURM_JOB_ID
 #   python cli/text_session_control.py status --job SLURM_JOB_ID
+#   python cli/text_session_control.py human --job SLURM_JOB_ID --text "What about rural schools?"
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -22,6 +23,7 @@ def main() -> None:
             "stop",
             "restart",
             "status",
+            "human",
         ],
     )
 
@@ -30,7 +32,15 @@ def main() -> None:
         required=True,
     )
 
+    parser.add_argument(
+        "--text",
+        default="",
+        help="human: the line to say (interrupts the current speaker)",
+    )
+
     args = parser.parse_args()
+    if args.command == "human" and not args.text.strip():
+        parser.error("human requires --text")
 
     control_dir = Path(
         f"logs/text-control/{args.job}"
@@ -58,6 +68,7 @@ def main() -> None:
         json.dumps(
             {
                 "command": args.command,
+                "text": args.text,
             }
         )
     )

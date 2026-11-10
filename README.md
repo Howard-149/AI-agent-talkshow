@@ -129,6 +129,12 @@ python cli/text_session_control.py restart --job <jobid>
 
 `stop` stops the current text session but leaves the SLURM job and vLLM running. To stop the whole job, run `scancel <jobid>`.
 
+Speak as the human (interrupts whoever is talking; the agents then react to your line):
+
+```bash
+python cli/text_session_control.py human --job <jobid> --text "What about rural schools?"
+```
+
 Logs:
 
 - `slurm-logs/slurm-talkshow-text-<jobid>.{out,err}`
@@ -148,12 +154,14 @@ Three panel fixes, all off by default. Turn them on in the repo-root `.env` (age
 | `TALKSHOW_ADDRESSEE_FLOOR=1` | If the human names a panelist ("Amy, what do you think?"), that panelist answers first. |
 | `TALKSHOW_UPTAKE_PLANNER=lite` + `TALKSHOW_PANEL_SCAFFOLD_FIX=1` | The first panel line after a human turn is pointed at what the human just said (their figures, names and stance), instead of the previous panelist. |
 | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete` + `TALKSHOW_PANEL_CONCRETE=1` | Style examples that carry facts, plus a rule asking for one concrete fact per line. |
-| `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. |
+| `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. Only for lines drafted by the worker (see below). |
 | `TALKSHOW_FACT_PACK=<path to json>` | Under test: each panel line gets the most relevant checked facts for the topic (from Wikipedia) and may take specific numbers, names, studies and cases only from them or from what was said in the show. `TALKSHOW_FACT_PACK_K` sets how many facts (default 6); `TALKSHOW_FACT_PACK_TOPIC` pins the topic id. See `agent/panel/fact_pack.py`. |
+
+With the Think & Action floor, the selected panelist speaks the `content` of their own think call, so the fixes act there: the addressee rule in the free-floor choice (`ThinkActionInteraction.arbitrate_free`; a named panelist who chose silent is not forced to speak), and the other blocks at the end of each panelist's think prompt (`agent/panel/think_prompt.py`). The worker prompt keeps the same fixes for lines it still drafts (a selected panelist with no proposed reply). The uptake planner starts when the human line is committed and the panelists' think calls wait for it (at most 3 s), so with Think & Action it adds its own latency to the first reply instead of hiding behind a host reply.
 
 `deploy/arms/dialogue-quality.arms` has the current show (A), the recommended set without best-of (FAST, about +0.6 s on the slowest lines) and the full set (FULL), for `deploy/ghost-arms.sh`.
 
-In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on.
+In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on. These results were measured on the hand-raise floor before Think & Action and have not been re-measured on it yet.
 
 ## Teammate setup — laptop (one-time)
 
@@ -422,7 +430,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
 | `config/scenarios/panel_fixed.yaml` | Legacy fixed Ryan → Amy |
 
-Turn modes: **`host_moderated`** (hand-raise + FIFO; the `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals in parallel with TTS; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
+Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interaction`: the interaction *generates* each agent line and discloses it interval by interval to the other agents, who think and may request an interrupt, speak, or backchannel; a controller arbitrates. Speech is *consumed* separately — printed in text-only mode, TTS + avatar video live — and a human can speak at any time, cutting the current line. The `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
 
 ---
 

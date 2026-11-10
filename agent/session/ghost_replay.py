@@ -9,6 +9,13 @@ the replay session (welcome, floor grant) are discarded with the old transcript.
 ``persona_swap`` in the prefix gives each panelist the other's personality traits
 (names, seats and voices unchanged) for the rest of the session. ``flags`` sets
 dialogue-quality flags (REPLAY_FLAGS) for this session only.
+
+Think & Action: the prefix is applied when the ghost turn is committed
+(``LiveActuators.commit_human_turn``, after the barge-in rollback, while the generator
+is idle). The floor interaction then forgets the replaced show (queued script, rollback
+chain, pending decisions) and takes its floor counts from the prefix ("floor", logged
+by ``snapshot_state`` when present), so the floor controller sees the same
+participation balance as in the recorded show.
 """
 
 from __future__ import annotations
@@ -52,7 +59,77 @@ def snapshot_state(data: TalkShowData) -> dict[str, Any]:
         "role_emotion": dict(data.role_emotion),
         "role_pad_neighbors": {k: list(v) for k, v in data.role_pad_neighbors.items()},
         "dialogue_example_index": data.dialogue_example_index,
+        **_floor_snapshot(getattr(data, "floor_interaction", None)),
     }
+
+
+def _floor_snapshot(interaction: Any) -> dict[str, Any]:
+    """Think & Action floor state the next floor choice reads (empty for other floors)."""
+    if interaction is None or not hasattr(interaction, "actual_floor_counts"):
+        return {}
+    return {
+        "floor": {
+            "actual_floor_counts": dict(interaction.actual_floor_counts),
+            "fallback_history": [dict(x) for x in interaction.fallback_history],
+        }
+    }
+
+
+# Think & Action fields reset when a prefix replaces the show (value = the reset value).
+_INTERACTION_RESET: dict[str, Any] = {
+    "_speech_line": None,
+    "_last_cue": None,
+    "_rethink": None,
+    "_pending_selection": None,
+    "_pending_trigger": None,
+    "last_floor_outcome": None,
+    "interrupted_role": None,
+    "host_fallback_instruction": None,
+    "host_fallback_strategy": None,
+    "host_fallback_target": None,
+    "host_fallback_close_spoken": False,
+    "host_fallback_streak": 0,
+    "discussion_complete": False,
+    "pending_invitation_target": None,
+    "opening_invite_role": None,
+    "last_line_interrupted": False,
+    "interrupts_allowed": True,
+}
+
+
+def reset_interaction(interaction: Any, prefix: dict[str, Any]) -> None:
+    """Make the floor interaction forget the show the prefix replaced."""
+    if interaction is None:
+        return
+    for name, value in _INTERACTION_RESET.items():
+        if hasattr(interaction, name):
+            setattr(interaction, name, value)
+    for name in ("actions", "thoughts", "intents"):
+        if isinstance(getattr(interaction, name, None), dict):
+            getattr(interaction, name).clear()
+    for name in ("_pending_thinks", "_interval_backchannels"):
+        if isinstance(getattr(interaction, name, None), list):
+            getattr(interaction, name).clear()
+    floor = prefix.get("floor") if isinstance(prefix.get("floor"), dict) else {}
+    if hasattr(interaction, "actual_floor_counts"):
+        counts = floor.get("actual_floor_counts") or {}
+        interaction.actual_floor_counts = {str(k): int(v) for k, v in counts.items()}
+    if hasattr(interaction, "fallback_history"):
+        interaction.fallback_history = [dict(x) for x in floor.get("fallback_history") or []]
+
+
+def replay_before_human_line(data: TalkShowData, interaction: Any, prefix: dict[str, Any] | None) -> None:
+    """Think & Action ghost turn, before the human line is recorded: apply the prefix (if any)
+    and log the state the turn is answered from. No-op unless TALKSHOW_GHOST_REPLAY=1."""
+    from agent.session.ghost_flags import ghost_replay_enabled
+
+    if not ghost_replay_enabled():
+        return
+    if prefix:
+        apply_prefix(data, prefix)
+        reset_interaction(interaction, prefix)
+    if data.turn_log is not None:
+        data.turn_log.log("history_snapshot", room=data.room_name, **snapshot_state(data))
 
 
 def apply_prefix(data: TalkShowData, prefix: dict[str, Any]) -> None:

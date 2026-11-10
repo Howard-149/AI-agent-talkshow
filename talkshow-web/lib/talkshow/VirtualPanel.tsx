@@ -18,6 +18,8 @@ type Props = {
   panelists: PanelistDef[];
   activeRole: PanelRole | null;
   lipSyncActive?: boolean;
+  /** Roles whose backchannel is playing right now. */
+  backchannelRoles?: Record<string, boolean>;
   warmingRole?: PanelRole | null;
   humans: HumanSeat[];
   waitingForAgent: boolean;
@@ -30,6 +32,7 @@ export function VirtualPanel({
   panelists,
   activeRole,
   lipSyncActive = false,
+  backchannelRoles = {},
   warmingRole = null,
   humans,
   waitingForAgent,
@@ -58,6 +61,7 @@ export function VirtualPanel({
           key={p.role}
           className={styles.card}
           data-speaking={activeRole === p.role ? 'true' : 'false'}
+          data-backchannel={backchannelRoles[p.role] ? 'true' : 'false'}
           style={{ '--role-color': p.color } as React.CSSProperties}
         >
           <PanelAvatar

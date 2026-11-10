@@ -2,7 +2,9 @@ const path = require('path');
 const { loadEnvConfig } = require('@next/env');
 
 // Single source of truth: repo root .env (same as agent + api/tokens.py)
-loadEnvConfig(path.join(__dirname, '..'));
+// forceReload: Next has already loaded (and cached) this app dir's env by now, so a
+// plain call would return that cache and never read the root .env.
+loadEnvConfig(path.join(__dirname, '..'), process.env.NODE_ENV !== 'production', console, true);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

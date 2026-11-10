@@ -277,11 +277,13 @@ async def _inject_until_heard(
     attempts: int = 8,
     prefix: dict[str, Any] | None = None,
 ) -> None:
-    """Inject, then re-inject until a new transcript (the host reply) shows up.
+    """Inject, then re-inject until a new transcript shows up (Think & Action: the
+    human line itself; hand-raise floor: the host reply).
 
-    The human ``floor_grant`` is emitted while the show beat is still finishing; an
-    inject that lands then is dropped by the worker ("panel chain running") with no
-    reply on the wire. Extra injects after acceptance are dropped the same way.
+    Hand-raise floor: the human ``floor_grant`` is emitted while the show beat is still
+    finishing; an inject that lands then is dropped by the worker ("panel chain running")
+    with no reply on the wire. Extra injects after acceptance are dropped the same way
+    (the worker also drops a repeat of its last ghost turn).
     """
     await asyncio.sleep(settle_sec)
     for attempt in range(1, attempts + 1):
@@ -338,12 +340,17 @@ async def run_ghost_session(
     quiet_sec: float = 90.0,
     stop_after_panel: int = 0,
     beat_panel: int = 0,
+    floor_wait: str = "none",
     record: bool = False,
     frontend_url: str = "http://localhost:3000",
     start_frontend: bool = False,
     record_dir: Path | None = None,
     headed: bool = False,
 ) -> Path | None:
+    """``floor_wait``: "none" (Think & Action floor, the default: the human may speak at any
+    time and no human floor_grant is sent, so turns are injected without waiting for one) or
+    "grant" (the older hand-raise floor: raise a hand and wait for the human floor_grant)."""
+    grant = floor_wait == "grant"
     from eval.ghost_session.record_frontend import (
         FrontendRecorder,
         RoomAudioTap,
@@ -407,17 +414,29 @@ async def run_ghost_session(
             await client.raise_hand(topic=first_topic)
 
         if opening_only or not script.turns:
-            await _wait_human_floor(
-                client,
-                topic=first_topic,
-                timeout_sec=floor_timeout_sec,
-                raise_every_sec=8.0,
-            )
+            if grant:
+                await _wait_human_floor(
+                    client,
+                    topic=first_topic,
+                    timeout_sec=floor_timeout_sec,
+                    raise_every_sec=8.0,
+                )
             await asyncio.sleep(max(0.0, hold_sec))
         else:
             for idx, turn in enumerate(script.turns, start=1):
                 topic = turn.topic or first_topic or f"ghost turn {idx}"
-                if idx > 1:
+                if not grant:
+                    if idx == 1 and beat_panel and not script.prefix:
+                        # Let the opening run to a few panel lines before the first turn
+                        # (a replay prefix replaces the opening anyway).
+                        await _wait_quiet(
+                            client,
+                            quiet_sec=quiet_sec,
+                            max_sec=floor_timeout_sec,
+                            stop_after_panel=beat_panel,
+                            panel_base=0,
+                        )
+                elif idx > 1:
                     client.human_floor.clear()
                     await client.raise_hand(topic=topic)
                     # Raise once: every raise resets the worker's idle timer, and the
@@ -429,7 +448,7 @@ async def run_ghost_session(
                 else:
                     wait_sec = floor_timeout_sec
                     raise_every = 8.0
-                granted = await _wait_human_floor(
+                granted = (not grant) or await _wait_human_floor(
                     client,
                     topic=topic,
                     timeout_sec=wait_sec,
@@ -545,6 +564,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "with --quiet-sec as fallback for beats that end early (0 = silence only)",
     )
     parser.add_argument(
+        "--floor-wait",
+        choices=("none", "grant"),
+        default="none",
+        help="none (Think & Action floor): inject without waiting for a human floor grant; "
+        "grant: the older hand-raise floor (raise a hand, wait for floor_grant)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=None,
@@ -623,6 +649,7 @@ def main(argv: list[str] | None = None) -> int:
             quiet_sec=args.quiet_sec,
             stop_after_panel=args.stop_after_panel,
             beat_panel=args.beat_panel,
+            floor_wait=args.floor_wait,
             record=args.record,
             frontend_url=args.frontend_url,
             start_frontend=args.start_frontend,

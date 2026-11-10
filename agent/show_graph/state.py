@@ -32,7 +32,7 @@ LineKind = Literal[
 
 @dataclass(frozen=True)
 class FloorPick:
-    """Outcome of a hand-raise round: who speaks next and why."""
+    """Outcome of free-floor selection: who speaks next and why."""
 
     role: str | None
     reason: str
@@ -65,6 +65,7 @@ class LineSpec(TypedDict, total=False):
     target: str  # role the line hands the floor to (direct_call / intro)
     reason: str  # floor-grant reason (grant_human)
     texts: dict[str, str]  # pre-localized delivery texts (canned lines)
+    topic: str  # topic announcement a generated opening covers (logged as the topic)
 
 
 class HumanEvent(TypedDict, total=False):
@@ -75,6 +76,7 @@ class HumanEvent(TypedDict, total=False):
     raw: str | None
     model_latency_s: float
     done_event: str  # gemma_stt_done | ghost_human_done
+    prefix: dict[str, Any]  # ghost replay (TALKSHOW_GHOST_REPLAY=1): show state to swap in first
 
 
 class AppraiseJob(TypedDict):
@@ -98,6 +100,7 @@ class ShowState(TypedDict, total=False):
     next_role: str  # panelist the floor goes to next
     grant_reason: str
     skip_open_floor: bool
+    topic: str  # host topic line spoken right after the welcome ("" = none)
     skip_intro: bool
 
     turn_idx: int  # panelist lines spoken this beat
