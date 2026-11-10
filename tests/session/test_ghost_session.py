@@ -253,6 +253,23 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         client.on_ui_event({"type": "role_idle"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
+    async def test_line_end_waits_for_audio_announced_before_it_plays(self) -> None:
+        from eval.ghost_session.client import ScriptedTurn
+
+        client = self.client()
+        client.idle_since -= 60  # the client has been idle since it joined
+        turn = ScriptedTurn(text="hi", after_lines=1, when="line_end", max_wait_sec=5)
+        waiter = asyncio.ensure_future(client.wait_for_turn(turn, lines_before=0))
+        # The worker announces a line's transcript before its audio starts.
+        self.line(client, "host", "opening")
+        await asyncio.sleep(1.2)
+        self.assertFalse(waiter.done())  # the opening has not even started playing
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        await asyncio.sleep(0.3)
+        self.assertFalse(waiter.done())
+        client.on_ui_event({"type": "role_idle"})
+        self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
+
     async def test_mid_line_cuts_in_while_the_line_plays(self) -> None:
         from eval.ghost_session.client import ScriptedTurn
 

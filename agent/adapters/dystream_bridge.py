@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -174,8 +175,9 @@ class AvatarBridge:
             logger.warning("avatar portrait missing role=%s path=%s", role, portrait_path)
             return None
 
-        wav_path = speech_wav_path(slot)
-        wav_path.unlink(missing_ok=True)
+        # One wav per render, not per slot: an interrupting line reuses the slot names
+        # (c0, c1, …) while the cut line's render and cleanup still touch theirs.
+        wav_path = speech_wav_path(f"{slot}-{uuid.uuid4().hex[:8]}")
 
         t0 = time.monotonic()
         try:
