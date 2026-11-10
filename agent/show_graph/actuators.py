@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -24,6 +25,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_APPRAISE_TIMEOUT_S = 8.0
+
+
+def think_action_mood_enabled() -> bool:
+    """TALKSHOW_TA_MOOD (default on): the speaker's PAD mood goes into Think & Action prompts."""
+    return os.environ.get("TALKSHOW_TA_MOOD", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 class Actuators(Protocol):
@@ -86,6 +92,13 @@ class LiveActuators:
         self._deferred_utterance = None
         # Floor-grant UI event, sent when the granted line actually starts playing.
         self._pending_grant: tuple[str, str] | None = None
+        from agent.emotion import speaking_emotion
+
+        # Mood shapes what an agent writes; the TTS label is fixed when its line is queued;
+        # listeners appraise a finished line before thinking on its end.
+        self.interaction.mood_block = self._mood_block
+        self.interaction.cue_emotion = speaking_emotion
+        self.interaction.on_line_complete = self._appraise_finished_line
 
     # --- session / logging -------------------------------------------------
 
@@ -126,9 +139,6 @@ class LiveActuators:
             model_latency_s=float(event.get("model_latency_s") or 0.0),
             done_event=event.get("done_event") or "gemma_stt_done",
         )
-        outcome = await self.interaction.react_to_human(self.data, heard)
-        apply_floor_next(self.data, outcome.selected_role or self.controller.listen_role())
-        utt = None
         if heard:
             utt = Utterance(
                 speaker="human",
@@ -136,7 +146,11 @@ class LiveActuators:
                 seq=len(self.data.show_history.lines),
                 context=snapshot_context(self.data, heard),
             )
-        return "", utt
+            # Appraised before anyone reacts, so the reply is written in the new mood.
+            await asyncio.gather(*(self.appraise(utt, role) for role in self.listeners("human")))
+        outcome = await self.interaction.react_to_human(self.data, heard)
+        apply_floor_next(self.data, outcome.selected_role or self.controller.listen_role())
+        return "", None
 
     # --- lines -------------------------------------------------------------
 
@@ -165,6 +179,13 @@ class LiveActuators:
         from agent.emotion.appraisal import relax_after_expression
 
         relax_after_expression(self.data, role)
+
+    def _mood_block(self, data: TalkShowData, role: str) -> str:
+        from agent.emotion import emotion_source, pad_prompt_block
+
+        if emotion_source() == "llm" or not think_action_mood_enabled():
+            return ""  # the legacy llm mood block asks for an [emotion] tag, not JSON
+        return pad_prompt_block(data, role)
 
     def listeners(self, speaker: str) -> list[str]:
         from agent.emotion.appraisal import appraisal_enabled, appraisal_listeners
@@ -204,20 +225,13 @@ class LiveActuators:
             return
 
         await self.interaction.disclose_panel_line(self.data, line, on_start=self._on_start())
+        # Still deferred: the line was cut (a finished line was appraised during disclosure).
         utterance, self._deferred_utterance = self._deferred_utterance, None
         public_text = self.interaction.latest_line_text(line["role"])
         if utterance is None or self._human_pending() or not public_text:
             return
-        from dataclasses import replace
-
-        from agent.emotion.appraisal import snapshot_context
-
-        # Appraise what the script kept (an approved interrupt may have cut the line).
-        utterance = replace(
-            utterance,
-            text=public_text,
-            context=snapshot_context(self.data, public_text),
-        )
+        # Appraise what the script kept (an approved interrupt cut the line).
+        utterance = self._kept(utterance, public_text)
         appraisals = asyncio.gather(
             *(self.appraise(utterance, role) for role in self.listeners(line["role"]))
         )
@@ -232,6 +246,23 @@ class LiveActuators:
             return
         await appraisals
         self.interaction.checkpoint_line_end(self.data)
+
+    def _kept(self, utterance: Utterance, text: str) -> Utterance:
+        from dataclasses import replace
+
+        from agent.emotion.appraisal import snapshot_context
+
+        return replace(utterance, text=text, context=snapshot_context(self.data, text))
+
+    async def _appraise_finished_line(self, data: TalkShowData, speaker: str, text: str) -> None:
+        """Disclosure reached the last interval uncut: listeners appraise the whole line
+        before they think on it (and write the next line)."""
+        utterance = self._deferred_utterance
+        if utterance is None or utterance.speaker != speaker or self._human_pending():
+            return
+        self._deferred_utterance = None
+        utterance = self._kept(utterance, text)
+        await asyncio.gather(*(self.appraise(utterance, role) for role in self.listeners(speaker)))
 
     async def _finish_cut_line_appraisals(self, appraisals: Any, cue: Any) -> None:
         try:
@@ -257,7 +288,8 @@ class LiveActuators:
             logger.warning("appraisal timed out listener=%s after %.1fs", listener, timeout)
             self.log("pad_appraisal_timeout", role=listener, speaker=utt.speaker, seq=utt.seq)
             return {"role": listener, "ok": False, "timeout": True}
-        if self._human_pending():
+        if self._human_pending() and utt.speaker != "human":
+            # Script past the barge-in is rolled back; the human's own words still count.
             return {"role": listener, "ok": False, "barge_in": True}
         apply_appraisal(self.data, utt, result)
         return {
