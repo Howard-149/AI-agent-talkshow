@@ -36,11 +36,17 @@ if [[ "${BENCH_OVERLAY:-0}" == "1" ]]; then
   export PYTHONPATH
 fi
 nvidia-smi -L 2>/dev/null || true
+failed=0
 IFS=';' read -r -a CMDS <<< "${BENCH_CMD:?}"
 for cmd in "${CMDS[@]}"; do
   [[ -z "${cmd// /}" ]] && continue
   echo "=== bench ${cmd} $(date -Is) ==="
   # shellcheck disable=SC2046
-  python -m $(talkshow_resolve_models "${cmd}")
+  # Keep going if one command fails (e.g. a crash during vLLM shutdown after outputs are written); report at the end.
+  if ! python -m $(talkshow_resolve_models "${cmd}"); then
+    echo "=== bench FAILED: ${cmd} ==="
+    failed=$((failed + 1))
+  fi
 done
-echo "=== bench done $(date -Is) ==="
+echo "=== bench done $(date -Is), ${failed} failed ==="
+[[ "${failed}" == "0" ]]
