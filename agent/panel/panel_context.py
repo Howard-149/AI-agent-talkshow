@@ -90,11 +90,11 @@ def session_welcome_line(
     if loc.startswith("zh"):
         return (
             f"欢迎——我是主持人{host}。"
-            "想发言或带来话题请举手，我会叫到你。"
+            "想发言或带来话题，随时开口就好。"
         )
     return (
         f"Welcome — I'm {host}, your host. "
-        "Raise your hand if you'd like to speak or bring a topic — I'll call on you."
+        "If you'd like to speak or bring a topic, just jump in any time."
     )
 
 

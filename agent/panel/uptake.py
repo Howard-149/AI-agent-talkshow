@@ -4,15 +4,21 @@ Our responsiveness tests showed panelists echo a figure when
 pointed at it but rarely reason with it, and that the panel scaffold steers them away from a human
 who just spoke. Two prompt-side fixes, applied only to the FIRST panel line after a human turn:
 
-TALKSHOW_UPTAKE_PLANNER=1|lite I1: a planner call (same Gemma) extracts the human turn's figures,
+TALKSHOW_UPTAKE_PLANNER=1|lite a planner call (same Gemma) extracts the human turn's figures,
                                names, stance and addressee; the panelist must output a hidden
                                ``[engages]: <item> — <how it changes the argument>`` line (never spoken)
                                and engage that item. The planner starts when the human turn is
-                               committed, so it runs while the host is still replying.
+                               committed, so it overlaps the work that follows (recording the line;
+                               the host reply in the older hand-raise modes).
                                ``lite`` (planner-lite): same plan in the prompt, NO [engages] output line —
                                keeps the uptake gain without decoding ~120 extra chars per line.
-TALKSHOW_PANEL_SCAFFOLD_FIX=1  I2: neutralise the "human floor FROZEN / NOT your conversation partner /
+TALKSHOW_PANEL_SCAFFOLD_FIX=1  neutralise the "human floor FROZEN / NOT your conversation partner /
                                respond to the latest speaker" steering in the panelist prompt.
+
+Think & Action speaks the panelist's think ``content`` and drafts with the worker only as a fallback.
+The think prompt never contained the scaffold phrases above (its system prompt is the persona
+personality and its history is the spoken lines), so there the scaffold fix becomes a positive
+instruction to answer the human's point, and the planner adds the same plan (agent.panel.think_prompt).
 
 (The floor fix is separate: TALKSHOW_ADDRESSEE_FLOOR, agent/floor/addressee.py.)
 """
@@ -59,14 +65,19 @@ def scaffold_fix_enabled() -> bool:
 
 def first_answer_to_human(data: TalkShowData) -> str | None:
     """Latest human text if no panelist has spoken since it (host lines skipped), else None."""
-    for line in reversed(data.show_history.lines):
-        if line.role_id == "host":
+    return latest_human_unanswered(data.show_history.lines)
+
+
+def latest_human_unanswered(lines: list[Any], host_role: str = "host") -> str | None:
+    """Latest human text in ``lines`` if no panelist has spoken since it (host lines skipped), else None."""
+    for line in reversed(lines):
+        if line.role_id == host_role:
             continue
         return line.text if line.role_id == "human" else None
     return None
 
 
-# --- I1 planner ---------------------------------------------------------------------
+# --- planner ------------------------------------------------------------------------
 
 PLANNER_SYSTEM = "You extract the concrete commitments in one line a guest said on a talk show. Be literal and short."
 
@@ -80,12 +91,15 @@ def planner_user_prompt(human_text: str) -> str:
     )
 
 
-def plan_block(plan: str, lite: bool | None = None) -> str:
+def plan_block(plan: str, lite: bool | None = None, field: str = "[reply]") -> str:
+    """Plan text for a panel prompt. ``field`` names where the spoken words go: ``[reply]`` in the
+    worker prompt, ``content`` in the Think & Action think prompt (always lite there: its JSON has no
+    place for the hidden [engages] line)."""
     if lite is None:
         lite = uptake_planner_lite()
     head = "\n\nThe human guest's concrete points (extracted from their latest line):\n" + plan.strip() + "\n"
     if lite:
-        return head + "Make your [reply] engage the item that matters most for your argument explicitly, and let it change what you argue."
+        return head + f"Make your {field} engage the item that matters most for your argument explicitly, and let it change what you argue."
     return head + (
         "Before [reply], output one line:\n[engages]: <the item you engage> — <how it changes your argument>\n"
         "Then make your [reply] engage that item explicitly."
@@ -129,9 +143,10 @@ async def _make_plan(data: TalkShowData, human_text: str) -> str:
     except Exception:
         logger.exception("uptake planner failed")
         plan = ""
-    if data.turn_log is not None:
-        data.turn_log.log("uptake_plan", room=data.room_name, plan=plan[:500],
-                          plan_latency_s=round(time.monotonic() - t0, 3))
+    turn_log = getattr(data, "turn_log", None)
+    if turn_log is not None:
+        turn_log.log("uptake_plan", room=getattr(data, "room_name", ""), plan=plan[:500],
+                     plan_latency_s=round(time.monotonic() - t0, 3))
     return plan.strip()
 
 
@@ -152,7 +167,7 @@ async def await_uptake_plan(data: TalkShowData, human_text: str) -> tuple[str, f
     return plan, time.monotonic() - t0
 
 
-# --- I2 scaffold fix (live wording: the host's acknowledgement sits between human and panel) ---
+# --- scaffold fix (live wording: the host's acknowledgement sits between human and panel) ---
 
 SCAFFOLD_FIX: list[tuple[str, str]] = [
     (r"- Who just spoke: the host or an earlier speaker \(see transcript\)",

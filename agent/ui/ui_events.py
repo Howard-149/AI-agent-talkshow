@@ -166,7 +166,10 @@ async def emit_transcript(
     final: bool = True,
     step: str = "",
     texts: dict[str, str] | None = None,
+    stream: bool = False,
 ) -> None:
+    """``stream``: the words follow the agent's synced ``lk.transcription`` stream
+    (revealed in step with the audio); ``text`` is the full line as a fallback."""
     text = text.strip()
     if not text and not (texts and any(v.strip() for v in texts.values())):
         return
@@ -176,12 +179,39 @@ async def emit_transcript(
         "text": text or (texts or {}).get("en", ""),
         "final": final,
         "step": step,
+        "stream": stream,
     }
     if texts:
         cleaned = {k: v.strip() for k, v in texts.items() if v and v.strip()}
         if cleaned:
             payload["texts"] = cleaned
     await publish_ui_event("transcript", **payload)
+
+
+async def emit_interrupt(interrupted_role: str, by_role: str, *, heard_text: str = "") -> None:
+    """An approved interrupt cut ``interrupted_role``'s line; ``by_role`` takes the floor."""
+    await publish_ui_event(
+        "interrupt",
+        role=interrupted_role,
+        name=load_persona_name(interrupted_role),
+        by_role=by_role,
+        by_name=load_persona_name(by_role),
+        heard_text=heard_text.strip(),
+    )
+
+
+async def emit_backchannel(
+    role: str, text: str, *, speaker_role: str, duration_s: float
+) -> None:
+    """A listener's backchannel starts playing over ``speaker_role``'s line."""
+    await publish_ui_event(
+        "backchannel",
+        role=role,
+        name=load_persona_name(role),
+        text=text.strip(),
+        speaker_role=speaker_role,
+        duration_s=round(max(0.0, duration_s), 2),
+    )
 
 
 async def emit_hand_raise(
@@ -219,10 +249,6 @@ async def emit_queue_state(data: object, *, phase: str = "") -> None:
             }
         )
     await publish_ui_event("queue_state", queue=queue, phase=phase.strip())
-
-
-async def emit_floor_pending(*, active: bool = True) -> None:
-    await publish_ui_event("floor_pending", active=active)
 
 
 async def emit_floor_grant(role: str, *, reason: str = "") -> None:

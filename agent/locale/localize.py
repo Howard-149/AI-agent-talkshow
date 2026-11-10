@@ -67,6 +67,7 @@ async def translate_text(
             system_prompt=_TRANSLATE_SYSTEM,
             history_messages=None,
             output_role=data.active_role,
+            reasoning_effort="none",
         )
         if getattr(data, "turn_log", None) is not None:
             data.turn_log.log(

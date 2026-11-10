@@ -1,4 +1,4 @@
-"""Parse [raise]/[reason]/[topic]/[next] tags from host/panelist model output."""
+"""Parse [next] tags from host/panelist model output."""
 
 from __future__ import annotations
 
@@ -9,9 +9,6 @@ from functools import lru_cache
 from agent.config import load_persona_name
 from agent.data import TalkShowData
 
-_RAISE_RE = re.compile(r"\[raise\]\s*:\s*(yes|no)\b", re.IGNORECASE)
-_REASON_RE = re.compile(r"\[reason\]\s*:\s*(.+?)(?=\[|$)", re.IGNORECASE | re.DOTALL)
-_TOPIC_RE = re.compile(r"\[topic\]\s*:\s*(.+?)(?=\[|$)", re.IGNORECASE | re.DOTALL)
 _NEXT_RE = re.compile(
     r"\[next\]\s*:\s*(\w+)\b"
     r"|\[next\s*:\s*(\w+)\s*\]",
@@ -34,25 +31,6 @@ class HandRaiseResult:
     raised: bool
     reason: str = ""
     topic: str = ""
-
-
-@dataclass(frozen=True)
-class FloorDecision:
-    next_role: str
-    reason: str = ""
-
-
-def parse_hand_raise(role: str, text: str) -> HandRaiseResult:
-    text = text.strip()
-    raised = False
-    m = _RAISE_RE.search(text)
-    if m and m.group(1).lower() == "yes":
-        raised = True
-    reason_m = _REASON_RE.search(text)
-    reason = reason_m.group(1).strip() if reason_m else ""
-    topic_m = _TOPIC_RE.search(text)
-    topic = topic_m.group(1).strip() if topic_m else ""
-    return HandRaiseResult(role=role, raised=raised, reason=reason, topic=topic)
 
 
 def normalize_floor_role(raw: str) -> str | None:
@@ -88,14 +66,20 @@ def strip_speech_control_tags(text: str) -> str:
     return strip_emotion_tag(strip_next_tag(text)).strip()
 
 
-def parse_floor_decision(text: str) -> FloorDecision | None:
-    text = text.strip()
-    role = parse_next_speaker_tag(text)
-    if not role:
-        return None
-    reason_m = _REASON_RE.search(text)
-    reason = reason_m.group(1).strip() if reason_m else ""
-    return FloorDecision(next_role=role, reason=reason)
+_REPLY_RE = re.compile(r"\[reply\]\s*:\s*(.*)\Z", re.IGNORECASE | re.DOTALL)
+_HEARD_RE = re.compile(r"\[heard\]\s*:.*?(?=\[reply\]\s*:|\Z)", re.IGNORECASE | re.DOTALL)
+
+
+def spoken_reply_text(raw: str) -> str:
+    """Spoken words from a free-form host turn.
+
+    The host persona prompt teaches the [heard]/[reply] format, so models may echo
+    the request under [heard]; keep only the reply and never speak the [heard] part."""
+    text = str(raw or "")
+    reply = _REPLY_RE.search(text)
+    if reply:
+        text = reply.group(1)
+    return strip_speech_control_tags(_HEARD_RE.sub("", text))
 
 
 def fallback_floor_decision(

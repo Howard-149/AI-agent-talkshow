@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+import json
+from datetime import datetime
 from pathlib import Path
 
 from agent.config import load_persona_name
@@ -18,12 +20,26 @@ class ModelOutputLogger:
     def path(self) -> Path:
         return self._path
 
-    def log(self, role: str, content: str) -> None:
-        text = content.strip()
-        if not text:
-            return
-        if role not in self._names:
-            self._names[role] = load_persona_name(role)
-        name = self._names[role]
+    def event(self, role: str, kind: str, **fields: object) -> None:
+        if kind == "topic":
+            topic = fields.get("topic", "")
+            lines = [f"topic: {json.dumps(topic, ensure_ascii=False)}"]
+        else:
+            lines = [f"[{kind}]"]
+        # Wall-clock time of the entry; a field, so header lines stay parseable.
+        stamp = datetime.now().isoformat(sep=" ", timespec="milliseconds")
+        lines.append(f"time: {json.dumps(stamp)}")
+        if role not in {"floor", "topic", "interval"} and kind != "topic":
+            if role not in self._names:
+                self._names[role] = load_persona_name(role)
+            name = self._names[role]
+            lines.append(f"speaker: {json.dumps(name, ensure_ascii=False)}")
+            lines.append(f"role: {json.dumps(role, ensure_ascii=False)}")
+        if kind != "topic":
+            lines.extend(
+                f"{key}: {json.dumps(value, ensure_ascii=False)}"
+                for key, value in fields.items()
+            )
         with self._path.open("a", encoding="utf-8") as output:
-            output.write(f"{name}: {text}\n\n")
+            separator = "\n\n\n" if kind == "selection" else "\n\n"
+            output.write("\n".join(lines) + separator)

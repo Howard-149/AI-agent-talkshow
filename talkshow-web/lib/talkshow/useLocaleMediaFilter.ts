@@ -31,7 +31,7 @@ export function useLocaleMediaFilter(viewerLocale: TalkshowLocale): void {
     const wantedAvatar = avatarTrackNameForLocale(viewerLocale);
     const namedAudio = audioTrackNameForLocale(viewerLocale);
 
-    const agentHasNamedAudio = (): boolean => {
+    const agentHasNamedAudioForLocale = (): boolean => {
       for (const p of room.remoteParticipants.values()) {
         const meta = parseAgentMetadata(p.metadata);
         if (!meta?.talkshowAgent) continue;
@@ -69,8 +69,14 @@ export function useLocaleMediaFilter(viewerLocale: TalkshowLocale): void {
       } else if (publication.kind === Track.Kind.Audio) {
         if (name.startsWith('talkshow-audio-')) {
           want = name === namedAudio;
+        } else if (name.startsWith('talkshow-backchannel-')) {
+          const localePrefix = `talkshow-backchannel-${viewerLocale}-`;
+          const isLocaleTagged =
+            name.startsWith('talkshow-backchannel-en-') ||
+            name.startsWith('talkshow-backchannel-zh-');
+          want = isLocaleTagged ? name.startsWith(localePrefix) : true;
         } else {
-          want = !agentHasNamedAudio();
+          want = !agentHasNamedAudioForLocale();
         }
       }
 
@@ -91,10 +97,7 @@ export function useLocaleMediaFilter(viewerLocale: TalkshowLocale): void {
       }
     };
 
-    const onPublished = (
-      publication: RemoteTrackPublication,
-      participant: RemoteParticipant,
-    ) => {
+    const onPublished = (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
       syncPublication(participant, publication);
       refreshAll();
     };

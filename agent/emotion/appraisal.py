@@ -304,6 +304,7 @@ async def run_appraisal(
                     "TALKSHOW_PAD_APPRAISAL_MAX_TOKENS", DEFAULT_APPRAISAL_MAX_TOKENS
                 )
             ),
+            reasoning_effort="low",
         )
     except Exception as exc:  # network / vLLM hiccup: keep the show going
         logger.exception("pad appraisal failed role=%s", role)

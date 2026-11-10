@@ -92,3 +92,42 @@ class ClientMergeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReasoningEffortTests(unittest.TestCase):
+    def payload(self, model: str, effort: str | None, env: dict[str, str]) -> dict:
+        import asyncio
+        from types import SimpleNamespace
+
+        try:
+            from agent.adapters.gemma_mm_client import GemmaMMClient
+        except ImportError as exc:  # livekit.agents missing locally
+            self.skipTest(f"gemma client import: {exc}")
+        client = GemmaMMClient.__new__(GemmaMMClient)
+        client._cfg = SimpleNamespace(
+            model=model, base_url="https://api.example/v1", api_key="k", max_tokens=256
+        )
+        client._system_prompt = "SYS"
+        client._output_logger = None
+        response = mock.Mock(status_code=200)
+        response.json.return_value = {"choices": [{"message": {"content": "Hi."}}]}
+        client._http = mock.Mock(post=mock.AsyncMock(return_value=response))
+        with mock.patch.dict(os.environ, env, clear=False):
+            asyncio.run(client.complete_text("Go.", raw=True, reasoning_effort=effort))
+        return client._http.post.await_args.kwargs["json"]
+
+    OPENAI = {"OPENAI_USE_MAX_COMPLETION_TOKENS": "1", "OPENAI_REASONING_EFFORT": ""}
+
+    def test_luna_gets_the_per_call_effort(self) -> None:
+        self.assertEqual(self.payload("gpt-6-luna", "low", self.OPENAI)["reasoning_effort"], "low")
+        self.assertEqual(self.payload("gpt-6-luna", "none", self.OPENAI)["reasoning_effort"], "none")
+
+    def test_other_models_get_no_effort(self) -> None:
+        self.assertNotIn("reasoning_effort", self.payload("gpt-5o", "low", self.OPENAI))
+        local = {"OPENAI_USE_MAX_COMPLETION_TOKENS": "", "OPENAI_REASONING_EFFORT": ""}
+        self.assertNotIn("reasoning_effort", self.payload("gpt-6-luna", "low", local))
+
+    def test_env_overrides_every_call(self) -> None:
+        env = {**self.OPENAI, "OPENAI_REASONING_EFFORT": "medium"}
+        self.assertEqual(self.payload("gpt-6-luna", "none", env)["reasoning_effort"], "medium")
+

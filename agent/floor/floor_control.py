@@ -105,6 +105,3 @@ def is_direct_next(role: str, scenario: ScenarioConfig | None = None) -> bool:
     sc = scenario or load_scenario()
     return is_panel_speaker_role(role, sc)
 
-
-def is_hand_raise_pending(role: str) -> bool:
-    return role in ("host", "")

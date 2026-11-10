@@ -1,19 +1,20 @@
 """Addressee-aware floor (behind TALKSHOW_ADDRESSEE_FLOOR, default off).
 
-The benchmark showed the floor never follows the human's addressee: after a human turn both
-panelists raise their hands and the ``panel_priority`` tie-break picks the same panelist every
-time, even when the human asked the other one by name. With the flag on, the first pick after a
-human turn goes to the panelist the human addressed by name (vocative), whether or not they raised
-their hand; everything else is unchanged.
+The benchmark showed the floor never follows the human's addressee: when the human asked one
+panelist by name, the other one answered first.
+
+Think & Action: every agent thinks on the human's line (silent / speak) and the free-floor
+controller (``ThinkActionInteraction.arbitrate_free``) picks a speaker. With the flag on, when the
+latest human turn names one panelist (no panelist has spoken since; host lines skipped) and that
+panelist chose "speak", they get the floor without asking the controller. If they chose silent, the
+choice is unchanged (nobody is forced to speak) and the miss is logged.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from dataclasses import replace
-
-from agent.floor.floor_parser import HandRaiseResult
+from typing import Any
 
 
 def addressee_floor_enabled() -> bool:
@@ -38,33 +39,22 @@ def addressed_role(text: str, names: dict[str, str]) -> str | None:
     return next(iter(hits)) if len(hits) == 1 else None
 
 
-def apply_addressee(
-    raises: dict[str, HandRaiseResult],
-    panel_priority: list[str],
-    addressed: str | None,
-) -> tuple[dict[str, HandRaiseResult], list[str]]:
-    """Return (raises, priority) that make ``addressed`` win the poll; unchanged if None/unknown."""
-    if not addressed or addressed not in raises:
-        return raises, panel_priority
-    out = dict(raises)
-    if not out[addressed].raised:
-        out[addressed] = replace(out[addressed], raised=True, reason="addressed by the guest")
-    priority = [addressed, *[r for r in panel_priority if r != addressed]]
-    return out, priority
+def addressed_after_human(
+    lines: list[Any],
+    panel_roles: list[str],
+    *,
+    host_role: str = "host",
+    names: dict[str, str] | None = None,
+) -> str | None:
+    """Panelist the latest human turn named, if no panelist has spoken since it (host lines skipped)."""
+    for line in reversed(lines):
+        if line.role_id == host_role:
+            continue
+        if line.role_id != "human":
+            return None  # a panelist already answered this human turn
+        if names is None:
+            from agent.config import load_persona_name
 
-
-def pick_with_addressee(queue, raises: dict[str, HandRaiseResult], panel_priority: list[str], addressed: str | None):
-    """One poll pick: (winner, yes_roles, had_tie, new_priority).
-
-    Same as the production tie-break when ``addressed`` is None. With an addressee, they win, and the
-    priority is rotated afterwards exactly as after a tie — so the OTHER panelist gets the next turn
-    (without the rotation the addressee also won the next tie: same speaker twice in 86% of beats).
-    """
-    priority = list(panel_priority)
-    if addressed:
-        raises, priority = apply_addressee(raises, priority, addressed)
-    winner, yes_roles, had_tie = queue.apply_poll_batch(raises, priority)
-    new_priority = list(panel_priority)
-    if winner and (had_tie or addressed) and winner in new_priority:
-        new_priority = [r for r in new_priority if r != winner] + [winner]
-    return winner, yes_roles, had_tie, new_priority
+            names = {r: load_persona_name(r) for r in panel_roles}
+        return addressed_role(line.text, names)
+    return None

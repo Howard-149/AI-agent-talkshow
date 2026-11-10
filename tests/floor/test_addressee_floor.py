@@ -7,9 +7,7 @@ import unittest
 from unittest import mock
 
 
-from agent.floor.addressee import addressed_role, addressee_floor_enabled, apply_addressee
-from agent.floor.floor_parser import HandRaiseResult
-from agent.floor.hand_raise_queue import HandRaiseQueue
+from agent.floor.addressee import addressed_role, addressee_floor_enabled
 
 NAMES = {"guest": "Amy", "commentator": "Ryan"}
 
@@ -31,30 +29,6 @@ class AddressedRoleTests(unittest.TestCase):
         self.assertIsNone(addressed_role("Amy, and what do you think, Ryan?", NAMES))
 
 
-class ApplyAddresseeTests(unittest.TestCase):
-    def _poll(self, guest: bool, commentator: bool) -> dict[str, HandRaiseResult]:
-        return {"guest": HandRaiseResult("guest", guest), "commentator": HandRaiseResult("commentator", commentator)}
-
-    def test_tie_goes_to_addressee(self) -> None:
-        # Pilot failure mode: both raise, priority favours the commentator.
-        poll, prio = apply_addressee(self._poll(True, True), ["commentator", "guest"], "guest")
-        winner, yes, tie = HandRaiseQueue().apply_poll_batch(poll, prio)
-        self.assertEqual(winner, "guest")
-        self.assertTrue(tie)
-
-    def test_addressee_who_did_not_raise_still_gets_floor(self) -> None:
-        poll, prio = apply_addressee(self._poll(False, True), ["commentator", "guest"], "guest")
-        winner, _yes, _tie = HandRaiseQueue().apply_poll_batch(poll, prio)
-        self.assertEqual(winner, "guest")
-
-    def test_no_addressee_is_unchanged(self) -> None:
-        raw = self._poll(True, True)
-        poll, prio = apply_addressee(raw, ["commentator", "guest"], None)
-        self.assertIs(poll, raw)
-        winner, _yes, _tie = HandRaiseQueue().apply_poll_batch(poll, prio)
-        self.assertEqual(winner, "commentator")
-
-
 class FlagTests(unittest.TestCase):
     def test_default_off(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=False):
@@ -66,30 +40,6 @@ class FlagTests(unittest.TestCase):
             self.assertTrue(addressee_floor_enabled())
 
 
+
 if __name__ == "__main__":
     unittest.main()
-
-
-class RotationTests(unittest.TestCase):
-    """Regression: after the addressee speaks, the OTHER panelist must win the next tie."""
-
-    def _poll(self) -> dict:
-        return {"guest": HandRaiseResult("guest", True), "commentator": HandRaiseResult("commentator", True)}
-
-    def test_next_tie_goes_to_the_other_panelist(self) -> None:
-        from agent.floor.addressee import pick_with_addressee
-
-        prio = ["commentator", "guest"]
-        w1, _y, _t, prio = pick_with_addressee(HandRaiseQueue(), self._poll(), prio, "commentator")
-        self.assertEqual(w1, "commentator")
-        # next round: a panelist has spoken → no addressee → plain tie-break on the rotated priority
-        w2, _y, _t, prio = pick_with_addressee(HandRaiseQueue(), self._poll(), prio, None)
-        self.assertEqual(w2, "guest")
-
-    def test_addressee_not_first_in_priority(self) -> None:
-        from agent.floor.addressee import pick_with_addressee
-
-        w1, _y, _t, prio = pick_with_addressee(HandRaiseQueue(), self._poll(), ["commentator", "guest"], "guest")
-        self.assertEqual(w1, "guest")
-        w2, *_ = pick_with_addressee(HandRaiseQueue(), self._poll(), prio, None)
-        self.assertEqual(w2, "commentator")
