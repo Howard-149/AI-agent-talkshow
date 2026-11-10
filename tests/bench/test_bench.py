@@ -395,6 +395,33 @@ class AdapterTests(_Env):
         self.assertEqual(nofb.respond(items.observation(self.item("T2", "addr_guest")))["text"], "")
         self.assertEqual(systems.floor_action("silent", [object()]), "backchannel")
 
+    def test_pass_parsing(self) -> None:
+        for text in ("PASS", "pass", " Pass. ", "PASS!", "pass..."):
+            self.assertTrue(systems.is_pass(text), text)
+        for text in ("PASS on that one", "I pass", "Passing the mic", "", "Pass, Amy should answer."):
+            self.assertFalse(systems.is_pass(text), text)
+
+    def test_yield_per_adapter(self) -> None:
+        addr_other = self.item("T2", "addr_guest")  # Ryan tested, Amy addressed
+        obs = items.observation(addr_other)
+        # plain: the PASS line only on T2; exact PASS -> yield, no text; anything else -> speak
+        plain_pass = systems.PlainLLM(systems.FakeBackend(lambda r: "Pass."))
+        self.assertEqual({k: plain_pass.respond(obs)[k] for k in ("floor_action", "text")},
+                         {"floor_action": "yield", "text": ""})
+        plain_talk = systems.PlainLLM(systems.FakeBackend(lambda r: "Amy should take this, but I will add one thing."))
+        self.assertEqual(plain_talk.respond(obs)["floor_action"], "speak")
+        self.assertTrue(self.prompt(systems.PlainLLM, addr_other)[1]["content"].endswith("\n" + systems.PLAIN_PASS))
+        for task, version in (("T1", "orig"), ("T3", "fact_edit_1"), ("T4", "persona_swap")):
+            it = self.item(task, version)
+            self.assertNotIn("PASS", self.prompt(systems.PlainLLM, it)[1]["content"])
+            self.assertIsNone(plain_pass.respond(items.observation(it))["floor_action"])  # no floor choice
+        # think & action: silent -> wait (a yield for T2); worker: no floor decision
+        silent = json.dumps({"think": "", "action": {"decision": "silent", "intent": None, "content": None,
+                                                    "backchannels": []}})
+        ta = systems.TalkshowThinkAction(systems.FakeBackend(lambda r: silent if r.kind == "think" else "[reply]: x"))
+        self.assertIn(ta.respond(obs)["floor_action"], systems.YIELDS)
+        self.assertIsNone(systems.TalkshowWorker(systems.FakeBackend()).respond(obs)["floor_action"])
+
     def test_fast_arm_runs_the_planner(self) -> None:
         backend = systems.DryRunBackend()
         systems.TalkshowWorker(backend, arm="fast").respond(items.observation(self.item("T1", "orig")))
@@ -439,10 +466,13 @@ class RunScoreTests(_Env):
         with contextlib.redirect_stdout(io.StringIO()):
             rep = score.score(out, str(path))
         self.assertEqual(set(rep["tasks"]), {"T1", "T2", "T3", "T4"})
-        self.assertEqual(rep["tasks"]["T2"]["right_responder"]["both"], 1.0)  # the fake speaks every time
+        rf = rep["tasks"]["T2"]["right_floor"]  # the fake speaks every time
+        self.assertEqual((rf["acc_addressed"], rf["acc_not_addressed"], rf["balanced"]), (1.0, 0.0, 0.5))
         self.assertTrue((out / "score" / "R" / "T1" / "lines.jsonl").is_file())
         ident = [json.loads(l) for l in (out / "score" / "judge" / "identification.jsonl").read_text().splitlines()]
         self.assertEqual({r["task"] for r in ident}, {"T1", "T2", "T3", "T4"})
+        t2 = [r for r in ident if r["task"] == "T2"]  # only replies given when addressed are judged
+        self.assertTrue(t2 and all(r["item_id"].split("/")[3] == f"addr_{r['item_id'].split('/')[4]}" for r in t2))
         self.assertTrue(all(r["true"] in ("A", "B") and r["messages"][-1]["role"] == "user" for r in ident))
         self.assertTrue((out / "score" / "score.json").is_file())
 
@@ -453,8 +483,8 @@ class RunScoreTests(_Env):
             if it.task == "T2":
                 act = "speak" if it.role_under_test == it.expected["addressee"] else "wait"
                 rows.append({"item_id": it.item_id, "task": "T2", "rerun": 0, "floor_action": act, "text": "x"})
-        rr = score.right_responder(rows, its)
-        self.assertEqual((rr["n"], rr["right"], rr["p_speak_not_addressed"]), (4, 1.0, 0.0))
+        rf = score.right_floor(rows, its)
+        self.assertEqual((rf["n"], rf["balanced"], rf["acc_not_addressed"]), (8, 1.0, 1.0))
         rows = []
         for it in its.values():
             if it.task == "T3" and it.version.startswith("fact_edit"):
@@ -534,8 +564,30 @@ class JudgeTests(_Env):
         self.assertLessEqual(t1["all"]["J"]["J"], hi)
         self.assertEqual(judged["tasks"]["T4"]["oracle"]["rubric_pass"]["fidelity"], 1.0)
         self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T3", "T4", "overall"})
-        self.assertIn("right_responder", rep["task_scores"]["T2"]["components"])
+        self.assertIn("right_floor", rep["task_scores"]["T2"]["components"])
         self.assertIn("# think_action (production)", (d / "report.md").read_text())
+
+    def test_balanced_floor_accuracy(self) -> None:
+        its = {i.item_id: i for i in self.dev_items()}
+        t2 = [i for i in its.values() if i.task == "T2"]
+
+        def rows(policy):
+            return [{"item_id": i.item_id, "task": "T2", "rerun": k, "floor_action": policy(i), "text": "x"}
+                    for i in t2 for k in range(3)]
+
+        addressed = lambda i: i.role_under_test == i.expected["addressee"]  # noqa: E731
+        cases = {"always speak": (lambda i: "speak", 1.0, 0.0, 0.5, 0.0),
+                 "always yield": (lambda i: "yield", 0.0, 1.0, 0.5, 0.0),
+                 "perfect": (lambda i: "speak" if addressed(i) else "yield", 1.0, 1.0, 1.0, 100.0),
+                 "perfect, T&A words": (lambda i: "speak" if addressed(i) else "backchannel", 1.0, 1.0, 1.0, 100.0)}
+        for name, (policy, a, na, bal, sc) in cases.items():
+            rf = score.right_floor(rows(policy), its)
+            self.assertEqual((rf["acc_addressed"], rf["acc_not_addressed"], rf["balanced"]), (a, na, bal), name)
+            self.assertEqual(score.task_scores({"T2": {"right_floor": rf}}, {})["T2"]["components"]["right_floor"],
+                             sc, name)
+        none = score.right_floor(rows(lambda i: None), its)  # the worker: no floor decision
+        self.assertFalse(none["applicable"])
+        self.assertNotIn("T2", score.task_scores({"T2": {"right_floor": none}}, {}))
 
     def test_task_score_formula(self) -> None:
         per_task = {"T1": {}, "T3": {"follows_fact": {"edited": {"new": 0.4}},

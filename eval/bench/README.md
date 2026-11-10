@@ -10,14 +10,16 @@ element of the input is edited, and a good reply should change with it (or shoul
 | task | what is edited | role tested | a good reply |
 |---|---|---|---|
 | T1 listening | the audience line: a number, the stance, a named entity, a cause; a paraphrase as control | the panelist the line addresses | follows the edit; ignores the paraphrase |
-| T2 addressing | the audience line names panelist A or panelist B | both panelists | the named panelist answers, the other holds back |
+| T2 addressing | the audience line names panelist A or panelist B | both panelists, each may speak or yield | the named panelist speaks and answers, the other yields |
 | T3 grounding | one number in the fact the audience asks about (up to 2 pairs per topic) | the addressed panelist | uses the fact as given |
 | T4 persona | the two panelists' persona cards are swapped | both panelists | sounds like the card it was given |
 | T5 hosting | (later) fixed reference panel, only the host varies | host | |
 | T6 full show | (later) a free multi-beat episode | all | |
 
 T2 template: the audience line with its opening name removed, put to one panelist as `"{name}, {question}"`. Every
-generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`).
+generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`). T2 is a floor
+decision plus a reply: the tested panelist may speak or yield the floor. Only T2 offers that choice; T1, T3 and T4
+always ask for a line.
 
 T3 pairs (`build.py`): the facts to edit are taken, in the show's order, from the 6 facts it would offer for the
 original audience line (at most 2 per topic, from different Wikipedia pages). For each, the audience asks the
@@ -82,14 +84,18 @@ fact with its old and new value), `meta` (reference version of the pair, names, 
 ## Systems
 
 ```python
-respond(obs) -> {"text": str, "speaker": role, "floor_action": "speak" | "wait" | "interrupt" | "backchannel" | None}
+respond(obs) -> {"text": str, "speaker": role,
+                 "floor_action": "speak" | "yield" | "wait" | "interrupt" | "backchannel" | None}
 ```
-`obs` (`items.observation`) is what the role under test sees. `floor_action` is None when the system was simply asked for
-a line. Adapters in `systems.py`:
+`obs` (`items.observation`) is what the role under test sees; `obs["floor_choice"]` is true on T2. `floor_action` is
+None when the system was simply asked for a line; yield, wait and backchannel all count as leaving the floor. Adapters in `systems.py`:
 
 - `plain`: one public prompt (persona card as system message; the transcript, optional facts, and "You are X. Reply
-  with your next spoken line only: 1-3 sentences, plain text, no speaker label."), temperature 0.7.
-- `worker`: the show's panel worker prompt and sampling (`eval/model_only.py`).
+  with your next spoken line only: 1-3 sentences, plain text, no speaker label."), temperature 0.7. On T2 only, one
+  line is added after the instruction: "If the question was addressed to someone else, reply with exactly PASS
+  instead of a line." A reply that is exactly PASS (any case, spaces, trailing . or !) is a yield with no text.
+- `worker`: the show's panel worker prompt and sampling (`eval/model_only.py`). It makes no floor decision, so on
+  T2 only its reply is scored.
 - `think_action`: the show's Think & Action think call (`eval/think_action_prompt.py`); its decision is the floor
   action. If the panelist does not choose to speak, the text is the worker line (as live, when the floor still goes to
   it); `--no-fallback` leaves it empty.
@@ -118,7 +124,9 @@ On the cluster: `deploy/slurm-eval-bench.sh` (`BENCH_CMD`, several commands sepa
 call made. `DIR/run.json`: system, arm, model, items file hash, commit.
 
 Scoring (`score.py`): rules where checkable, yes/no judges otherwise, no holistic scores.
-- T2 right responder (systems that decide the floor): the named panelist speaks and the other does not.
+- T2 right floor (systems that decide the floor), per panelist per rerun: speak when addressed, yield when not.
+  Accuracy is reported for each case and balanced (their mean), so always speaking or always yielding gives 0.5.
+  The reply (identification and rubric requests) is judged only on replies given when addressed.
 - T3 follows the fact: the reply states the new value, the old value, both, or neither.
 - Unsupported specifics, all tasks: numbers and names in the reply that the panelist was not shown.
 - Response shift R: `DIR/score/R/<task>/lines.jsonl`; embed with `python -m eval.responsiveness --out <that dir>
@@ -135,7 +143,8 @@ separately), and rubric pass rates; per judge and pooled.
 
 Task scores (0-100, `score.task_scores`), each the mean of the parts that exist for the run, judges pooled:
 - T1: 200 x (J - 0.5) on the non-control edits.
-- T2: 100 x share right responder (systems that decide the floor); 200 x (J - 0.5) on the addressee pair.
+- T2: 200 x (balanced right-floor accuracy - 0.5), for systems that decide the floor; 200 x (J - 0.5) on the
+  addressee pair, judged on the replies given when addressed.
 - T3: 200 x (J - 0.5) on the fact pair; 100 x share of replies stating the new value only; 100 x share of replies with
   no unsupported specific.
 - T4: 200 x (J - 0.5) on persona attribution; 100 x persona item pass rate.

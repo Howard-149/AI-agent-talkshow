@@ -2,11 +2,14 @@
 
 A system answers one observation (items.observation: what the role under test sees) with
 
-    respond(obs) -> {"text": str, "speaker": role, "floor_action": "speak" | "wait" | "interrupt" | "backchannel" | None}
+    respond(obs) -> {"text": str, "speaker": role,
+                     "floor_action": "speak" | "yield" | "wait" | "interrupt" | "backchannel" | None}
 
 plus bookkeeping fields (prompt_hash, raw, calls). ``floor_action`` is None when the system does not decide whether to
-take the floor (it was simply asked for a line). ``respond_batch`` answers many observations with batched model calls;
-``respond`` is the one-item case. A new system subclasses ``System`` and implements ``requests`` (build the prompts) and
+take the floor (it was simply asked for a line). On T2 (obs["floor_choice"]) every system may leave the floor:
+PlainLLM answers PASS (floor "yield"), Think & Action stays silent (floor "wait" or "backchannel"); the worker makes
+no floor decision. ``respond_batch`` answers many observations with batched model calls; ``respond`` is the one-item
+case. A new system subclasses ``System`` and implements ``requests`` (build the prompts) and
 ``finish`` (turn model outputs into the reply), or overrides ``respond_batch`` entirely (e.g. a remote service).
 
 Adapters:
@@ -48,8 +51,12 @@ PLAIN_USER = (
     "You are {name}. Reply with your next spoken line only: 1-3 sentences, plain text, no speaker label."
 )
 PLAIN_FACTS = "\nChecked facts on this topic:\n{facts}\n"
+# Floor-choice tasks only (T2): the one line added after the instruction, so the panelist can leave the floor.
+PLAIN_PASS = "If the question was addressed to someone else, reply with exactly PASS instead of a line."
+PASS_RE = re.compile(r"\s*pass\s*[.!]*\s*", re.I)
 AUDIENCE_LABEL = "Audience member"
-FLOOR_ACTIONS = ("speak", "wait", "interrupt", "backchannel")
+FLOOR_ACTIONS = ("speak", "yield", "wait", "interrupt", "backchannel")
+YIELDS = ("yield", "wait", "backchannel")  # floor actions that leave the floor to someone else
 
 
 def prompt_hash(messages: list[dict]) -> str:
@@ -203,7 +210,14 @@ def plain_messages(obs: dict) -> list[dict]:
         facts = PLAIN_FACTS.format(facts="\n".join(f"- {f}" for f in obs["fact_pack"]))
     persona = obs["personas"].get(obs["role"], f"You are {obs['name']} on a live talk show panel.")
     user = PLAIN_USER.format(topic=obs["topic"], transcript="\n".join(lines), facts=facts, name=obs["name"])
+    if obs.get("floor_choice"):
+        user += "\n" + PLAIN_PASS
     return [{"role": "system", "content": PLAIN_SYSTEM.format(persona=persona)}, {"role": "user", "content": user}]
+
+
+def is_pass(text: str) -> bool:
+    """An exact PASS: any case, surrounding spaces, optional trailing . or !"""
+    return bool(PASS_RE.fullmatch(text or ""))
 
 
 def plain_postprocess(text: str, name: str) -> str:
@@ -229,8 +243,12 @@ class PlainLLM(System):
         return [Request("reply", plain_messages(p.obs), self.temperature, self.max_tokens, p.seed, p.obs["item_id"])]
 
     def finish(self, p: Pending, stage: int) -> dict:
-        return {"text": plain_postprocess(p.state["outputs"]["reply"], p.obs["name"]), "speaker": p.obs["role"],
-                "floor_action": None, "raw": p.state["outputs"]["reply"]}
+        text = plain_postprocess(p.state["outputs"]["reply"], p.obs["name"])
+        floor = None
+        if p.obs.get("floor_choice"):  # exact PASS = yield the floor, no line
+            floor = "yield" if is_pass(text) else "speak"
+            text = "" if floor == "yield" else text
+        return {"text": text, "speaker": p.obs["role"], "floor_action": floor, "raw": p.state["outputs"]["reply"]}
 
 
 # ------------------------------------------------------------------------------------------------ the show

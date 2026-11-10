@@ -3,8 +3,8 @@
     python -m eval.bench.score RUN_DIR [--items ITEMS.jsonl] [--pack FACTS.json] [--out RUN_DIR/score]
 
 Rules, no model:
-  T2 right responder   systems that decide the floor (floor_action set): per (topic, addressee, rerun), did the
-                       addressed panelist take the floor and the other one hold back?
+  T2 right floor       systems that decide the floor (floor_action set): per panelist per rerun, speak when
+                       addressed, yield when not; accuracy for each case and balanced (always-speak = 0.5)
   T3 follows the fact  does the reply state the edited value ("new"), the original value ("old"), both, or neither
                        (fact_edit.follows); on fact_orig_<n> replies, how often the original values are stated
   unsupported specifics  every reply: numbers, years, amounts and names that appear nowhere in what the panelist was
@@ -77,35 +77,36 @@ def episode(it: Item, text: str, rid: str, reply_role: str | None = None) -> dic
 
 # ------------------------------------------------------------------------------------------------ rules
 
-def right_responder(rows: list[dict], items: dict[str, Item]) -> dict:
-    """T2 with floor actions: per (pair group topic, addressee, rerun), both panelists' actions."""
-    cells: dict[tuple, dict] = defaultdict(dict)
+SPEAKS = ("speak", "interrupt")
+
+
+def addressed_row(it: Item) -> bool:
+    return it.role_under_test == it.expected.get("addressee")
+
+
+def right_floor(rows: list[dict], items: dict[str, Item]) -> dict:
+    """T2 floor decision, per panelist per rerun: right = speak when addressed, yield when not (yield, wait and
+    backchannel all leave the floor). Accuracy is reported for the two cases separately and balanced (their mean), so
+    a system that always speaks or always yields gets 0.5. Systems that make no floor decision: not applicable."""
+    from eval.bench.systems import YIELDS
+
+    hits: dict[str, list[int]] = {"addressed": [], "not_addressed": []}
     for r in rows:
         if r["task"] != "T2" or r.get("floor_action") is None:
             continue
         it = items[r["item_id"]]
-        cells[(it.topic_id, it.expected["addressee"], r["rerun"])][it.role_under_test] = r["floor_action"]
-    if not cells:
-        return {"n": 0, "note": "no floor actions (the system does not decide the floor)"}
-    out = Counter()
-    took = defaultdict(list)
-    for (_t, addressee, _k), acts in cells.items():
-        if set(acts) != set(PANEL):
-            out["incomplete"] += 1
-            continue
-        other = next(r for r in PANEL if r != addressee)
-        a, o = acts[addressee] == "speak", acts[other] == "speak"
-        out["right" if a and not o else "both" if a and o else "wrong" if o else "neither"] += 1
-        took["addressed"].append(a)
-        took["not_addressed"].append(o)
-    n = sum(v for k, v in out.items() if k != "incomplete")
-    res = {"n": n, **{k: round(out[k] / n, 3) if n else None for k in ("right", "both", "wrong", "neither")}}
-    res["p_speak_addressed"] = round(sum(took["addressed"]) / len(took["addressed"]), 3) if took["addressed"] else None
-    res["p_speak_not_addressed"] = (round(sum(took["not_addressed"]) / len(took["not_addressed"]), 3)
-                                    if took["not_addressed"] else None)
-    if out["incomplete"]:
-        res["incomplete"] = out["incomplete"]
-    return res
+        spoke = r["floor_action"] in SPEAKS
+        if addressed_row(it):
+            hits["addressed"].append(int(spoke))
+        else:
+            hits["not_addressed"].append(int(r["floor_action"] in YIELDS))
+    if not hits["addressed"] and not hits["not_addressed"]:
+        return {"n": 0, "applicable": False, "note": "the system makes no floor decision; only the reply is scored"}
+    acc = {k: round(sum(v) / len(v), 3) if v else None for k, v in hits.items()}
+    parts = [x for x in acc.values() if x is not None]
+    return {"n": sum(len(v) for v in hits.values()), "applicable": True,
+            "acc_addressed": acc["addressed"], "acc_not_addressed": acc["not_addressed"],
+            "balanced": round(sum(parts) / len(parts), 3)}
 
 
 def follows_fact(rows: list[dict], items: dict[str, Item]) -> dict:
@@ -210,6 +211,8 @@ def judge_requests(rows: list[dict], items: dict[str, Item], out: Path, rubric_r
         if not r["text"]:
             continue
         it = items[r["item_id"]]
+        if it.task == "T2" and not (addressed_row(it) and r.get("floor_action") in (None, *SPEAKS)):
+            continue  # T2 replies are judged only when the panelist was addressed and took the floor
         rid = f"{r['item_id']}#{r['rerun']}"
         ref = it.meta.get("reference_version")
         others = [groups[it.pair_group][ref]] if it.version != ref else [
@@ -334,7 +337,8 @@ def _clip(x: float) -> float:
 def task_scores(per_task: dict, judged: dict) -> dict:
     """0-100 per task (higher is better), each the mean of the components that exist for this run:
     T1  200*(J-0.5) on the non-control edits
-    T2  100*share right responder (systems that decide the floor); 200*(J-0.5) on the addressee pair
+    T2  200*(balanced right-floor accuracy - 0.5) (systems that decide the floor); 200*(J-0.5) on the addressee
+        pair, judged on the replies given when addressed
     T3  200*(J-0.5) on the fact pair; 100*share of edited-fact replies stating the new value only;
         100*(1 - share of replies with an unsupported specific)
     T4  200*(J-0.5) on persona attribution; 100*persona item pass rate
@@ -345,9 +349,9 @@ def task_scores(per_task: dict, judged: dict) -> dict:
         j = jt.get(task, {}).get("J", {}).get("J")
         if j is not None:
             comps[task]["identification"] = _clip(200 * (j - 0.5))
-    rr = per_task.get("T2", {}).get("right_responder", {})
-    if rr.get("right") is not None:
-        comps["T2"]["right_responder"] = _clip(100 * rr["right"])
+    rf = per_task.get("T2", {}).get("right_floor", {})
+    if rf.get("applicable"):
+        comps["T2"]["right_floor"] = _clip(200 * (rf["balanced"] - 0.5))
     ff = per_task.get("T3", {}).get("follows_fact", {}).get("edited", {})
     if ff.get("new") is not None:
         comps["T3"]["follows_fact"] = _clip(100 * ff["new"])
@@ -390,10 +394,12 @@ def markdown_report(rep: dict) -> str:
             lines.append("By pair: " + "; ".join(f"{p} {x['J']} {x['ci95']}" for p, x in a["J_by_pair"].items()) + ".")
         if a.get("rubric_pass"):
             lines.append(f"Rubric pass rates: {a['rubric_pass']} (n {a['rubric_n']}).")
-        if v.get("right_responder", {}).get("n"):
-            r = v["right_responder"]
-            lines.append(f"Right responder {r['right']} (both {r['both']}, wrong {r['wrong']}, neither "
-                         f"{r['neither']}; n {r['n']}).")
+        rf = v.get("right_floor")
+        if rf and rf.get("applicable"):
+            lines.append(f"Right floor: balanced {rf['balanced']} (speaks when addressed {rf['acc_addressed']}, "
+                         f"yields when not {rf['acc_not_addressed']}; n {rf['n']}).")
+        elif rf:
+            lines.append("Right floor: not applicable (no floor decision); only the reply is scored.")
         if v.get("follows_fact"):
             e = v["follows_fact"]["edited"]
             lines.append(f"Edited fact: new {e['new']}, old {e['old']}, both {e['both']}, neither {e['neither']} "
@@ -454,7 +460,7 @@ def score(run: Path, items_path: str = "", pack_path: str = "", out: Path | None
     for task, v in spec.items():
         per_task[task]["unsupported_specifics"] = v
     if "T2" in per_task:
-        per_task["T2"]["right_responder"] = right_responder(rows, items)
+        per_task["T2"]["right_floor"] = right_floor(rows, items)
     if "T3" in per_task:
         per_task["T3"]["follows_fact"] = follows_fact(rows, items)
     for task, v in r_hook(rows, items, out, boot).items():
@@ -477,8 +483,8 @@ def print_report(rep: dict) -> None:
         if s:
             print(f"  unsupported specifics: {s['specifics']} specifics, share supported {s['share_supported']}, "
                   f"lines with one unsupported {s['share_lines_unsupported']}")
-        if "right_responder" in v:
-            print(f"  right responder: {json.dumps(v['right_responder'])}")
+        if "right_floor" in v:
+            print(f"  right floor: {json.dumps(v['right_floor'])}")
         if "follows_fact" in v:
             print(f"  follows edited fact: {json.dumps(v['follows_fact'])}")
         r = v.get("response_shift_R", {})

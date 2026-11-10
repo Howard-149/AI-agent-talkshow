@@ -27,6 +27,7 @@ SPLITS = ("dev", "test")
 ROLES = ("host", "commentator", "guest")
 PANEL = ("commentator", "guest")
 HISTORY_ROLES = ("host", "commentator", "guest", "human")
+FLOOR_TASKS = ("T2",)  # tasks where the tested panelist may yield the floor instead of replying
 
 
 @dataclass
@@ -115,6 +116,9 @@ def observation(item: Item) -> dict[str, Any]:
     role = item.role_under_test
     return {
         "item_id": item.item_id,
+        "task": item.task,
+        # T2: the panelist decides whether to take the floor (speak) or leave it to the addressed panelist (yield)
+        "floor_choice": item.task in FLOOR_TASKS,
         "topic_id": item.topic_id,
         "topic": item.topic,
         "role": role,
