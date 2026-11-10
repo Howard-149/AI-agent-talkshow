@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Do streaming services pay musicians fairly? — go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My favorite indie band broke up because they couldn't afford to tour. I think streaming has gutted the income of working musicians.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a really poignant point about the economic realities facing artists today. We've heard this conversation before, so I want to bring in Ryan to weigh in on the business side of this",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Look, the sentiment is real, but \"gutted\" is a strong word; the business model is broken, sure, but it's not just the streaming payout structure.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan saying the model isn't the only issue, and I wonder if we're focusing too much on the platform and not enough on the whole ecosystem of how artists make a living. Sometimes the income isn't just about streaming, but about the ability to connect with fans in tangible ways.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy’s right that the ecosystem is huge, but we can’t just ignore the digital plumbing; the streaming payout structure is the immediate, quantifiable choke point for most working artists.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I understand the importance of the digital structure, but I worry that when we only focus on the payout numbers, we miss the human story of how an artist builds a sustainable life around their music. It feels like the entire infrastructure is designed for consumption, not for supporting the creators",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're framing it as a failure of infrastructure, which is true, but the current infrastructure is built on massive scale consumption, and that inherently favors the biggest names, not the indie act that can't afford a bus ticket.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I see your point about the scale favoring the biggest names, but I wonder if we can also talk about how the smaller acts can build a community around their music outside of those massive platforms. Sometimes the connection itself is what keeps the music alive, even if the direct payout is small",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Community building is great for culture, Amy, but it doesn't pay the rent or cover the cost of a proper tour when the primary income stream is fundamentally broken.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I hear you on the need to pay the rent, and that's a very real pressure. But maybe we need to look at how the industry is incentivizing the *kind* of music that gets streamed widely, rather than just the payout per stream itself",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Do streaming services pay musicians fairly?: the mic is yours whenever you're ready.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.15626803259738348,
+   0.15474966442098823,
+   0.12675340164698154
+  ],
+  "commentator": [
+   -0.034422151499074904,
+   0.2542638211791231,
+   0.026517353017242173
+  ],
+  "guest": [
+   -0.2955836746928546,
+   0.18796227843548854,
+   -0.2826496843026645
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "commentator": "neutral",
+  "guest": "neutral"
+ },
+ "dialogue_example_index": 0
+}

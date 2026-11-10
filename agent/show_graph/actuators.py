@@ -130,9 +130,20 @@ class LiveActuators:
         from agent.session.human_turn import record_human_line
 
         heard = (event.get("heard") or "").strip()
+        # Uptake planner (no-op unless TALKSHOW_UPTAKE_PLANNER): starts now so it runs while the
+        # line is recorded; the panelists' think calls in react_to_human wait for it (bounded).
+        from agent.panel.uptake import start_uptake_plan
+
+        start_uptake_plan(self.data, heard)
         self.interaction.human_turn_taken()
         # Drop script generated past the barge-in before the human line goes on record.
         self.interaction.apply_pending_rollback(self.data)
+        if event.get("done_event") == "ghost_human_done":
+            # Ghost replay (no-op unless TALKSHOW_GHOST_REPLAY): swap in the prefix and log
+            # the state this turn is answered from. The generator is idle here.
+            from agent.session.ghost_replay import replay_before_human_line
+
+            replay_before_human_line(self.data, self.interaction, event.get("prefix"))
         await record_human_line(
             self.data,
             heard=heard,

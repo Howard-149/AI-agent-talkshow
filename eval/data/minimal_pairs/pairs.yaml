@@ -1,0 +1,764 @@
+# Minimal pairs for the listening test (eval/README.md): 30 hand-written topics.
+#
+# Per topic: `turn1` is the live opening human turn whose panel beat becomes the
+# shared, replayed prefix. `turn2` holds the edited human turn, one text per
+# condition. `orig` addresses Ryan (commentator) so `addressee` can redirect the
+# same question to Amy (guest). `persona_swap` reuses the orig text; the agent
+# swaps guest<->commentator persona configs for the post-edit lines instead.
+#
+# Edits are minimal: change one thing, keep length / register / everything else.
+#   paraphrase  meaning-preserving rewrite (noise control; expect R ≈ 1)
+#   negate      flip the stance of the claim
+#   number      change the key number so the claim's magnitude changes
+#   entity      swap the key named entity for another plausible one
+#   addressee   same question, directed at the other panelist
+#   num_small / num_large / num_flip / num_pointer   graded number edits: a small change, an order of
+#               magnitude, a figure that contradicts the turn's own claim, num_large plus a sentence pointing at it
+
+topics:
+- slug: tipping
+  topic: Has tipping culture gone too far?
+  turn1: I got asked for a 25 percent tip at a self-checkout kiosk at an airport yesterday. Nobody served me. I think tipping
+    in America has turned into a guilt tax.
+  turn2:
+    orig: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base wage
+      is $2.13 an hour. So if we kill tipping, don't we just cut her pay?
+    paraphrase: Ryan, a friend of mine waits tables in Chicago and says she only covers rent thanks to tips, since her base
+      pay is $2.13 an hour. So if tipping goes away, aren't we just slashing her income?
+    negate: Ryan, my friend who waits tables in Chicago says tips barely matter for her rent, because her base wage is $2.13
+      an hour plus a fixed service charge. So if we kill tipping, she loses almost nothing, right?
+    number: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base wage
+      is $16.20 an hour. So if we kill tipping, don't we just cut her pay?
+    entity: Ryan, my friend who waits tables in Tokyo says tips are the only reason she makes rent, because her base wage
+      is $2.13 an hour. So if we kill tipping, don't we just cut her pay?
+    addressee: Amy, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base wage
+      is $2.13 an hour. So if we kill tipping, don't we just cut her pay?
+    num_small: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base
+      wage is $2.50 an hour. So if we kill tipping, don't we just cut her pay?
+    num_large: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base
+      wage is $0.21 an hour. So if we kill tipping, don't we just cut her pay?
+    num_flip: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base wage
+      is $28 an hour. So if we kill tipping, don't we just cut her pay?
+    num_pointer: Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base
+      wage is $0.21 an hour. And that $0.21 figure is the whole point. So if we kill tipping, don't we just cut her pay?
+- slug: nuclear-power
+  topic: Should we build more nuclear power plants?
+  turn1: Germany shut down its last nuclear plants in 2023 and burned more coal to cover it. I think that was one of the dumbest
+    energy decisions in Europe this century.
+  turn2:
+    orig: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $17 billion
+      over budget. Why would anyone sign up for that again?'
+    paraphrase: 'Ryan, the objection people keep raising is the price tag: Georgia''s Vogtle plant finished seven years behind
+      schedule and roughly $17 billion over budget. Who would agree to that a second time?'
+    negate: 'Ryan, the argument I keep hearing is that cost is fine: Vogtle in Georgia came in on schedule and close to its
+      budget. So why wouldn''t everyone sign up for that again?'
+    number: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven months late and about $170
+      million over budget. Why would anyone sign up for that again?'
+    entity: 'Ryan, the counterargument I keep hearing is cost: Hinkley Point C in England came in seven years late and about
+      $17 billion over budget. Why would anyone sign up for that again?'
+    addressee: 'Amy, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $17
+      billion over budget. Why would anyone sign up for that again?'
+    num_small: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $19
+      billion over budget. Why would anyone sign up for that again?'
+    num_large: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $170
+      billion over budget. Why would anyone sign up for that again?'
+    num_flip: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $17
+      million under budget. Why would anyone sign up for that again?'
+    num_pointer: 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $170
+      billion over budget. And that $170 billion figure is the whole point. Why would anyone sign up for that again?'
+- slug: self-driving
+  topic: Should fully self-driving cars be allowed on public roads now?
+  turn1: I rode in a Waymo in Phoenix last month and it drove more carefully than any Uber driver I've had. I think robotaxis
+    should be allowed everywhere already.
+  turn2:
+    orig: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 12 minutes, nobody could even give it a ticket.
+      Who's responsible when there's no driver?
+    paraphrase: Ryan, but when a driverless taxi held up a fire engine in San Francisco for 12 minutes, there was no one to
+      ticket. Who takes the blame when nobody is driving?
+    negate: Ryan, and when a robotaxi blocked a fire truck in San Francisco for 12 minutes, the company was fined within the
+      hour. So responsibility is already clear even without a driver, isn't it?
+    number: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 12 seconds, nobody could even give it a ticket.
+      Who's responsible when there's no driver?
+    entity: Ryan, but when a robotaxi blocked an ambulance in San Francisco for 12 minutes, nobody could even give it a ticket.
+      Who's responsible when there's no driver?
+    addressee: Amy, but when a robotaxi blocked a fire truck in San Francisco for 12 minutes, nobody could even give it a
+      ticket. Who's responsible when there's no driver?
+    num_small: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 14 minutes, nobody could even give it a
+      ticket. Who's responsible when there's no driver?
+    num_large: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 2 hours, nobody could even give it a ticket.
+      Who's responsible when there's no driver?
+    num_flip: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 2 seconds, nobody could even give it a ticket.
+      Who's responsible when there's no driver?
+    num_pointer: Ryan, but when a robotaxi blocked a fire truck in San Francisco for 2 hours, nobody could even give it a
+      ticket. And that 2 hours figure is the whole point. Who's responsible when there's no driver?
+- slug: four-day-week
+  topic: Should the four-day work week become standard?
+  turn1: The UK ran a trial with sixty-one companies on a four-day week and most of them kept it afterwards. I think five
+    days is just a habit we never questioned.
+  turn2:
+    orig: Ryan, but my brother is a nurse at a hospital with 40 open shifts a month. A four-day week for him just means Fridays
+      are short-staffed. Does this only work for office jobs?
+    paraphrase: Ryan, my brother works as a nurse at a hospital that has 40 unfilled shifts every month. For him a four-day
+      week just leaves Fridays understaffed. Is this only workable for desk jobs?
+    negate: Ryan, and my brother is a nurse at a hospital with 40 open shifts a month. A four-day week actually made it easier
+      for them to hire. So this works beyond office jobs, doesn't it?
+    number: Ryan, but my brother is a nurse at a hospital with 2 open shifts a month. A four-day week for him just means Fridays
+      are short-staffed. Does this only work for office jobs?
+    entity: Ryan, but my brother is a firefighter at a station with 40 open shifts a month. A four-day week for him just means
+      Fridays are short-staffed. Does this only work for office jobs?
+    addressee: Amy, but my brother is a nurse at a hospital with 40 open shifts a month. A four-day week for him just means
+      Fridays are short-staffed. Does this only work for office jobs?
+    num_small: Ryan, but my brother is a nurse at a hospital with 45 open shifts a month. A four-day week for him just means
+      Fridays are short-staffed. Does this only work for office jobs?
+    num_large: Ryan, but my brother is a nurse at a hospital with 400 open shifts a month. A four-day week for him just means
+      Fridays are short-staffed. Does this only work for office jobs?
+    num_flip: Ryan, but my brother is a nurse at a hospital with no open shifts a month. A four-day week for him just means
+      Fridays are short-staffed. Does this only work for office jobs?
+    num_pointer: Ryan, but my brother is a nurse at a hospital with 400 open shifts a month. A four-day week for him just
+      means Fridays are short-staffed. And that 400 open shifts figure is the whole point. Does this only work for office
+      jobs?
+- slug: college-worth
+  topic: Is a four-year college degree still worth it?
+  turn1: My cousin graduated with $80,000 in debt and a communications degree and now manages a coffee shop. Meanwhile his
+    friend became an electrician at 22 with zero debt. I think we oversold college.
+  turn2:
+    orig: Ryan, but the averages still say degree holders earn about $1.2 million more over a lifetime. Is my cousin just
+      an anecdote?
+    paraphrase: Ryan, still, on average people with degrees make roughly $1.2 million more across their careers. Is my cousin
+      just one story?
+    negate: Ryan, and the averages now say degree holders earn about the same as tradespeople over a lifetime. So my cousin
+      isn't an anecdote, he's the norm, right?
+    number: Ryan, but the averages still say degree holders earn about $12,000 more over a lifetime. Is my cousin just an
+      anecdote?
+    entity: Ryan, but the Federal Reserve still says degree holders earn about $1.2 million more over a lifetime. Is my cousin
+      just an anecdote?
+    addressee: Amy, but the averages still say degree holders earn about $1.2 million more over a lifetime. Is my cousin just
+      an anecdote?
+    num_small: Ryan, but the averages still say degree holders earn about $1.1 million more over a lifetime. Is my cousin
+      just an anecdote?
+    num_large: Ryan, but the averages still say degree holders earn about $12 million more over a lifetime. Is my cousin just
+      an anecdote?
+    num_flip: Ryan, but the averages still say degree holders earn about $1,200 less over a lifetime. Is my cousin just an
+      anecdote?
+    num_pointer: Ryan, but the averages still say degree holders earn about $12 million more over a lifetime. And that $12
+      million figure is the whole point. Is my cousin just an anecdote?
+- slug: rent-control
+  topic: Does rent control help or hurt renters?
+  turn1: My rent went up 30 percent in one year in Austin. I think strict rent control is the only thing that will protect
+    working families from being pushed out of their cities.
+  turn2:
+    orig: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 15 percent as landlords
+      converted units to condos. Are the economists wrong?
+    paraphrase: Ryan, a Stanford study on San Francisco showed rent control shrank the rental stock by 15 percent because
+      owners turned apartments into condos. Did the economists get it wrong?
+    negate: Ryan, and a Stanford study of San Francisco found rent control did not reduce the rental supply at all, landlords
+      kept renting. So the economists were wrong, weren't they?
+    number: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 1 percent as landlords
+      converted units to condos. Are the economists wrong?
+    entity: Ryan, but a Stanford study of Berlin found rent control cut the rental supply by 15 percent as landlords converted
+      units to condos. Are the economists wrong?
+    addressee: Amy, but a Stanford study of San Francisco found rent control cut the rental supply by 15 percent as landlords
+      converted units to condos. Are the economists wrong?
+    num_small: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 17 percent as landlords
+      converted units to condos. Are the economists wrong?
+    num_large: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 60 percent as landlords
+      converted units to condos. Are the economists wrong?
+    num_flip: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 0 percent as landlords
+      converted units to condos. Are the economists wrong?
+    num_pointer: Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 60 percent as landlords
+      converted units to condos. And that 60 percent figure is the whole point. Are the economists wrong?
+- slug: minimum-wage
+  topic: Should the federal minimum wage be $20 an hour?
+  turn1: The federal minimum wage has been $7.25 since 2009. Nobody can live on that anywhere in America. I think it should
+    be $20 an hour nationwide.
+  turn2:
+    orig: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about a third
+      of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    paraphrase: Ryan, twenty dollars buys very different things in Manhattan versus rural Mississippi; rent in Jackson runs
+      about a third of New York's. Wouldn't a single national wage close small shops in poorer towns?
+    negate: Ryan, and $20 in Manhattan and $20 in rural Mississippi are not that different anymore; rent in Jackson has nearly
+      caught up with New York's. So one national number is fair for small businesses, isn't it?
+    number: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about 90
+      percent of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    entity: Ryan, but $20 in Manhattan and $20 in rural West Virginia are completely different; rent in Charleston is about
+      a third of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    addressee: Amy, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about a
+      third of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    num_small: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about
+      40 percent of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    num_large: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about
+      a tenth of New York's. Wouldn't one national number shut down small businesses in poor towns?
+    num_flip: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about the
+      same as New York's. Wouldn't one national number shut down small businesses in poor towns?
+    num_pointer: Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about
+      a tenth of New York's. And that one-tenth figure is the whole point. Wouldn't one national number shut down small businesses
+      in poor towns?
+- slug: drug-decriminalization
+  topic: Should hard drugs be decriminalized?
+  turn1: Portugal decriminalized all drugs in 2001 and overdose deaths dropped. I think arresting addicts just makes everything
+    worse.
+  turn2:
+    orig: Ryan, but Oregon tried something similar and reversed it after three years because public drug use exploded downtown
+      in Portland. Why did it fail there?
+    paraphrase: Ryan, Oregon attempted a similar policy and rolled it back after three years once public drug use surged in
+      downtown Portland. Why didn't it work there?
+    negate: Ryan, and Oregon tried something similar and kept it after three years because public drug use actually fell downtown
+      in Portland. Why did it succeed there?
+    number: Ryan, but Oregon tried something similar and reversed it after three weeks because public drug use exploded downtown
+      in Portland. Why did it fail there?
+    entity: Ryan, but British Columbia tried something similar and reversed it after three years because public drug use exploded
+      downtown in Vancouver. Why did it fail there?
+    addressee: Amy, but Oregon tried something similar and reversed it after three years because public drug use exploded
+      downtown in Portland. Why did it fail there?
+    num_small: Ryan, but Oregon tried something similar and reversed it after three and a half years because public drug use
+      exploded downtown in Portland. Why did it fail there?
+    num_large: Ryan, but Oregon tried something similar and reversed it after three weeks because public drug use exploded
+      downtown in Portland. Why did it fail there?
+    num_flip: Ryan, but Oregon tried something similar and reversed it after thirty years because public drug use exploded
+      downtown in Portland. Why did it fail there?
+    num_pointer: Ryan, but Oregon tried something similar and reversed it after three weeks because public drug use exploded
+      downtown in Portland. And that after three weeks figure is the whole point. Why did it fail there?
+- slug: electric-cars
+  topic: Should gas car sales be banned by 2035?
+  turn1: California wants to ban new gas car sales by 2035. I drive 80 miles a day in a rural county with two public chargers.
+    I think this policy was written by people who live in cities.
+  turn2:
+    orig: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within five years.
+      Isn't a hard deadline the only thing that makes automakers move?
+    paraphrase: Ryan, on the other hand, folks said exactly that about seatbelts and catalytic converters, and Ford adjusted
+      inside five years. Isn't a firm deadline the only way to get carmakers moving?
+    negate: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford fought them for decades.
+      Doesn't a hard deadline just make automakers dig in?
+    number: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within thirty
+      years. Isn't a hard deadline the only thing that makes automakers move?
+    entity: Ryan, then again, people said the same about seatbelts and catalytic converters, and Toyota adapted within five
+      years. Isn't a hard deadline the only thing that makes automakers move?
+    addressee: Amy, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within five
+      years. Isn't a hard deadline the only thing that makes automakers move?
+    num_small: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within six
+      years. Isn't a hard deadline the only thing that makes automakers move?
+    num_large: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within five
+      months. Isn't a hard deadline the only thing that makes automakers move?
+    num_flip: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted only after
+      fifty years. Isn't a hard deadline the only thing that makes automakers move?
+    num_pointer: Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within
+      five months. And that within five months figure is the whole point. Isn't a hard deadline the only thing that makes
+      automakers move?
+- slug: ai-jobs
+  topic: Will AI take more jobs than it creates?
+  turn1: My friend was a freelance translator for twelve years, and her work dried up within eighteen months of ChatGPT. I
+    think AI will wipe out more jobs than it creates this time.
+  turn2:
+    orig: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for 30 years.
+      Why would this time be different?
+    paraphrase: Ryan, people made the same prediction about ATMs replacing bank tellers, yet teller jobs kept growing for
+      30 years. Why should this time be any different?
+    negate: Ryan, and people said the same about ATMs and bank tellers, and the number of tellers really did collapse within
+      a few years. So this time is no different, is it?
+    number: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for 3 years.
+      Why would this time be different?
+    entity: Ryan, but people said the same about spreadsheets and bookkeepers, and the number of bookkeepers actually went
+      up for 30 years. Why would this time be different?
+    addressee: Amy, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for 30
+      years. Why would this time be different?
+    num_small: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for
+      27 years. Why would this time be different?
+    num_large: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for
+      300 years. Why would this time be different?
+    num_flip: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for only
+      3 months. Why would this time be different?
+    num_pointer: Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for
+      300 years. And that 300 years figure is the whole point. Why would this time be different?
+- slug: sugar-tax
+  topic: Should sugary drinks carry a special tax?
+  turn1: My nephew drinks three cans of soda a day and he's eleven. I think sugary drinks should be taxed like cigarettes,
+    because nothing else seems to work.
+  turn2:
+    orig: Ryan, but when Mexico added a soda tax, purchases only dropped about 8 percent in the first two years. Is a tax
+      that small really worth the backlash?
+    paraphrase: Ryan, after Mexico introduced its soda tax, sales fell by only around 8 percent over the first two years.
+      Is such a modest drop worth all the political fallout?
+    negate: Ryan, and when Mexico added a soda tax, purchases didn't drop at all in the first two years. So a tax like that
+      is pointless, isn't it?
+    number: Ryan, but when Mexico added a soda tax, purchases dropped about 40 percent in the first two years. Is a tax that
+      small really worth the backlash?
+    entity: Ryan, but when the United Kingdom added a soda tax, purchases only dropped about 8 percent in the first two years.
+      Is a tax that small really worth the backlash?
+    addressee: Amy, but when Mexico added a soda tax, purchases only dropped about 8 percent in the first two years. Is a
+      tax that small really worth the backlash?
+    num_small: Ryan, but when Mexico added a soda tax, purchases only dropped about 9 percent in the first two years. Is a
+      tax that small really worth the backlash?
+    num_large: Ryan, but when Mexico added a soda tax, purchases only dropped about 0.8 percent in the first two years. Is
+      a tax that small really worth the backlash?
+    num_flip: Ryan, but when Mexico added a soda tax, purchases only dropped about 80 percent in the first two years. Is a
+      tax that small really worth the backlash?
+    num_pointer: Ryan, but when Mexico added a soda tax, purchases only dropped about 0.8 percent in the first two years.
+      And that 0.8 percent figure is the whole point. Is a tax that small really worth the backlash?
+- slug: olympics-host
+  topic: Is hosting the Olympics worth it for a city?
+  turn1: My city is bidding for the Olympics and everyone downtown is excited about the new stadiums. I think it would put
+    us on the map for decades.
+  turn2:
+    orig: Ryan, but Montreal took 30 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    paraphrase: Ryan, it took Montreal three decades to clear the debt from hosting the 1976 Olympics. Why would a city volunteer
+      for that?
+    negate: Ryan, and Montreal paid off the debt from its 1976 Games within a year and made a profit. So every city should
+      sign up, right?
+    number: Ryan, but Montreal took 3 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    entity: Ryan, but Athens took 30 years to pay off the debt from its 2004 Games. Why would any city sign up for that?
+    addressee: Amy, but Montreal took 30 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    num_small: Ryan, but Montreal took 33 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    num_large: Ryan, but Montreal took 300 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    num_flip: Ryan, but Montreal took 3 weeks to pay off the debt from its 1976 Games. Why would any city sign up for that?
+    num_pointer: Ryan, but Montreal took 300 years to pay off the debt from its 1976 Games. And that 300 years figure is the
+      whole point. Why would any city sign up for that?
+- slug: daylight-saving
+  topic: Should we abolish daylight saving time?
+  turn1: Every March I lose an hour of sleep and feel wrecked for a week. I think switching the clocks twice a year is an
+    outdated ritual we should drop.
+  turn2:
+    orig: Ryan, one study found heart attacks jump about 24 percent on the Monday after the spring change. Isn't that reason
+      enough to end it?
+    paraphrase: Ryan, a study reported roughly a 24 percent spike in heart attacks the Monday after clocks spring forward.
+      Doesn't that alone justify scrapping it?
+    negate: Ryan, one study found heart attacks don't change at all on the Monday after the spring change. So the health argument
+      against it is a myth, isn't it?
+    number: Ryan, one study found heart attacks jump about 2 percent on the Monday after the spring change. Isn't that reason
+      enough to end it?
+    entity: Ryan, one study found car crashes jump about 24 percent on the Monday after the spring change. Isn't that reason
+      enough to end it?
+    addressee: Amy, one study found heart attacks jump about 24 percent on the Monday after the spring change. Isn't that
+      reason enough to end it?
+    num_small: Ryan, one study found heart attacks jump about 27 percent on the Monday after the spring change. Isn't that
+      reason enough to end it?
+    num_large: Ryan, one study found heart attacks jump about 240 percent on the Monday after the spring change. Isn't that
+      reason enough to end it?
+    num_flip: Ryan, one study found heart attacks jump about 0 percent on the Monday after the spring change. Isn't that reason
+      enough to end it?
+    num_pointer: Ryan, one study found heart attacks jump about 240 percent on the Monday after the spring change. And that
+      240 percent figure is the whole point. Isn't that reason enough to end it?
+- slug: facial-recognition
+  topic: Should police use facial recognition?
+  turn1: A store near me caught a shoplifter in a day using facial recognition. I think police should use it everywhere if
+    it catches criminals that fast.
+  turn2:
+    orig: Ryan, but a federal test found some systems misidentify Black faces up to 100 times more often than white faces.
+      How is that acceptable for policing?
+    paraphrase: Ryan, a government evaluation showed certain systems wrongly match Black faces as much as 100 times more often
+      than white ones. How can police accept that?
+    negate: Ryan, and a federal test found these systems identify Black and white faces equally well. So the bias argument
+      is outdated, isn't it?
+    number: Ryan, but a federal test found some systems misidentify Black faces up to 2 times more often than white faces.
+      How is that acceptable for policing?
+    entity: Ryan, but a federal test found some systems misidentify Asian faces up to 100 times more often than white faces.
+      How is that acceptable for policing?
+    addressee: Amy, but a federal test found some systems misidentify Black faces up to 100 times more often than white faces.
+      How is that acceptable for policing?
+    num_small: Ryan, but a federal test found some systems misidentify Black faces up to 90 times more often than white faces.
+      How is that acceptable for policing?
+    num_large: Ryan, but a federal test found some systems misidentify Black faces up to 1,000 times more often than white
+      faces. How is that acceptable for policing?
+    num_flip: Ryan, but a federal test found some systems misidentify Black faces no more often than white faces. How is that
+      acceptable for policing?
+    num_pointer: Ryan, but a federal test found some systems misidentify Black faces up to 1,000 times more often than white
+      faces. And that 1,000 times figure is the whole point. How is that acceptable for policing?
+- slug: retirement-age
+  topic: Should the retirement age be raised?
+  turn1: My dad is 66 and still lays bricks because he can't afford to stop. I think raising the retirement age punishes people
+    with physical jobs.
+  turn2:
+    orig: Ryan, but France raised its pension age to 64 and the system still runs a deficit. Do we just keep pushing it back
+      forever?
+    paraphrase: Ryan, France lifted its retirement age to 64 and its pension system is still in the red. Are we supposed to
+      keep raising it indefinitely?
+    negate: Ryan, and France raised its pension age to 64 and the system is now running a surplus. So raising it works, doesn't
+      it?
+    number: Ryan, but France raised its pension age to 70 and the system still runs a deficit. Do we just keep pushing it
+      back forever?
+    entity: Ryan, but Japan raised its pension age to 64 and the system still runs a deficit. Do we just keep pushing it back
+      forever?
+    addressee: Amy, but France raised its pension age to 64 and the system still runs a deficit. Do we just keep pushing it
+      back forever?
+    num_small: Ryan, but France raised its pension age to 64 and a half and the system still runs a deficit. Do we just keep
+      pushing it back forever?
+    num_large: Ryan, but France raised its pension age to 85 and the system still runs a deficit. Do we just keep pushing
+      it back forever?
+    num_flip: Ryan, but France raised its pension age to 62 and the system still runs a deficit. Do we just keep pushing it
+      back forever?
+    num_pointer: Ryan, but France raised its pension age to 85 and the system still runs a deficit. And that 85 figure is
+      the whole point. Do we just keep pushing it back forever?
+- slug: video-ref
+  topic: Has video review ruined football?
+  turn1: I used to love going to matches, but now every goal gets paused while some referee watches a monitor. I think video
+    review has killed the joy of the sport.
+  turn2:
+    orig: Ryan, but the Premier League says video review raised correct decisions to about 96 percent. Isn't getting it right
+      worth a pause?
+    paraphrase: Ryan, the Premier League claims video review pushed the share of correct calls to around 96 percent. Isn't
+      accuracy worth a short delay?
+    negate: Ryan, and the Premier League admits video review hasn't improved correct decisions at all. So it's all pain and
+      no gain, isn't it?
+    number: Ryan, but the Premier League says video review raised correct decisions to about 56 percent. Isn't getting it
+      right worth a pause?
+    entity: Ryan, but the NFL says video review raised correct decisions to about 96 percent. Isn't getting it right worth
+      a pause?
+    addressee: Amy, but the Premier League says video review raised correct decisions to about 96 percent. Isn't getting it
+      right worth a pause?
+    num_small: Ryan, but the Premier League says video review raised correct decisions to about 95 percent. Isn't getting
+      it right worth a pause?
+    num_large: Ryan, but the Premier League says video review raised correct decisions to about 99.9 percent. Isn't getting
+      it right worth a pause?
+    num_flip: Ryan, but the Premier League says video review raised correct decisions to about 40 percent. Isn't getting it
+      right worth a pause?
+    num_pointer: Ryan, but the Premier League says video review raised correct decisions to about 99.9 percent. And that 99.9
+      percent figure is the whole point. Isn't getting it right worth a pause?
+- slug: nursing-homes
+  topic: Should families care for aging parents at home?
+  turn1: We moved my grandmother into a nursing home and she declined fast. I think families should care for their parents
+    at home whenever they possibly can.
+  turn2:
+    orig: Ryan, but my cousin quit her job to care for her mother and lost about $300,000 in wages and pension over ten years.
+      Is that fair to ask of anyone?
+    paraphrase: Ryan, my cousin left her job to look after her mom and gave up roughly $300,000 in pay and retirement savings
+      across a decade. Is it fair to expect that of anyone?
+    negate: Ryan, and my cousin cared for her mother while keeping her job and lost nothing in wages or pension over ten years.
+      So it's easy to ask of anyone, isn't it?
+    number: Ryan, but my cousin quit her job to care for her mother and lost about $3,000 in wages and pension over ten years.
+      Is that fair to ask of anyone?
+    entity: Ryan, but my cousin quit her job to care for her father-in-law and lost about $300,000 in wages and pension over
+      ten years. Is that fair to ask of anyone?
+    addressee: Amy, but my cousin quit her job to care for her mother and lost about $300,000 in wages and pension over ten
+      years. Is that fair to ask of anyone?
+    num_small: Ryan, but my cousin quit her job to care for her mother and lost about $330,000 in wages and pension over ten
+      years. Is that fair to ask of anyone?
+    num_large: Ryan, but my cousin quit her job to care for her mother and lost about $3 million in wages and pension over
+      ten years. Is that fair to ask of anyone?
+    num_flip: Ryan, but my cousin quit her job to care for her mother and lost about $300 in wages and pension over ten years.
+      Is that fair to ask of anyone?
+    num_pointer: Ryan, but my cousin quit her job to care for her mother and lost about $3 million in wages and pension over
+      ten years. And that $3 million figure is the whole point. Is that fair to ask of anyone?
+- slug: mars-mission
+  topic: Should we send humans to Mars?
+  turn1: I watched a rocket launch last week and got chills. I think sending humans to Mars is the most inspiring thing our
+    generation could do.
+  turn2:
+    orig: Ryan, but NASA estimates a crewed Mars mission would cost around $500 billion. Couldn't that money fix a lot of
+      problems here first?
+    paraphrase: Ryan, NASA's estimate for a crewed trip to Mars is roughly $500 billion. Wouldn't that money solve plenty
+      of problems on Earth first?
+    negate: Ryan, and NASA estimates a crewed Mars mission would cost almost nothing compared to what we waste here. So money
+      isn't a real objection, is it?
+    number: Ryan, but NASA estimates a crewed Mars mission would cost around $5 billion. Couldn't that money fix a lot of
+      problems here first?
+    entity: Ryan, but SpaceX estimates a crewed Mars mission would cost around $500 billion. Couldn't that money fix a lot
+      of problems here first?
+    addressee: Amy, but NASA estimates a crewed Mars mission would cost around $500 billion. Couldn't that money fix a lot
+      of problems here first?
+    num_small: Ryan, but NASA estimates a crewed Mars mission would cost around $550 billion. Couldn't that money fix a lot
+      of problems here first?
+    num_large: Ryan, but NASA estimates a crewed Mars mission would cost around $5 trillion. Couldn't that money fix a lot
+      of problems here first?
+    num_flip: Ryan, but NASA estimates a crewed Mars mission would cost around $5 million. Couldn't that money fix a lot of
+      problems here first?
+    num_pointer: Ryan, but NASA estimates a crewed Mars mission would cost around $5 trillion. And that $5 trillion figure
+      is the whole point. Couldn't that money fix a lot of problems here first?
+- slug: crypto-pay
+  topic: Should countries adopt cryptocurrency as legal tender?
+  turn1: I got paid in Bitcoin for a freelance job and it felt like the future. I think more countries should make crypto
+    legal tender.
+  turn2:
+    orig: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 80 percent of people never used it. Doesn't
+      that say it's a gimmick?
+    paraphrase: Ryan, El Salvador adopted Bitcoin as legal tender, yet a poll showed roughly 80 percent of residents never
+      touched it. Doesn't that make it a gimmick?
+    negate: Ryan, and El Salvador made Bitcoin legal tender and a survey found almost everyone uses it daily. So it's clearly
+      not a gimmick, is it?
+    number: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 8 percent of people never used it. Doesn't
+      that say it's a gimmick?
+    entity: Ryan, but the Central African Republic made Bitcoin legal tender and a survey found about 80 percent of people
+      never used it. Doesn't that say it's a gimmick?
+    addressee: Amy, but El Salvador made Bitcoin legal tender and a survey found about 80 percent of people never used it.
+      Doesn't that say it's a gimmick?
+    num_small: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 75 percent of people never used it.
+      Doesn't that say it's a gimmick?
+    num_large: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 99 percent of people never used it.
+      Doesn't that say it's a gimmick?
+    num_flip: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 2 percent of people never used it.
+      Doesn't that say it's a gimmick?
+    num_pointer: Ryan, but El Salvador made Bitcoin legal tender and a survey found about 99 percent of people never used
+      it. And that 99 percent figure is the whole point. Doesn't that say it's a gimmick?
+- slug: school-start
+  topic: Should high schools start later in the morning?
+  turn1: My teenage son has to catch a bus at 6:40 and he's a zombie all day. I think high schools starting at 7:30 is just
+    cruel.
+  turn2:
+    orig: Ryan, but when Seattle pushed start times back by about an hour, students got 34 more minutes of sleep a night.
+      Why isn't every district doing this?
+    paraphrase: Ryan, Seattle moved its start times roughly an hour later and teens ended up sleeping 34 extra minutes per
+      night. Why haven't all districts followed?
+    negate: Ryan, and when Seattle pushed start times back by about an hour, students got no extra sleep at all — they just
+      stayed up later. So it doesn't work, does it?
+    number: Ryan, but when Seattle pushed start times back by about an hour, students got 3 more minutes of sleep a night.
+      Why isn't every district doing this?
+    entity: Ryan, but when Minneapolis pushed start times back by about an hour, students got 34 more minutes of sleep a night.
+      Why isn't every district doing this?
+    addressee: Amy, but when Seattle pushed start times back by about an hour, students got 34 more minutes of sleep a night.
+      Why isn't every district doing this?
+    num_small: Ryan, but when Seattle pushed start times back by about an hour, students got 30 more minutes of sleep a night.
+      Why isn't every district doing this?
+    num_large: Ryan, but when Seattle pushed start times back by about an hour, students got 3 more hours of sleep a night.
+      Why isn't every district doing this?
+    num_flip: Ryan, but when Seattle pushed start times back by about an hour, students got 34 fewer minutes of sleep a night.
+      Why isn't every district doing this?
+    num_pointer: Ryan, but when Seattle pushed start times back by about an hour, students got 3 more hours of sleep a night.
+      And that 3 figure is the whole point. Why isn't every district doing this?
+- slug: ubi
+  topic: Should governments give everyone a universal basic income?
+  turn1: My friend lost her job to a warehouse robot and is drowning in bills. I think a universal basic income is the only
+    fair answer to automation.
+  turn2:
+    orig: Ryan, but in Finland's trial, people on basic income worked only about 6 days more per year than the control group.
+      Is that really the success people claim?
+    paraphrase: Ryan, Finland's experiment showed basic income recipients worked just around 6 more days a year than those
+      without it. Is that the triumph people say it is?
+    negate: Ryan, and in Finland's trial, people on basic income worked far less than the control group. So it clearly kills
+      the will to work, doesn't it?
+    number: Ryan, but in Finland's trial, people on basic income worked about 60 days more per year than the control group.
+      Is that really the success people claim?
+    entity: Ryan, but in Kenya's trial, people on basic income worked only about 6 days more per year than the control group.
+      Is that really the success people claim?
+    addressee: Amy, but in Finland's trial, people on basic income worked only about 6 days more per year than the control
+      group. Is that really the success people claim?
+    num_small: Ryan, but in Finland's trial, people on basic income worked only about 7 days more per year than the control
+      group. Is that really the success people claim?
+    num_large: Ryan, but in Finland's trial, people on basic income worked only about 60 days more per year than the control
+      group. Is that really the success people claim?
+    num_flip: Ryan, but in Finland's trial, people on basic income worked only about 6 days less per year than the control
+      group. Is that really the success people claim?
+    num_pointer: Ryan, but in Finland's trial, people on basic income worked only about 60 days more per year than the control
+      group. And that 60 days figure is the whole point. Is that really the success people claim?
+- slug: noncompetes
+  topic: Should non-compete agreements be banned?
+  turn1: My sister couldn't take a better job across town because of a non-compete she signed at a sandwich shop. I think
+    non-competes should be illegal.
+  turn2:
+    orig: Ryan, but California banned non-competes decades ago and Silicon Valley still became the richest tech hub on earth.
+      Doesn't that settle it?
+    paraphrase: Ryan, California outlawed non-competes many decades ago and Silicon Valley still grew into the wealthiest
+      tech center in the world. Isn't that the end of the argument?
+    negate: Ryan, and California enforces non-competes strictly, and Silicon Valley still became the richest tech hub on earth.
+      So they don't hurt anyone, do they?
+    number: Ryan, but California banned non-competes two years ago and Silicon Valley still became the richest tech hub on
+      earth. Doesn't that settle it?
+    entity: Ryan, but Massachusetts banned non-competes decades ago and Boston still became the richest tech hub on earth.
+      Doesn't that settle it?
+    addressee: Amy, but California banned non-competes decades ago and Silicon Valley still became the richest tech hub on
+      earth. Doesn't that settle it?
+    num_small: Ryan, but California banned non-competes about forty years ago and Silicon Valley still became the richest
+      tech hub on earth. Doesn't that settle it?
+    num_large: Ryan, but California banned non-competes a century and a half ago and Silicon Valley still became the richest
+      tech hub on earth. Doesn't that settle it?
+    num_flip: Ryan, but California banned non-competes only last month and Silicon Valley still became the richest tech hub
+      on earth. Doesn't that settle it?
+    num_pointer: Ryan, but California banned non-competes a century and a half ago and Silicon Valley still became the richest
+      tech hub on earth. And that 150-year head start is the whole point. Doesn't that settle it?
+- slug: wild-wolves
+  topic: Should wolves be reintroduced into the wild?
+  turn1: I hiked in Yellowstone and heard wolves howling at night — it was magical. I think we should bring wolves back to
+    more of their old range.
+  turn2:
+    orig: Ryan, but a rancher in Colorado says he lost 12 calves to wolves in a single season after they were released. Who
+      pays for that?
+    paraphrase: Ryan, one Colorado rancher reports wolves killed 12 of his calves in just one season after the reintroduction.
+      Who covers that loss?
+    negate: Ryan, and a rancher in Colorado says he hasn't lost a single calf since wolves were released. So the cost to ranchers
+      is a myth, isn't it?
+    number: Ryan, but a rancher in Colorado says he lost 1 calf to wolves in a single season after they were released. Who
+      pays for that?
+    entity: Ryan, but a rancher in Colorado says he lost 12 sheep to wolves in a single season after they were released. Who
+      pays for that?
+    addressee: Amy, but a rancher in Colorado says he lost 12 calves to wolves in a single season after they were released.
+      Who pays for that?
+    num_small: Ryan, but a rancher in Colorado says he lost 14 calves to wolves in a single season after they were released.
+      Who pays for that?
+    num_large: Ryan, but a rancher in Colorado says he lost 120 calves to wolves in a single season after they were released.
+      Who pays for that?
+    num_flip: Ryan, but a rancher in Colorado says he lost zero calves to wolves in a single season after they were released.
+      Who pays for that?
+    num_pointer: Ryan, but a rancher in Colorado says he lost 120 calves to wolves in a single season after they were released.
+      And that 120 calves figure is the whole point. Who pays for that?
+- slug: streaming-music
+  topic: Do streaming services pay musicians fairly?
+  turn1: My favorite indie band broke up because they couldn't afford to tour. I think streaming has gutted the income of
+    working musicians.
+  turn2:
+    orig: Ryan, Spotify pays roughly $3 per 1,000 streams. A band would need about 400,000 streams a month just to earn minimum
+      wage. Is that sustainable?
+    paraphrase: Ryan, Spotify pays about $3 for every 1,000 plays, so a band needs around 400,000 monthly streams just to
+      make minimum wage. Can that possibly last?
+    negate: Ryan, and Spotify pays so well that a band needs only a few thousand streams a month to earn minimum wage. So
+      streaming is great for musicians, isn't it?
+    number: Ryan, Spotify pays roughly $30 per 1,000 streams. A band would need about 40,000 streams a month just to earn
+      minimum wage. Is that sustainable?
+    entity: Ryan, YouTube pays roughly $3 per 1,000 streams. A band would need about 400,000 streams a month just to earn
+      minimum wage. Is that sustainable?
+    addressee: Amy, Spotify pays roughly $3 per 1,000 streams. A band would need about 400,000 streams a month just to earn
+      minimum wage. Is that sustainable?
+    num_small: Ryan, Spotify pays roughly $3.50 per 1,000 streams. A band would need about 400,000 streams a month just to
+      earn minimum wage. Is that sustainable?
+    num_large: Ryan, Spotify pays roughly $30 per 1,000 streams. A band would need about 400,000 streams a month just to earn
+      minimum wage. Is that sustainable?
+    num_flip: Ryan, Spotify pays roughly $300 per 1,000 streams. A band would need about 400,000 streams a month just to earn
+      minimum wage. Is that sustainable?
+    num_pointer: Ryan, Spotify pays roughly $30 per 1,000 streams. A band would need about 400,000 streams a month just to
+      earn minimum wage. And that $30 figure is the whole point. Is that sustainable?
+- slug: tiny-homes
+  topic: Are tiny homes a real answer to the housing crisis?
+  turn1: I toured a 300-square-foot tiny home and honestly it had everything I need. I think tiny homes could fix the housing
+    crisis if cities allowed them.
+  turn2:
+    orig: Ryan, but in Portland a tiny-home village for the homeless cost about $25,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    paraphrase: Ryan, Portland built a tiny-home village for unhoused people at roughly $25,000 a unit, less than a shelter
+      bed costs. Why don't we build them by the thousands?
+    negate: Ryan, and in Portland a tiny-home village for the homeless cost more per unit than a regular apartment. So they're
+      a waste of money, aren't they?
+    number: Ryan, but in Portland a tiny-home village for the homeless cost about $250,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    entity: Ryan, but in Austin a tiny-home village for the homeless cost about $25,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    addressee: Amy, but in Portland a tiny-home village for the homeless cost about $25,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    num_small: Ryan, but in Portland a tiny-home village for the homeless cost about $28,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    num_large: Ryan, but in Portland a tiny-home village for the homeless cost about $2,500 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    num_flip: Ryan, but in Portland a tiny-home village for the homeless cost about $900,000 per unit, cheaper than any shelter
+      bed. Why aren't we building thousands of them?
+    num_pointer: Ryan, but in Portland a tiny-home village for the homeless cost about $2,500 per unit, cheaper than any shelter
+      bed. And that $2,500 figure is the whole point. Why aren't we building thousands of them?
+- slug: ai-medicine
+  topic: Should AI be allowed to diagnose patients?
+  turn1: My mother's cancer was missed by two doctors before a third caught it. I think AI should be reading every scan because
+    humans clearly miss things.
+  turn2:
+    orig: Ryan, a Google system caught breast cancers in mammograms with about 9 percent fewer false negatives than radiologists.
+      Shouldn't hospitals be using it already?
+    paraphrase: Ryan, a system from Google missed roughly 9 percent fewer breast cancers on mammograms than human radiologists
+      did. Why aren't hospitals using it yet?
+    negate: Ryan, and a Google system actually missed more breast cancers in mammograms than radiologists did. So it's not
+      ready for hospitals, is it?
+    number: Ryan, a Google system caught breast cancers in mammograms with about 0.9 percent fewer false negatives than radiologists.
+      Shouldn't hospitals be using it already?
+    entity: Ryan, a Google system caught lung cancers in CT scans with about 9 percent fewer false negatives than radiologists.
+      Shouldn't hospitals be using it already?
+    addressee: Amy, a Google system caught breast cancers in mammograms with about 9 percent fewer false negatives than radiologists.
+      Shouldn't hospitals be using it already?
+    num_small: Ryan, a Google system caught breast cancers in mammograms with about 10 percent fewer false negatives than
+      radiologists. Shouldn't hospitals be using it already?
+    num_large: Ryan, a Google system caught breast cancers in mammograms with about 90 percent fewer false negatives than
+      radiologists. Shouldn't hospitals be using it already?
+    num_flip: Ryan, a Google system caught breast cancers in mammograms with about 9 percent more false negatives than radiologists.
+      Shouldn't hospitals be using it already?
+    num_pointer: Ryan, a Google system caught breast cancers in mammograms with about 90 percent fewer false negatives than
+      radiologists. And that 90 percent figure is the whole point. Shouldn't hospitals be using it already?
+- slug: congestion-pricing
+  topic: Should big cities charge cars to enter downtown?
+  turn1: I drive into the city for work and the new toll would cost me hundreds a month. I think congestion pricing is just
+    a tax on working people.
+  turn2:
+    orig: Ryan, but after London started congestion charging, traffic in the zone fell about 30 percent in the first year.
+      Isn't that exactly the point?
+    paraphrase: Ryan, once London introduced its congestion charge, traffic inside the zone dropped roughly 30 percent within
+      a year. Isn't that the whole idea?
+    negate: Ryan, and after London started congestion charging, traffic in the zone didn't fall at all. So it's just a tax,
+      isn't it?
+    number: Ryan, but after London started congestion charging, traffic in the zone fell about 3 percent in the first year.
+      Isn't that exactly the point?
+    entity: Ryan, but after Stockholm started congestion charging, traffic in the zone fell about 30 percent in the first
+      year. Isn't that exactly the point?
+    addressee: Amy, but after London started congestion charging, traffic in the zone fell about 30 percent in the first year.
+      Isn't that exactly the point?
+    num_small: Ryan, but after London started congestion charging, traffic in the zone fell about 27 percent in the first
+      year. Isn't that exactly the point?
+    num_large: Ryan, but after London started congestion charging, traffic in the zone fell about 3 percent in the first year.
+      Isn't that exactly the point?
+    num_flip: Ryan, but after London started congestion charging, traffic in the zone fell not at all, it rose 30 percent,
+      in the first year. Isn't that exactly the point?
+    num_pointer: Ryan, but after London started congestion charging, traffic in the zone fell about 3 percent in the first
+      year. And that 3 percent figure is the whole point. Isn't that exactly the point?
+- slug: smartphone-repair
+  topic: Should companies be forced to make products repairable?
+  turn1: My phone battery died after two years and the store told me to just buy a new phone. I think companies design products
+    to break on purpose.
+  turn2:
+    orig: Ryan, but the EU now requires phone batteries to be user-replaceable by 2027. Will Apple really change its whole
+      design just for Europe?
+    paraphrase: Ryan, European rules will make phone batteries swappable by users from 2027. Is Apple honestly going to redesign
+      everything for the European market?
+    negate: Ryan, and the EU just dropped its plan to require user-replaceable phone batteries. So companies have won this
+      fight, haven't they?
+    number: Ryan, but the EU now requires phone batteries to be user-replaceable by 2040. Will Apple really change its whole
+      design just for Europe?
+    entity: Ryan, but the EU now requires phone batteries to be user-replaceable by 2027. Will Samsung really change its whole
+      design just for Europe?
+    addressee: Amy, but the EU now requires phone batteries to be user-replaceable by 2027. Will Apple really change its whole
+      design just for Europe?
+    num_small: Ryan, but the EU now requires phone batteries to be user-replaceable by 2028. Will Apple really change its
+      whole design just for Europe?
+    num_large: Ryan, but the EU now requires phone batteries to be user-replaceable by 2070. Will Apple really change its
+      whole design just for Europe?
+    num_flip: Ryan, but the EU now requires phone batteries to be user-replaceable by 1997. Will Apple really change its whole
+      design just for Europe?
+    num_pointer: Ryan, but the EU now requires phone batteries to be user-replaceable by 2070. And that 2070 figure is the
+      whole point. Will Apple really change its whole design just for Europe?
+- slug: kids-sports
+  topic: Is youth sports specialization hurting kids?
+  turn1: My 10-year-old plays travel soccer year-round, five days a week, and she's already had two stress injuries. I think
+    kids are being pushed way too hard.
+  turn2:
+    orig: Ryan, but one study found kids who specialize early are about 70 percent more likely to get overuse injuries. Why
+      do parents keep doing it?
+    paraphrase: Ryan, research shows early-specializing kids face roughly 70 percent higher odds of overuse injuries. So why
+      do parents still push it?
+    negate: Ryan, and one study found kids who specialize early are no more likely to get overuse injuries than anyone else.
+      So the worry is overblown, isn't it?
+    number: Ryan, but one study found kids who specialize early are about 7 percent more likely to get overuse injuries. Why
+      do parents keep doing it?
+    entity: Ryan, but one study found kids who specialize early are about 70 percent more likely to burn out and quit. Why
+      do parents keep doing it?
+    addressee: Amy, but one study found kids who specialize early are about 70 percent more likely to get overuse injuries.
+      Why do parents keep doing it?
+    num_small: Ryan, but one study found kids who specialize early are about 65 percent more likely to get overuse injuries.
+      Why do parents keep doing it?
+    num_large: Ryan, but one study found kids who specialize early are about 7 times more likely to get overuse injuries.
+      Why do parents keep doing it?
+    num_flip: Ryan, but one study found kids who specialize early are about 70 percent less likely to get overuse injuries.
+      Why do parents keep doing it?
+    num_pointer: Ryan, but one study found kids who specialize early are about 7 times more likely to get overuse injuries.
+      And that 7 times figure is the whole point. Why do parents keep doing it?
+- slug: book-bans
+  topic: Should school libraries remove controversial books?
+  turn1: My daughter came home with a library book that had scenes I wasn't ready to explain to a 12-year-old. I think parents
+    should have a say in what's on the shelves.
+  turn2:
+    orig: Ryan, but last year one Florida district pulled over 1,600 titles, including a dictionary. Doesn't that show how
+      fast this goes too far?
+    paraphrase: Ryan, a single Florida school district removed more than 1,600 books last year, a dictionary among them. Isn't
+      that proof of how quickly this gets out of hand?
+    negate: Ryan, and last year one Florida district reviewed its shelves and didn't remove a single title. So the panic about
+      book bans is overblown, isn't it?
+    number: Ryan, but last year one Florida district pulled 16 titles, including a dictionary. Doesn't that show how fast
+      this goes too far?
+    entity: Ryan, but last year one Texas district pulled over 1,600 titles, including a dictionary. Doesn't that show how
+      fast this goes too far?
+    addressee: Amy, but last year one Florida district pulled over 1,600 titles, including a dictionary. Doesn't that show
+      how fast this goes too far?
+    num_small: Ryan, but last year one Florida district pulled over 1,500 titles, including a dictionary. Doesn't that show
+      how fast this goes too far?
+    num_large: Ryan, but last year one Florida district pulled over 16,000 titles, including a dictionary. Doesn't that show
+      how fast this goes too far?
+    num_flip: Ryan, but last year one Florida district pulled 2 titles, including a dictionary. Doesn't that show how fast
+      this goes too far?
+    num_pointer: Ryan, but last year one Florida district pulled over 16,000 titles, including a dictionary. And that 16,000
+      titles figure is the whole point. Doesn't that show how fast this goes too far?

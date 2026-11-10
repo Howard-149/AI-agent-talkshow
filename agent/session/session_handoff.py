@@ -790,6 +790,7 @@ async def speak_panel_line(
             role=speak_role,
             step=step,
             chars=len(text),
+            text=text,
             room=data.room_name,
         )
 

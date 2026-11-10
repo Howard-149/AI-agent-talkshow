@@ -40,3 +40,13 @@ cosyvoice-prompts/*.wav
 cosyvoice-prompts/**/*.wav
 !cosyvoice-prompts/README.md
 
+
+# Evaluation toolkit: generated files (eval/README.md)
+eval/data/public_set/build/
+eval/data/public_set/candidates_log.jsonl
+eval/data/public_set/review_todo.json
+eval/data/public_set/selection_stats.json
+eval/data/public_set/edit_stats.json
+eval/data/minimal_pairs/cond/
+eval/data/minimal_pairs/prefix/pfx-*.yaml
+.venv-pubdata/
