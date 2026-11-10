@@ -1,14 +1,20 @@
 """Addressee-aware floor (behind TALKSHOW_ADDRESSEE_FLOOR, default off).
 
 The benchmark showed the floor never follows the human's addressee: when the human asked one
-panelist by name, the other one answered first. This module detects the vocative; the floor
-hook that uses it lives with the free-floor choice.
+panelist by name, the other one answered first.
+
+Think & Action: every agent thinks on the human's line (silent / speak) and the free-floor
+controller (``ThinkActionInteraction.arbitrate_free``) picks a speaker. With the flag on, when the
+latest human turn names one panelist (no panelist has spoken since; host lines skipped) and that
+panelist chose "speak", they get the floor without asking the controller. If they chose silent, the
+choice is unchanged (nobody is forced to speak) and the miss is logged.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from typing import Any
 
 
 def addressee_floor_enabled() -> bool:
@@ -32,3 +38,23 @@ def addressed_role(text: str, names: dict[str, str]) -> str | None:
             hits.add(role)
     return next(iter(hits)) if len(hits) == 1 else None
 
+
+def addressed_after_human(
+    lines: list[Any],
+    panel_roles: list[str],
+    *,
+    host_role: str = "host",
+    names: dict[str, str] | None = None,
+) -> str | None:
+    """Panelist the latest human turn named, if no panelist has spoken since it (host lines skipped)."""
+    for line in reversed(lines):
+        if line.role_id == host_role:
+            continue
+        if line.role_id != "human":
+            return None  # a panelist already answered this human turn
+        if names is None:
+            from agent.config import load_persona_name
+
+            names = {r: load_persona_name(r) for r in panel_roles}
+        return addressed_role(line.text, names)
+    return None

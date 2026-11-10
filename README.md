@@ -154,11 +154,13 @@ Three panel fixes, all off by default. Turn them on in the repo-root `.env` (age
 | `TALKSHOW_ADDRESSEE_FLOOR=1` | If the human names a panelist ("Amy, what do you think?"), that panelist answers first. |
 | `TALKSHOW_UPTAKE_PLANNER=lite` + `TALKSHOW_PANEL_SCAFFOLD_FIX=1` | The first panel line after a human turn is pointed at what the human just said (their figures, names and stance), instead of the previous panelist. |
 | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete` + `TALKSHOW_PANEL_CONCRETE=1` | Style examples that carry facts, plus a rule asking for one concrete fact per line. |
-| `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. |
+| `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. Only for lines drafted by the worker (see below). |
+
+With the Think & Action floor, the selected panelist speaks the `content` of their own think call, so the fixes act there: the addressee rule in the free-floor choice (`ThinkActionInteraction.arbitrate_free`; a named panelist who chose silent is not forced to speak), and the other blocks at the end of each panelist's think prompt (`agent/panel/think_prompt.py`). The worker prompt keeps the same fixes for lines it still drafts (a selected panelist with no proposed reply). The uptake planner starts when the human line is committed and the panelists' think calls wait for it (at most 3 s), so with Think & Action it adds its own latency to the first reply instead of hiding behind a host reply.
 
 `deploy/arms/dialogue-quality.arms` has the current show (A), the recommended set without best-of (FAST, about +0.6 s on the slowest lines) and the full set (FULL), for `deploy/ghost-arms.sh`.
 
-In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on.
+In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on. These results were measured on the hand-raise floor before Think & Action and have not been re-measured on it yet.
 
 ## Teammate setup — laptop (one-time)
 
