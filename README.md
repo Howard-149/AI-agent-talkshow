@@ -435,9 +435,9 @@ Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interac
 
 ## UI data channels
 
-Agent → browser (`talkshow/ui`): `panel_roster`, `role_active`, `transcript`, `hand_raise`, `floor_grant`
+Agent → browser (`talkshow/ui`): `panel_roster`, `role_active`, `transcript`, `floor_grant`
 
-Browser → agent (`talkshow/control`): `hand_raise` (Raise hand button)
+Browser → agent (`talkshow/control`): `set_locale`. There is no Raise hand button: with Think & Action floor control a human takes the floor by speaking. The agent still accepts a legacy `hand_raise` message (the ghost test client sends it).
 
 See [talkshow-web/README.md](talkshow-web/README.md).
 

@@ -60,13 +60,6 @@ _HUMAN_FLOOR_TOPIC = (
     "You wanted {topic} — go ahead.",
 )
 
-_DIRECT_CALL_FALLBACK = (
-    "{name}, you're up — what would you like to add?",
-    "{name}, over to you — what are you thinking?",
-    "{name}, jump in — what's your take?",
-    "{name}, the floor is yours — anything to add?",
-)
-
 
 def host_intro_speaker_line(name: str) -> str:
     """Verbal grant before a panelist speaks."""
@@ -82,8 +75,3 @@ def host_human_floor_line(*, topic: str | None = None) -> str:
     if topic:
         return _pick("human_topic", _HUMAN_FLOOR_TOPIC).format(topic=topic)
     return _pick("human", _HUMAN_FLOOR)
-
-
-def host_direct_call_fallback_line(name: str) -> str:
-    """When Gemma fails to produce a direct-call line."""
-    return _pick("direct_fallback", _DIRECT_CALL_FALLBACK).format(name=name)

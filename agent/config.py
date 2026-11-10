@@ -176,7 +176,7 @@ def _raw_personality(persona_id: str) -> str:
 
 
 def load_persona_personality(persona_id: str) -> str:
-    """In-character personality for panel turns (speaking + hand-raise polls)."""
+    """In-character personality for panel turns (speaking + Think & Action decisions)."""
     other = _SWAP_PAIR.get(persona_id) if _PERSONA_SWAP else None
     if other is None:
         return _raw_personality(persona_id)

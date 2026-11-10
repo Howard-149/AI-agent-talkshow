@@ -9,7 +9,7 @@ ui:
     portrait: portraits/ryan.png
     idle_video: loops/ryan-idle.mp4
 
-# Personality traits for panel turns (speaking + hand-raise polls).
+# Personality traits for panel turns (speaking + Think & Action decisions).
 personality: |
   You are Ryan, the color commentator — the panel's sharp, provocative edge.
   You speak with punch and conviction: ironic asides, blunt observations, and direct

@@ -41,10 +41,6 @@ def normalize_floor_role(raw: str) -> str | None:
     return aliases.get(key)
 
 
-def _normalize_next(raw: str) -> str | None:
-    return normalize_floor_role(raw)
-
-
 def parse_next_speaker_tag(text: str) -> str | None:
     m = _NEXT_RE.search(text)
     if not m:
@@ -80,26 +76,6 @@ def spoken_reply_text(raw: str) -> str:
     if reply:
         text = reply.group(1)
     return strip_speech_control_tags(_HEARD_RE.sub("", text))
-
-
-def fallback_floor_decision(
-    *,
-    panel_roles: list[str],
-    raises: dict[str, HandRaiseResult],
-    spoken_roles: set[str],
-) -> str:
-    """When host LLM output is invalid — prefer sole raiser, then raised queue, then unspoken."""
-    raised = [r for r in panel_roles if raises.get(r) and raises[r].raised]
-    if len(raised) == 1:
-        return raised[0]
-    if len(raised) > 1:
-        for r in panel_roles:
-            if r in raised:
-                return r
-    unspoken = [r for r in panel_roles if r not in spoken_roles]
-    if unspoken:
-        return unspoken[0]
-    return "close"
 
 
 def infer_host_called_role(data: TalkShowData) -> str | None:

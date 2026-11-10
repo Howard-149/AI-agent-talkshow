@@ -697,21 +697,6 @@ class ThinkCheckpointTests(unittest.IsolatedAsyncioTestCase):
             decisions=[],
         )
 
-    def test_host_direct_call_repeats_spoken_roles_only_in_text_only_mode(self) -> None:
-        from agent.floor.host_direct_call import _host_call_candidates
-
-        panel_roles = ["guest", "commentator"]
-        spoken_roles = set(panel_roles)
-
-        self.assertEqual(
-            _host_call_candidates(panel_roles, spoken_roles, allow_repeat=True),
-            panel_roles,
-        )
-        self.assertEqual(
-            _host_call_candidates(panel_roles, spoken_roles, allow_repeat=False),
-            [],
-        )
-
     async def test_direct_trigger_is_structured(self) -> None:
         event = Mock()
         data = SimpleNamespace(

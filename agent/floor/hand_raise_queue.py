@@ -62,13 +62,6 @@ class HandRaiseQueue:
                 return entry
         return None
 
-    def clear_all(self) -> None:
-        self._entries.clear()
-
-    def clear_roles(self, roles: list[str]) -> None:
-        drop = {r.strip().lower() for r in roles}
-        self._entries = deque(e for e in self._entries if e.role not in drop)
-
     def has(self, role: str) -> bool:
         role = role.strip().lower()
         return any(e.role == role for e in self._entries)
