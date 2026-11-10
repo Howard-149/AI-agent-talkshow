@@ -1,6 +1,6 @@
 # Ghost session (automated talkshow smoke)
 
-Join LiveKit as a **silent human**, let the real worker run welcome + TTS + DyStream, then inject canned guest lines over `talkshow/control`. No laptop mic.
+Join LiveKit as the **human guest**, let the real worker run the show, and speak scripted guest turns into it. The floor is Think & Action: the guest never waits for a floor grant. Each turn is synthesized with CosyVoice from a recorded voice and played on a microphone track, so the worker hears it through VAD, barge-in and STT like a real guest, and `--record` captures the guest's voice too. Replay scripts and `--text-turns` send the text over `talkshow/control` instead (no audio, no STT, the exact words every run).
 
 This is an integration harness, not a pytest. The Babel stack (agent worker, vLLM, TTS, optional DyStream) must already be running.
 
@@ -38,17 +38,33 @@ Scripts: `scripts/smoke.yaml` (hiring-freeze debate, PAD stays near 0) and
 | Path | Real / skipped |
 |------|----------------|
 | Room join, `wait_for_remote_humans`, locale metadata | Real |
-| Session welcome, host grant, panel follow-ups | Real |
+| Opening, Think & Action floor, panel lines | Real |
 | Host + panelist Gemma `complete_text` | Real |
 | `speak_panel_line` → Piper/CosyVoice + DyStream | Real |
 | Session JSONL (`ghost_human_*`, panel, avatar) | Real |
-| Gemma **audio-in** / VAD / mic | Skipped (text inject) |
+| Human barge-in (VAD), endpointing, Gemma **audio-in** STT | Real (skipped for text turns) |
 
-With the Think & Action floor (the default worker) the human may speak at any time and the show sends no human floor
-grant, so the client injects each turn without waiting for one (`--floor-wait none`, the default; use `--beat-panel N`
-to let the show run N panel lines before each turn). `--floor-wait grant` restores the older raise-hand-and-wait flow.
+When a turn is spoken: a turn with `after_lines` cuts in when the script says (see Script format). A turn without it
+waits for the beat to end: `--beat-panel N` lets the show run N panel lines first, with `--quiet-sec` as the fallback.
 
-Opening-only (`--opening-only`) stops after welcome (and the human floor grant with `--floor-wait grant`). Default smoke script injects 3Q Test 1 (one human turn, then the panel).
+`--opening-only` joins, waits for the first agent line and holds. The default smoke script speaks 3Q Test 1 right
+after the host's opening.
+
+## The guest's voice
+
+Record yourself once (any quiet room, 16-bit wav) and put the files in `eval/ghost_session/voice/` (git-ignored: it is
+a person's voice; the repo is public), or point `GHOST_VOICE_DIR` at another folder:
+
+| File | What | Read |
+|------|------|------|
+| `Neutral.wav` (required) | calm, 12–15 s | "Hi, thanks for having me on the show tonight. I work in software, and I've been at the same company for about six years now. I'm curious to hear what the panel thinks about loyalty at work these days." |
+| `Anger.wav`, `Sadness.wav`, `Happiness.wav`, … (optional) | that emotion, 6–10 s | any short line in that mood |
+
+A turn with `emotion: Anger` uses `Anger.wav` as the reference when it exists, else `Neutral.wav`, plus the CosyVoice
+instruct for that emotion. Synthesis needs the CosyVoice sidecar (`COSYVOICE_SIDECAR_URL`), and the sidecar must be
+able to read the reference path, so on Babel keep the folder where compute nodes see it (e.g. `~/ghost_voice`, mode
+700). Turns are synthesized before joining and cached in `logs/ghost-voice-cache/`. A turn can name a recording
+instead with `audio: path/to.wav`.
 
 ## Run (Babel, recommended)
 
@@ -82,6 +98,10 @@ python -m eval.ghost_session            # new room per run; needs the Babel TALK
 
 JSONL still lands on Babel (`LOG_DIR`). Summarize there.
 
+The laptop cannot reach the CosyVoice sidecar, so spoken turns need their audio already in the cache: run the script
+once on Babel (it fills `logs/ghost-voice-cache/`) and copy that folder over, or name recordings with `audio:`, or use
+`--text-turns`.
+
 ## Script format
 
 See `eval/ghost_session/scripts/smoke.yaml`:
@@ -92,10 +112,14 @@ identity: ghost-guest
 turns:
   - text: >
       One guest paragraph the panel should answer.
-    topic: short queue topic
+    after_lines: 1      # cut in once this many agent lines started since the guest last spoke
+    when: line_end      # line_end: after that line finishes | mid_line: after_sec into it
+    after_sec: 0
+    emotion: Anger      # CosyVoice delivery; default Neutral
 ```
 
-`--script` can point at another YAML. Raise-hand happens on join so opening FIFO grants the human instead of a host direct-call.
+All four timing fields are optional; without `after_lines` the turn waits for the beat to end (above). A timed turn
+that has waited `max_wait_sec` (default 180) is spoken anyway. `--script` can point at another YAML.
 
 Replay scripts (the listening test, `eval/README.md`) add a saved show state to the first turn:
 
@@ -114,7 +138,7 @@ following the last turn.
 
 ## Record the frontend (no tab)
 
-Laptop only — `talkshow-web` is not synced to Babel. Playwright opens `/custom` as `ghost-viewer` (hidden on the panel), records the stage + transcript, and muxes LiveKit TTS audio into an MP4.
+Laptop only — `talkshow-web` is not synced to Babel. Playwright opens `/custom` as `ghost-viewer` (hidden on the panel), records the stage + transcript, and muxes the show audio plus the guest's spoken turns into an MP4.
 
 ```bash
 pip install livekit playwright pyyaml
@@ -124,6 +148,7 @@ python -m playwright install chromium   # venv Playwright, not the Node CLI
 python -m eval.ghost_session --record
 python -m eval.ghost_session --record --start-frontend
 python -m eval.ghost_session --record --opening-only --headed   # watch Chromium
+python -m eval.ghost_session --record --text-turns   # no voice reference / sidecar needed
 ```
 
 Output: `logs/ghost-recordings/ghost-<room>-<ts>.mp4` (printed as `RECORDING=...`). Needs `ffmpeg` on PATH to mux audio; otherwise you get video-only `.webm` plus a `.wav` sidecar.
