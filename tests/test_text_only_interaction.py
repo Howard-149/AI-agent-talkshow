@@ -95,6 +95,22 @@ class TextOnlyInteractionTests(unittest.TestCase):
         self.assertIn('text: "Actually disclosed wording."', text)
         self.assertNotIn("step:", text)
 
+    def test_human_and_rollback_events_have_no_persona_file(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from agent.telemetry.model_output_logger import ModelOutputLogger
+
+        with TemporaryDirectory() as directory:
+            output = ModelOutputLogger(Path(directory))
+            # A barge-in and its rollback: neither role has a config/personas/*.yaml.
+            output.event("human", "barge-in", speaker="guest", heard="Last Friday")
+            output.event("rollback", "rollback", lines=2)
+            text = _without_timestamps(output.path.read_text(encoding="utf-8"))
+
+        self.assertIn('[barge-in]\nspeaker: "Human guest"\nrole: "human"', text)
+        self.assertIn("[rollback]\nlines: 2", text)
+
     def test_event_headers_and_selection_block_spacing(self) -> None:
         from pathlib import Path
         from tempfile import TemporaryDirectory
