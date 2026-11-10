@@ -14,6 +14,7 @@ from agent.ui.control_events import CONTROL_TOPIC, parse_control_payload
 from agent.data import TalkShowData
 from agent.floor.floor_control import apply_floor_next, peek_floor_next
 from agent.floor.hand_raise_ui import dequeue_hand_raise
+from agent.interaction import playout_idle
 from agent.show_graph import run_host_moderation_from_queue
 from agent.session.session_lifecycle import (
     room_has_humans,
@@ -125,7 +126,7 @@ async def idle_topic_loop(
     *,
     room: rtc.Room,
 ) -> None:
-    """When quiet, host opens the hand-raise queue — no auto topic or direct call-outs."""
+    """When quiet, the host takes the floor back and the next speaker is selected."""
     if not controller.is_host_moderated_mode():
         return
     interval = 5
@@ -148,6 +149,14 @@ async def idle_topic_loop(
             )
             break
         if data.panel_chain_running or data.panel_followup_pending:
+            continue
+        if not playout_idle(data):
+            continue  # generated script is still being delivered
+        interaction = data.floor_interaction
+        if getattr(interaction, "human_floor_pending", False) or getattr(
+            interaction, "discussion_complete", False
+        ):
+            # The human is talking, or the host closed: wait for the human.
             continue
         if peek_floor_next(data) == "human":
             continue

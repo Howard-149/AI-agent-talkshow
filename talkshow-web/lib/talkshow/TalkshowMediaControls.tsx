@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * LiveKit ControlBar plus talkshow extras: settings drawer, transcript toggle, and hand raise.
+ * LiveKit ControlBar plus talkshow extras: settings drawer and transcript toggle.
  */
 import { ControlBar } from '@livekit/components-react';
 
@@ -16,8 +16,6 @@ type Props = {
   showTranscript: boolean;
   onToggleTranscript: () => void;
   transcriptCount: number;
-  handRaised: boolean;
-  onToggleHandRaise: () => void;
   viewerLocale: TalkshowLocale;
   onLocaleChange: (locale: TalkshowLocale) => void;
 };
@@ -29,8 +27,6 @@ export function TalkshowMediaControls({
   showTranscript,
   onToggleTranscript,
   transcriptCount,
-  handRaised,
-  onToggleHandRaise,
   viewerLocale,
   onLocaleChange,
 }: Props) {
@@ -82,15 +78,6 @@ export function TalkshowMediaControls({
         />
 
         <div className={styles.extraControls}>
-          <button
-            type="button"
-            className={`${styles.handToggle} ${handRaised ? styles.handToggleOn : ''}`}
-            aria-pressed={handRaised}
-            onClick={onToggleHandRaise}
-            title="Raise hand for the floor"
-          >
-            {handRaised ? '✋ Hand up' : '✋ Raise hand'}
-          </button>
           <button
             type="button"
             className={`${styles.transcriptToggle} ${showTranscript ? styles.transcriptToggleOn : ''}`}

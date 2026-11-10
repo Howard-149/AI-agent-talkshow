@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import logging
 import os
 import time
 import wave
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,6 +33,10 @@ def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -
     return buf.getvalue()
 
 
+def _takes_reasoning_effort(model: str) -> bool:
+    return model.strip().lower().startswith("gpt-6-luna")
+
+
 class GemmaMMClient:
     """vLLM OpenAI-compatible chat with audio_url multimodal input."""
 
@@ -45,6 +49,14 @@ class GemmaMMClient:
 
     def set_output_logger(self, output_logger: ModelOutputLogger) -> None:
         self._output_logger = output_logger
+
+    @property
+    def output_log_path(self) -> Path | None:
+        return self._output_logger.path if self._output_logger is not None else None
+
+    def log_text_only_event(self, role: str, kind: str, **fields: Any) -> None:
+        if self._output_logger is not None:
+            self._output_logger.event(role, kind, **fields)
 
     @property
     def active_persona_id(self) -> str:
@@ -174,8 +186,6 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
-        if self._output_logger is not None and output_role is not None:
-            self._output_logger.log(output_role, content)
 
         return parse_heard_reply(content)
 
@@ -189,12 +199,17 @@ class GemmaMMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         output_role: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> str:
         """Text-only turn with optional prior conversation as chat messages.
 
         ``raw=True`` returns the model output untouched so callers can parse
         control tags ([next]/[pad]/…). Otherwise a [reply]-formatted answer is
         reduced to its spoken reply, which strips those tags.
+
+        ``reasoning_effort`` is sent only to models that take it: callers pass "low"
+        for decisions (floor control, reactions, appraisals) and "none" for plain
+        spoken output. ``OPENAI_REASONING_EFFORT`` overrides it for every call.
         """
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(
@@ -202,12 +217,26 @@ class GemmaMMClient:
             history_messages=history_messages,
             tail_user=user_text,
         )
+        token_limit = max_tokens or self._cfg.max_tokens
+        openai_reasoning = os.environ.get("OPENAI_USE_MAX_COMPLETION_TOKENS") == "1"
+        if openai_reasoning:
+            # Reasoning models spend completion tokens on hidden reasoning first; the
+            # small budgets sized for Gemma's visible output make them fail with 400.
+            token_limit = max(
+                token_limit, int(os.environ.get("OPENAI_MIN_COMPLETION_TOKENS", "4096"))
+            )
         payload: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "max_tokens": max_tokens or self._cfg.max_tokens,
-            "temperature": 0.45 if temperature is None else temperature,
+            ("max_completion_tokens" if openai_reasoning else "max_tokens"): token_limit,
         }
+        effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() or (
+            reasoning_effort if _takes_reasoning_effort(self._cfg.model) else None
+        )
+        if openai_reasoning and effort:
+            payload["reasoning_effort"] = effort
+        if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
+            payload["temperature"] = 0.45 if temperature is None else temperature
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0
@@ -230,8 +259,6 @@ class GemmaMMClient:
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str):
             content = str(content)
-        if self._output_logger is not None and output_role is not None:
-            self._output_logger.log(output_role, content)
         text = content.strip()
         if raw:
             return text
@@ -240,57 +267,3 @@ class GemmaMMClient:
                 parsed = parse_heard_reply(text)
                 return parsed.reply or text
         return text
-
-    async def complete_tools(
-        self,
-        user_text: str,
-        *,
-        tools: list[dict[str, Any]],
-        system_prompt: str | None = None,
-        history_messages: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] = "required",
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-    ) -> tuple[str, list[tuple[str, dict[str, Any]]]]:
-        """Text turn with OpenAI-style tools → (content, [(tool name, arguments)]).
-
-        ``tool_choice="required"`` makes vLLM constrain the output to a tool call.
-        Unparsable arguments come back as ``{}``.
-        """
-        system = system_prompt if system_prompt is not None else self._system_prompt
-        messages = self._build_messages(
-            system,
-            history_messages=history_messages,
-            tail_user=user_text,
-        )
-        payload: dict[str, Any] = {
-            "model": self._cfg.model,
-            "messages": messages,
-            "tools": tools,
-            "tool_choice": tool_choice,
-            "max_tokens": max_tokens or self._cfg.max_tokens,
-            "temperature": 0.45 if temperature is None else temperature,
-        }
-        url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
-        headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
-        resp = await self._http.post(url, json=payload, headers=headers)
-        if resp.status_code >= 400:
-            logger.error(
-                "Gemma tools HTTP %s model=%s body=%.500s",
-                resp.status_code,
-                self._cfg.model,
-                resp.text,
-            )
-        resp.raise_for_status()
-        message = resp.json()["choices"][0]["message"]
-        calls: list[tuple[str, dict[str, Any]]] = []
-        for call in message.get("tool_calls") or []:
-            fn = call.get("function") or {}
-            args = fn.get("arguments") or {}
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except ValueError:
-                    args = {}
-            calls.append((str(fn.get("name") or ""), args if isinstance(args, dict) else {}))
-        return str(message.get("content") or "").strip(), calls

@@ -54,7 +54,7 @@ async def wait_event(state: ShowState, config: RunnableConfig) -> Command:
     """Pause the session graph until the driver resumes it with an event.
 
     Events (dicts with ``kind``):
-      opening  {text, texts}            welcome line, then moderate (session_start)
+      opening  {text, texts, topic}     welcome line, topic line, then moderate (session_start)
       human    {event: HumanEvent}      host reply + panel round
       moderate {trigger, skip_open_floor} host takes the floor (idle, …)
       panel    {trigger}                route on the current [next] tag
@@ -85,7 +85,24 @@ async def wait_event(state: ShowState, config: RunnableConfig) -> Command:
             update={**beat, "entry": "panel", "trigger": ev.get("trigger") or "panel"},
         )
     if kind == "opening":
-        line: LineSpec = {
+        topic = (ev.get("topic") or "").strip()
+        if ev.get("generated"):
+            # One generated host turn already welcomes and introduces the topic.
+            line: LineSpec = {
+                "role": state["listen_role"],
+                "text": ev.get("text") or "",
+                "step": "opening",
+                "kind": "welcome",
+                "procedural": False,
+                "topic": topic,
+            }
+            return Command(
+                goto="prepare_speak",
+                update={**beat, "entry": "moderate", "trigger": "session_start",
+                        "skip_open_floor": True, "line": line, "topic": "",
+                        "after": "moderate"},
+            )
+        line = {
             "role": state["listen_role"],
             "text": ev.get("text") or "",
             "step": "session_welcome",
@@ -96,10 +113,23 @@ async def wait_event(state: ShowState, config: RunnableConfig) -> Command:
         return Command(
             goto="prepare_speak",
             update={**beat, "entry": "moderate", "trigger": "session_start",
-                    "skip_open_floor": True, "line": line, "after": "moderate"},
+                    "skip_open_floor": True, "line": line, "topic": topic,
+                    "after": "announce_topic" if topic else "moderate"},
         )
     logger.warning("show session: unknown event kind=%r — ignored", kind)
     return Command(goto="wait_event")
+
+
+async def announce_topic(state: ShowState, config: RunnableConfig) -> Command:
+    """Opening: right after the welcome the host announces the topic."""
+    line: LineSpec = {
+        "role": state["listen_role"],
+        "text": state.get("topic") or "",
+        "step": "topic",
+        "kind": "topic",
+        "procedural": False,
+    }
+    return _say(line, "moderate")
 
 
 async def human_turn(state: ShowState, config: RunnableConfig) -> Command:
@@ -111,7 +141,8 @@ async def human_turn(state: ShowState, config: RunnableConfig) -> Command:
         return _finish(stopped=True)
     extra = [human_utt] if human_utt is not None else []
     if not (reply or "").strip():
-        logger.warning("human_turn: empty host reply — straight to floor routing")
+        # Think & Action floor: no host draft — the agents' arbitration picked a speaker.
+        logger.info("human_turn: no host reply — straight to floor routing")
         return Command(goto="panel_consume", update={"extra_utterances": extra})
     line: LineSpec = {
         "role": state["listen_role"],
@@ -131,10 +162,15 @@ async def panel_consume(state: ShowState, config: RunnableConfig) -> Command:
     act = _act(config)
     if act.should_stop():
         return _finish(stopped=True)
-    if state.get("turn_idx", 0) >= state.get("max_turns", 12):
+    turn_idx, max_turns = state.get("turn_idx", 0), state.get("max_turns", 12)
+    if turn_idx >= max_turns and not (
+        turn_idx == max_turns and act.grant_interrupt_grace_turn()
+    ):
         return Command(goto="close")
     nxt = act.consume_floor_next()
-    if nxt in state["panel_roles"]:
+    if nxt in state["panel_roles"] or (
+        getattr(act, "interval_floor_mode", False) and nxt == state["listen_role"]
+    ):
         return Command(
             goto="panelist_line",
             update={"next_role": nxt, "grant_reason": "next_tag"},
@@ -147,7 +183,10 @@ async def panel_consume(state: ShowState, config: RunnableConfig) -> Command:
 
 
 async def moderate(state: ShowState, config: RunnableConfig) -> Command:
-    """Host takes the floor back; open it for hand raises unless a queue exists."""
+    """Host takes the floor back, then the next speaker is selected.
+
+    Without interval floor control the host first announces an open floor
+    (skipped when a queue exists or right after the welcome)."""
     act = _act(config)
     if act.should_stop():
         return _finish(stopped=True)
@@ -163,11 +202,11 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
     if queue:
         logger.info("open floor skip queue=%s trigger=%s", queue, trigger)
         act.log("open_floor_skip", reason="queue_nonempty", trigger=trigger, queue=queue)
-        return Command(goto="hand_raise", update={"skip_open_floor": False})
-    if state.get("skip_open_floor") or act.llm_host():
-        # The LLM host's pick line opens the floor itself; a canned "Floor's open"
-        # first would only add dead air.
-        return Command(goto="hand_raise", update={"skip_open_floor": False})
+        return Command(goto="select_speaker", update={"skip_open_floor": False})
+    if state.get("skip_open_floor"):
+        return Command(goto="select_speaker", update={"skip_open_floor": False})
+    if getattr(act, "interval_floor_mode", False):
+        return Command(goto="select_speaker", update={"skip_open_floor": False})
     line: LineSpec = {
         "role": state["listen_role"],
         "text": act.open_floor_line(),
@@ -175,43 +214,40 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
         "kind": "open_floor",
         "procedural": True,
     }
-    # No-op unless TALKSHOW_POLL_DURING_OPEN_FLOOR=1.
-    act.prefetch_hand_raise_poll(state.get("turn_idx", 0))
-    return _say(line, "hand_raise")
+    return _say(line, "select_speaker")
 
 
-async def hand_raise(state: ShowState, config: RunnableConfig) -> Command:
-    """Poll / FIFO queue / host decision → who speaks next."""
+async def select_speaker(state: ShowState, config: RunnableConfig) -> Command:
+    """Free floor → who speaks next (Think & Action arbitration in production)."""
     act = _act(config)
     turn_idx = state.get("turn_idx", 0)
-    # A raised human hand gets the next pick — except at the first pick right after
-    # the human spoke, where one panelist answers them first. Enforced here, not left
-    # to the LLM host.
-    human_up = "human" in act.queue_roles()
-    just_spoke = turn_idx == 0 and state.get("entry") == "human"
-    pick = await act.hand_raise_round(
-        turn_idx,
-        list(state.get("spoken_roles") or []),
-        human_must_go=human_up and not just_spoke,
-    )
+    pick = await act.select_next_speaker(turn_idx, list(state.get("spoken_roles") or []))
     moderations = state.get("moderations", 0) + 1
     if act.should_stop():
         return _finish(stopped=True, moderations=moderations)
     role = pick.role or ""
     trigger = state.get("trigger") or "host_moderate"
-    if role in state["panel_roles"]:
+    is_panel_speaker = role in state["panel_roles"] or (
+        getattr(act, "interval_floor_mode", False) and role == state["listen_role"]
+    )
+    if is_panel_speaker:
         update = {"next_role": role, "grant_reason": pick.reason, "moderations": moderations}
         if pick.host_line:
-            # The host's own call-out is the intro (and is appraised).
+            # Nobody raised: the host's own call-out is the intro (and is appraised).
             line: LineSpec = {
                 "role": state["listen_role"],
                 "text": pick.host_line,
-                "step": f"direct_call_{pick.reason or 'no_raises'}_{turn_idx}",
+                "step": f"direct_call_no_raises_{turn_idx}",
                 "kind": "direct_call",
                 "procedural": False,
                 "target": role,
             }
             return _say(line, "panelist_line", **update)
+        if getattr(act, "interval_floor_mode", False) and (
+            role == state["listen_role"] or pick.reason == "opening_invite"
+        ):
+            # No canned intro for the host, or for the panelist the opening invited.
+            return Command(goto="panelist_line", update=update)
         intro: LineSpec = {
             "role": state["listen_role"],
             "text": act.intro_line(role),
@@ -224,16 +260,10 @@ async def hand_raise(state: ShowState, config: RunnableConfig) -> Command:
     if role == "human":
         return Command(
             goto="grant_human",
-            update={
-                "grant_reason": pick.reason or "queue_fifo",
-                "moderations": moderations,
-                "host_line": pick.host_line or "",
-            },
+            update={"grant_reason": pick.reason or "queue_fifo", "moderations": moderations},
         )
     if role == "close":
-        return Command(
-            goto="close", update={"moderations": moderations, "host_line": pick.host_line or ""}
-        )
+        return Command(goto="close", update={"moderations": moderations})
     return _finish(moderations=moderations)
 
 
@@ -263,27 +293,25 @@ async def panelist_line(state: ShowState, config: RunnableConfig) -> Command:
 
 async def grant_human(state: ShowState, config: RunnableConfig) -> Command:
     act = _act(config)
-    own = state.get("host_line") or ""
     line: LineSpec = {
         "role": state["listen_role"],
-        "text": own or act.human_floor_line(),
+        "text": act.human_floor_line(),
         "step": "grant_human",
         "kind": "grant_human",
         "reason": state.get("grant_reason") or "queue_fifo",
-        "procedural": not own,  # the LLM host's own line is appraised
+        "procedural": True,
     }
     return _say(line, "finish", outcome="human")
 
 
 async def close(state: ShowState, config: RunnableConfig) -> Command:
     act = _act(config)
-    own = state.get("host_line") or ""
     line: LineSpec = {
         "role": state["listen_role"],
-        "text": own or act.close_line(),
+        "text": await act.close_line(),
         "step": "close_round",
         "kind": "close",
-        "procedural": not own,
+        "procedural": True,
     }
     return _say(line, "finish", outcome="close")
 

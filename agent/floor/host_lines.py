@@ -40,7 +40,7 @@ _OPEN_FLOOR = (
     "Let's open the floor — who wants to weigh in?",
     "Floor's open — anyone want to jump in?",
     "Who wants to take this next?",
-    "I'm opening the floor — raise a hand if you've got something.",
+    "I'm opening the floor — jump in if you've got something.",
     "All right, open floor — who'd like to speak?",
     "Anyone care to weigh in? Floor's open.",
 )

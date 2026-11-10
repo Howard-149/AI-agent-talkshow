@@ -23,7 +23,7 @@ LineKind = Literal[
     "host_reply",  # host answers the human (graph entry "human")
     "open_floor",  # canned: "Floor's open — anyone want to jump in?"
     "intro",  # canned: "Amy, the floor is yours."
-    "direct_call",  # host names a panelist (LLM line: no raises, or the LLM host's pick)
+    "direct_call",  # host names a panelist when nobody raised (LLM line)
     "panelist",  # panelist line (LLM)
     "grant_human",  # canned: hand the mic back to the human
     "close",  # canned: wrap the panel round
@@ -32,12 +32,12 @@ LineKind = Literal[
 
 @dataclass(frozen=True)
 class FloorPick:
-    """Outcome of a hand-raise round: who speaks next and why."""
+    """Outcome of free-floor selection: who speaks next and why."""
 
     role: str | None
     reason: str
-    # The host's own LLM line for this pick (spoken and appraised): calling on a
-    # panelist when nobody raised, or the LLM host's line for any decision.
+    # Set when nobody raised and the host calls on someone directly: the line the
+    # graph must speak (as a host line, appraised) before that panelist.
     host_line: str | None = None
 
 
@@ -65,6 +65,7 @@ class LineSpec(TypedDict, total=False):
     target: str  # role the line hands the floor to (direct_call / intro)
     reason: str  # floor-grant reason (grant_human)
     texts: dict[str, str]  # pre-localized delivery texts (canned lines)
+    topic: str  # topic announcement a generated opening covers (logged as the topic)
 
 
 class HumanEvent(TypedDict, total=False):
@@ -97,8 +98,8 @@ class ShowState(TypedDict, total=False):
 
     next_role: str  # panelist the floor goes to next
     grant_reason: str
-    host_line: str  # LLM host line for grant_human / close (else the canned line)
     skip_open_floor: bool
+    topic: str  # host topic line spoken right after the welcome ("" = none)
     skip_intro: bool
 
     turn_idx: int  # panelist lines spoken this beat
@@ -150,7 +151,6 @@ def base_state(
         "after": "",
         "next_role": "",
         "grant_reason": "",
-        "host_line": "",
         "skip_open_floor": skip_open_floor,
         "skip_intro": False,
         "turn_idx": 0,
@@ -179,7 +179,6 @@ def beat_reset() -> dict[str, Any]:
         "after": "",
         "next_role": "",
         "grant_reason": "",
-        "host_line": "",
         "skip_open_floor": False,
         "skip_intro": False,
         "turn_idx": 0,

@@ -75,6 +75,34 @@ async def finalize_human_turn(
     return reply
 
 
+async def record_human_line(
+    data: TalkShowData,
+    *,
+    heard: str,
+    model_latency_s: float,
+    done_event: str = "gemma_stt_done",
+) -> None:
+    """Show graph: record and publish the human transcript (agents react to it next)."""
+    from agent.locale.localize import texts_for_needed_locales
+    from agent.show.show_history import append_human
+    from agent.ui.ui_events import emit_transcript
+
+    if heard:
+        append_human(data, heard, appraise=False)
+        human_texts = await texts_for_needed_locales(data, heard)
+        await emit_transcript("human", heard, step="human_turn", texts=human_texts)
+    data.last_human_heard = heard
+    if data.turn_log is not None:
+        data.turn_log.log(
+            done_event,
+            heard=heard,
+            model_latency_s=round(model_latency_s, 3),
+            room=data.room_name,
+            active_role=data.active_role,
+        )
+    logger.info("heard=%r", heard[:80])
+
+
 async def commit_human_turn(
     data: TalkShowData,
     *,
@@ -139,11 +167,6 @@ async def commit_human_turn(
 
     if graph:
         append_human(data, heard, appraise=False)
-        # Speaking uses up the human's raise; a raise left over from before the grant
-        # (e.g. a re-raise racing it) must not hand the floor straight back.
-        from agent.floor.hand_raise_ui import dequeue_hand_raise
-
-        await dequeue_hand_raise(data, "human")
     else:
         append_human(data, heard)
         append_role(data, "host", reply)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -9,18 +10,46 @@ from agent.config import load_config, load_scenario
 from agent.data import TalkShowData
 from agent.floor import TurnController
 from agent.floor.floor_control import apply_floor_next
-from agent.floor.host_floor import host_speak_session_welcome
+from agent.floor.host_floor import host_speak_opening
+from agent.interaction import ConsoleSpeechConsumer, ThinkActionInteraction
 from agent.panel.panel_speech import run_panel_round
 from agent.session.talkshow_runtime import build_runtime
 
 
-async def run_text_opening(data: TalkShowData, controller: TurnController) -> None:
-    """No human ever joins: run the host-moderated hand-raise/round-robin show on its own."""
-    await host_speak_session_welcome(None, data, controller)
+async def run_text_opening(
+    data: TalkShowData,
+    controller: TurnController,
+    human_inbox: asyncio.Queue[str] | None = None,
+) -> None:
+    """Run the host-moderated show in the console.
+
+    Agents talk on their own; a line put on ``human_inbox`` (the ``human`` control
+    command) interrupts the current speaker and the agents react to it. Once the
+    host has closed the discussion, the show waits for the next human line.
+    """
+    from agent.show_graph.runner import run_show_beat
+
+    human_inbox = human_inbox or asyncio.Queue()
+    await host_speak_opening(None, data, controller)
     apply_floor_next(data, "host")
 
+    interaction = data.floor_interaction
     while True:
-        await run_panel_round(None, data, controller)
+        if human_inbox.empty() and not interaction.discussion_complete:
+            await run_panel_round(None, data, controller)
+            continue
+        heard = (await human_inbox.get()).strip()
+        if not heard:
+            interaction.human_turn_abandoned()
+            continue
+        await run_show_beat(
+            None,
+            data,
+            controller,
+            entry="human",
+            trigger="after_human",
+            human_event={"heard": heard, "parsed": None, "done_event": "text_human_done"},
+        )
 
 
 class TextSessionManager:
@@ -41,6 +70,9 @@ class TextSessionManager:
 
         self.session_task: asyncio.Task | None = None
         self.session_id = 0
+        self.interaction: ThinkActionInteraction | None = None
+        self.data: TalkShowData | None = None
+        self.human_inbox: asyncio.Queue[str] = asyncio.Queue()
 
     def write_status(self, state: str) -> None:
         self.status_path.write_text(
@@ -82,17 +114,16 @@ class TextSessionManager:
             scenario=scenario,
             runtime=runtime,
         )
+        self.interaction = ThinkActionInteraction(ConsoleSpeechConsumer())
+        self.human_inbox = asyncio.Queue()
+        data.floor_interaction = self.interaction
 
         data.room_name = f"text-{session_id}"
+        self.data = data
 
         controller = TurnController(
             scenario,
             data,
-        )
-
-        data.ensure_panel_priority(
-            scenario.turn_control.order,
-            scenario.turn_control.listen_role,
         )
 
         controller.apply_listen_persona()
@@ -101,12 +132,16 @@ class TextSessionManager:
             await run_text_opening(
                 data,
                 controller,
+                self.human_inbox,
             )
         except asyncio.CancelledError:
             print(
                 f"\n=== text session {session_id} stopped ===",
                 flush=True,
             )
+            raise
+        except Exception:
+            logging.getLogger(__name__).exception("text session %s failed", session_id)
             raise
         finally:
             await runtime.gemma_client.aclose()
@@ -126,7 +161,20 @@ class TextSessionManager:
         except asyncio.CancelledError:
             pass
 
-    async def handle_command(self, command: str) -> None:
+    def submit_human(self, data: TalkShowData | None, text: str) -> None:
+        """A typed human line: take the floor now, the agents react once it is queued."""
+        if self.interaction is None or not self.session_task or self.session_task.done():
+            print("no text session running — human line ignored", flush=True)
+            return
+        if not text.strip():
+            return
+        self.interaction.human_turn_submitted(data)
+        self.human_inbox.put_nowait(text)
+
+    async def handle_command(self, command: str, payload: dict | None = None) -> None:
+        if command == "human":
+            self.submit_human(self.data, str((payload or {}).get("text") or ""))
+            return
         if command == "start":
             await self.start_session()
 
@@ -154,7 +202,7 @@ class TextSessionManager:
                     self.command_path.unlink()
 
                     await self.handle_command(
-                        payload["command"]
+                        payload["command"], payload
                     )
                 except Exception as exc:
                     print(

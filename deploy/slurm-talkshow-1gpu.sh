@@ -22,7 +22,7 @@
 #
 # Processes:
 #   1. vLLM
-#   2. agent.main with TEXT_ONLY=1
+#   2. agent.main with TALKSHOW_TEXT_ONLY=1
 #
 # No DyStream.
 # No CosyVoice.
@@ -96,7 +96,7 @@ if ((${#ALLOC_GPUS[@]} < 1)); then
 fi
 
 # Text-only mode is forced here even if .env contains another value.
-export TEXT_ONLY=1
+export TALKSHOW_TEXT_ONLY=1
 
 # One GPU means vLLM uses slot 0 inside the Slurm allocation.
 export VLLM_CUDA_DEVICE="${VLLM_CUDA_DEVICE:-0}"
@@ -106,7 +106,7 @@ conda activate "${ENV_TALKSHOW}"
 
 echo "talkshow env=${ENV_TALKSHOW}"
 echo "python=$(command -v python) $(python -V 2>&1)"
-echo "TEXT_ONLY=${TEXT_ONLY}"
+echo "TALKSHOW_TEXT_ONLY=${TALKSHOW_TEXT_ONLY}"
 echo "vLLM slot=${VLLM_CUDA_DEVICE}"
 echo "physical GPU=${ALLOC_GPUS[0]}"
 
@@ -132,7 +132,7 @@ echo "text-only talkshow job ${JOB_TAG}"
 echo "  CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "  physical GPU=${ALLOC_GPUS[0]}"
 echo "  conda=${ENV_TALKSHOW}"
-echo "  TEXT_ONLY=${TEXT_ONLY}"
+echo "  TALKSHOW_TEXT_ONLY=${TALKSHOW_TEXT_ONLY}"
 echo "  vLLM port=${VLLM_PORT}"
 echo "  logs -> ${LOG_DIR}"
 echo "=============================================="
@@ -238,6 +238,6 @@ echo "Starting text-only agent.main ..."
 # Keep the Slurm GPU visible to the agent process.
 export CUDA_VISIBLE_DEVICES="${SLURM_CVD}"
 
-# agent.main should branch on TEXT_ONLY=1 and must not initialize
+# agent.main should branch on TALKSHOW_TEXT_ONLY=1 and must not initialize
 # DyStream/CosyVoice in text-only mode.
 python -m agent.main dev 2>&1 | tee "${LOG_DIR}/agent.log"

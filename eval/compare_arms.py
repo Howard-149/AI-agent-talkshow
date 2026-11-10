@@ -32,9 +32,7 @@ except ImportError:  # run as a script: eval/ is on sys.path
     import gap_breakdown as gb  # type: ignore[no-redef]
 
 CAUSES = [c for c in gb.COMPONENTS if c not in ("endpoint", "translate")]
-# Lines between two panelists in a moderated handover. direct_call = the host's own
-# LLM line naming the next panelist (nobody raised, or the LLM host's pick).
-MODERATED = ("open_floor", "intro", "direct_call")
+MODERATED = ("open_floor", "intro")  # lines between two panelists in a moderated handover
 
 
 @dataclass
@@ -53,7 +51,7 @@ class ArmStats:
 
 def moderated_handovers(speech: list[gb.Speech], gaps: list[gb.Gap]) -> list[tuple[float, float, dict[str, float]]]:
     """(total s, silent s, silent s by cause) for each panelist → panelist handover
-    that goes through the host's open-floor / intro / direct-call lines only."""
+    that goes through the host's open-floor and/or intro lines only."""
     seq = [(gb.line_kind(s.step), s) for s in speech]
     out = []
     for i, (kind, sp) in enumerate(seq):
@@ -97,12 +95,8 @@ def add_session(arm: ArmStats, path: Path) -> None:
     arm.mid_line += [g.dur for g in gaps if g.kind == "mid_line"]
     for r in rows:
         e = r["event"]
-        if e in ("canned_cache_hit", "canned_cache_miss", "draft_ahead_used", "draft_ahead_dropped",
-                 "speak_ahead_dropped", "hand_raise_wait_start"):
+        if e in ("canned_cache_hit", "canned_cache_miss", "draft_ahead_used", "draft_ahead_dropped", "hand_raise_wait_start"):
             arm.counts[e] += 1
-        elif e == "speak_ahead_used":
-            arm.counts[e] += 1
-            arm.counts["speak_ahead_ready"] += bool(r.get("ready"))
         elif e == "avatar_bake" and r.get("gen_fps"):
             arm.gen_fps.append(float(r["gen_fps"]))
         elif e == "hand_raise_poll":
@@ -172,10 +166,8 @@ def main() -> None:
         )
 
     print("\n== Did each flag engage? (event counts)")
-    keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped",
-            "speak_ahead_used", "speak_ahead_ready", "speak_ahead_dropped", "hand_raise_wait_start"]
-    labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped",
-              "spoken ahead", "ahead ready", "ahead dropped", "empty waits"]
+    keys = ["canned_cache_hit", "canned_cache_miss", "poll_prefetched", "poll", "draft_ahead_used", "draft_ahead_dropped", "hand_raise_wait_start"]
+    labels = ["cache hits", "cache misses", "early polls", "polls", "drafts used", "drafts dropped", "empty waits"]
     print(f"{'arm':<10}  " + "  ".join(f"{h:>14}" for h in labels))
     for a in arms:
         print(f"{a.name:<10}  " + "  ".join(f"{a.counts.get(k, 0):>14}" for k in keys))
