@@ -6,7 +6,7 @@ Rules, no model:
   T2 right responder   systems that decide the floor (floor_action set): per (topic, addressee, rerun), did the
                        addressed panelist take the floor and the other one hold back?
   T3 follows the fact  does the reply state the edited value ("new"), the original value ("old"), both, or neither
-                       (fact_edit.follows); on fact_orig replies, how often the original values are stated
+                       (fact_edit.follows); on fact_orig_<n> replies, how often the original values are stated
   unsupported specifics  every reply: numbers, years, amounts and names that appear nowhere in what the panelist was
                        shown (the item's facts, the transcript, the audience line; eval/quality_ruler/specifics.py).
                        --pack adds the topic's whole fact pack as support.
@@ -116,7 +116,7 @@ def follows_fact(rows: list[dict], items: dict[str, Item]) -> dict:
         it = items[r["item_id"]]
         if it.task != "T3" or not r["text"]:
             continue
-        if it.version == "fact_orig":
+        if it.version.startswith("fact_orig"):
             for e in it.expected.get("edits", []):
                 orig[follows(r["text"], e["old_key"], e["new_key"])] += 1
         else:

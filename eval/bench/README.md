@@ -11,7 +11,7 @@ element of the input is edited, and a good reply should change with it (or shoul
 |---|---|---|---|
 | T1 listening | the audience line: a number, the stance, a named entity, a cause; a paraphrase as control | the panelist the line addresses | follows the edit; ignores the paraphrase |
 | T2 addressing | the audience line names panelist A or panelist B | both panelists | the named panelist answers, the other holds back |
-| T3 grounding | one number in one offered fact (up to 2 facts per topic, one at a time) | the addressed panelist | uses the fact as given |
+| T3 grounding | one number in the fact the audience asks about (up to 2 pairs per topic) | the addressed panelist | uses the fact as given |
 | T4 persona | the two panelists' persona cards are swapped | both panelists | sounds like the card it was given |
 | T5 hosting | (later) fixed reference panel, only the host varies | host | |
 | T6 full show | (later) a free multi-beat episode | all | |
@@ -19,8 +19,16 @@ element of the input is edited, and a good reply should change with it (or shoul
 T2 template: the audience line with its opening name removed, put to one panelist as `"{name}, {question}"`. Every
 generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`).
 
-T3 rule (`fact_edit.py`): the show offers its usual 6 facts for that turn; in reading order, the first number of a fact
-that can be edited is changed: years minus 10, percentages times 2 (divided by 2 if that would reach 100), other numbers
+T3 pairs (`build.py`): the facts to edit are taken, in the show's order, from the 6 facts it would offer for the
+original audience line (at most 2 per topic, from different Wikipedia pages). For each, the audience asks the
+panelist about the fact's subject, its page title without parentheses or numbers, with one of 4 fixed templates
+chosen by a seeded hash (e.g. "Ryan, what does the record actually say about Nuclear power? I want the specifics.").
+The question never contains a number and is the same on both sides of the pair. The panelist is offered 6 facts: that
+fact (original or edited) and the 5 facts from other pages the show ranks most relevant to the question (none holding
+the old or new value), with the fact at a seeded position. The two sides differ only in that one fact. The show's
+adapters show the same 6 facts in the show's own relevance order.
+
+T3 edit rule (`fact_edit.py`): the first number of the fact that can be edited is changed: years minus 10, percentages times 2 (divided by 2 if that would reach 100), other numbers
 times 2; units, currency and format are kept. Numbers inside names, ranges, ratios, dates and ages are skipped, and
 neither the old nor the new value may appear anywhere else the panelist sees. Implausible edits are dropped and the
 next editable number is tried: a number compared with another number of the same kind in its sentence ("rose to 91%
@@ -33,15 +41,16 @@ Example: "employers must pay minimum wage unless employees customarily receive m
 
 | split | topics | source | history before the audience line | items (T1 / T2 / T3 / T4) |
 |---|---|---|---|---|
-| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 473 (150 / 120 / 83 / 120) |
-| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 684 (243 / 168 / 105 / 168) |
+| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 482 (150 / 120 / 92 / 120) |
+| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 695 (243 / 168 / 116 / 168) |
 
 Test items start from the host's opening by choice: every test item must be rebuildable from committed data plus the
 public corpus, and a recorded show state (made by our own system) exists for only some test topics. So on test the
 audience member's line opens the discussion; on dev the panel has already discussed the topic.
 
 Dev has no cause edit. Test lacks the number edit on 2 topics and the entity edit on 7 (not applicable to the turn).
-T3 drops topics where no offered fact has an editable number (1 dev, 2 test).
+T3 has 46 pairs on 28 dev topics and 58 pairs on 37 test topics; a topic is dropped when no fact gives a usable pair
+(no editable number, or fewer than 5 facts from other pages).
 
 Reruns: 3 per item. Paired items share their sampling seed (seed = pair group, role, rerun), so the two sides of a pair
 differ only in the edit.
@@ -64,8 +73,8 @@ python -m eval.bench.build --split test --pack <fact pack json>   # needs eval/d
 ## Item format (one JSON object per line, `items.py`)
 
 `item_id`, `task`, `split`, `topic_id`, `topic`, `pair_group` (items that differ only in the edited element),
-`version` (`orig`, `paraphrase`, `number`, `stance`, `entity`, `cause`, `addr_commentator`, `addr_guest`, `fact_orig`,
-`fact_edit_1`, `fact_edit_2`, `persona_orig`, `persona_swap`), `is_control`, `role_under_test`, `personas`
+`version` (`orig`, `paraphrase`, `number`, `stance`, `entity`, `cause`, `addr_commentator`, `addr_guest`,
+`fact_orig_<n>`, `fact_edit_<n>`, `persona_orig`, `persona_swap`), `is_control`, `role_under_test`, `personas`
 (role: persona card text), `history` (`[{speaker, role, text, procedural?}]`, oldest first; role is host, commentator,
 guest or human), `audience_turn`, `fact_pack` (list of fact strings or null), `expected` (e.g. the addressee, the edited
 fact with its old and new value), `meta` (reference version of the pair, names, source, recorded show state).

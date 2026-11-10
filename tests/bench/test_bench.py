@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,9 +38,22 @@ FACTS = {
         "Under the Fair Labor Standards Act, employers must pay minimum wage unless employees receive more than $30 a "
         "month in tips.",
         "Tipping in restaurants is customary in the United States.",
+        "Many countries in Europe include service in the menu price.",
+        "Tip pooling shares tips among front and back of house staff.",
+        "Some restaurants have replaced tipping with a service charge.",
+        "Card readers now suggest tip amounts at the counter.",
     ],
 }
-PACK = {k: {"topic": k, "pages": [], "facts": [{"fact": f, "page": "p", "url": "u"} for f in v]} for k, v in FACTS.items()}
+# One page per fact, except two nuclear facts that share a page (only one of them may be offered with the other).
+PAGES = {
+    "nuclear-power": ["Energy in Germany", "Nuclear power in France", "Vogtle Electric Generating Plant",
+                      "Chernobyl disaster", "Energy in Ontario", "Capacity factor", "Nuclear power",
+                      "Nuclear power"],
+    "tipping": ["Tipped wage (United States)", "Fair Labor Standards Act of 1938", "Gratuity", "Service charge",
+                "Tip pooling", "Restaurant", "Point of sale"],
+}
+PACK = {k: {"topic": k, "pages": [], "facts": [{"fact": f, "page": PAGES[k][i], "url": "u"} for i, f in enumerate(v)]}
+        for k, v in FACTS.items()}
 
 
 class _Env(unittest.TestCase):
@@ -150,19 +164,38 @@ class BuilderTests(_Env):
         amy = next(i for i in t2 if i.version == "addr_guest" and i.topic_id == "tipping")
         self.assertEqual(amy.audience_turn, pairs["tipping"]["turn2"]["addressee"])  # the hand-written pair agrees
 
-    def test_t3_edits_are_offered_and_single(self) -> None:
+    def test_t3_pairs_target_the_edited_fact(self) -> None:
+        from agent.floor.addressee import addressed_role
+
         t3 = self.by(self.dev_items(), "T3")
         self.assertEqual({i.topic_id for i in t3}, set(TOPICS))
+        groups: dict = {}
         for it in t3:
-            if it.version == "fact_orig":
-                self.assertTrue(1 <= len(it.expected["edits"]) <= 2)
-                continue
-            orig = next(o for o in t3 if o.pair_group == it.pair_group and o.version == "fact_orig")
-            j = it.expected["fact_index"]
-            self.assertEqual(orig.fact_pack[j], it.expected["old_fact"])
-            self.assertEqual(it.fact_pack[j], it.expected["new_fact"])  # the edited fact is among those offered
-            self.assertEqual(sum(a != b for a, b in zip(orig.fact_pack, it.fact_pack)), 1)
-            self.assertIn(it.expected["new_value"], it.expected["new_fact"])
+            groups.setdefault(it.pair_group, {})[it.version.rsplit("_", 1)[0]] = it
+        self.assertGreaterEqual(len(groups), 2)
+        positions = set()
+        for g in groups.values():
+            orig, edit = g["fact_orig"], g["fact_edit"]
+            self.assertEqual(orig.meta["reference_version"], orig.version)
+            j = edit.expected["fact_index"]
+            positions.add(j)
+            # same question, no digit in it, put to the panelist under test
+            self.assertEqual(orig.audience_turn, edit.audience_turn)
+            self.assertIsNone(re.search(r"\d", orig.audience_turn))
+            self.assertEqual(addressed_role(orig.audience_turn, {"commentator": "Ryan", "guest": "Amy"}),
+                             orig.role_under_test)
+            page = orig.meta["fact_sources"][j]["page"]
+            self.assertIn(build.page_subject(page), orig.audience_turn)
+            # 6 facts, only the edited one from its page, the lists differ in that fact only
+            self.assertEqual(len(orig.fact_pack), 6)
+            self.assertEqual([s["page"] for s in orig.meta["fact_sources"]].count(page), 1)
+            self.assertEqual(sum(a != b for a, b in zip(orig.fact_pack, edit.fact_pack)), 1)
+            self.assertEqual(orig.fact_pack[j], edit.expected["old_fact"])
+            self.assertEqual(edit.fact_pack[j], edit.expected["new_fact"])
+            self.assertIn(edit.expected["new_value"], edit.expected["new_fact"])
+            self.assertEqual(orig.expected["edits"][0]["fact_index"], j)
+        self.assertEqual(build.page_subject("Fair Labor Standards Act of 1938"), "Fair Labor Standards Act")
+        self.assertEqual(build.page_subject("Tipped wage (United States)"), "Tipped wage")
         offered = build.offered_facts(str(self.pack), build.load_topics("dev", self.pairs_file(), build.DEV_PREFIX,
                                                                          "prefix")[1],
                                       yaml.safe_load(build.DEV_PAIRS.read_text())["topics"][1]["turn2"]["orig"])
@@ -315,22 +348,17 @@ class AdapterTests(_Env):
         want = think_request({**self.prefix(), "persona_swap": True}, "guest", human_text=swap.audience_turn)["messages"]
         self.assertEqual(self.prompt(systems.TalkshowThinkAction, swap), want)
 
-    def test_fact_items_match_the_show_with_its_pack(self) -> None:
-        """A fact_orig item offered to the show gives the prompt the show builds from the full pack itself."""
-        from eval.model_only import build_request
-        from eval.think_action_prompt import think_request
+    def test_fact_items_reach_the_show_as_given(self) -> None:
+        """The show offers exactly the item's facts (in its own relevance order), with its usual fact block."""
+        from agent.panel.fact_pack import HEADER
 
-        it = self.item("T3", "fact_orig")
-        with build._env(TALKSHOW_FACT_PACK=str(self.pack)):
-            want_w = build_request(self.prefix(), it.audience_turn, "commentator", False, live_fixes=True,
-                                   topic_id="nuclear-power")["messages"]
-            want_t = think_request(self.prefix(), "commentator", human_text=it.audience_turn,
-                                   topic_id="nuclear-power")["messages"]
-        self.assertIn("Checked facts on this topic", want_w[-1]["content"])
-        self.assertEqual(self.prompt(systems.TalkshowWorker, it), want_w)
-        self.assertEqual(self.prompt(systems.TalkshowThinkAction, it), want_t)
-        edited = self.item("T3", "fact_edit_1")
-        self.assertIn(edited.expected["new_fact"], self.prompt(systems.TalkshowWorker, edited)[-1]["content"])
+        for system in (systems.TalkshowWorker, systems.TalkshowThinkAction):
+            for version in ("fact_orig_1", "fact_edit_1"):
+                it = self.item("T3", version)
+                text = self.prompt(system, it)[-1]["content"]
+                block = text[text.index(HEADER):].split("\n")[1:]
+                shown = [line[2:] for line in block if line.startswith("- ")][:len(it.fact_pack)]
+                self.assertEqual(sorted(shown), sorted(it.fact_pack), (system.name, version))
 
     def test_plain_prompt(self) -> None:
         it = self.item("T3", "fact_edit_1")
@@ -429,7 +457,7 @@ class RunScoreTests(_Env):
         self.assertEqual((rr["n"], rr["right"], rr["p_speak_not_addressed"]), (4, 1.0, 0.0))
         rows = []
         for it in its.values():
-            if it.task == "T3" and it.version != "fact_orig":
+            if it.task == "T3" and it.version.startswith("fact_edit"):
                 rows.append({"item_id": it.item_id, "task": "T3", "rerun": 0,
                              "text": f"The number is {it.expected['new_value']}, believe it."})
         res = score.follows_fact(rows, its)

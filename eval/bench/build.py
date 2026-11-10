@@ -17,13 +17,15 @@ item must be rebuildable from committed data plus the public corpus.
 Tasks (README.md):
   T1 listening   the audience line, edited one element at a time; the addressed panelist answers
   T2 addressing  the same question put to each panelist by name (template below); both panelists are tested
-  T3 grounding   checked facts offered; one numeric fact edited by the rule in fact_edit.py
+  T3 grounding   the audience asks about one fact's subject; that fact (original or with one number edited by the
+                 rule in fact_edit.py) is offered among 6 facts
   T4 persona     the two panelists' persona cards swapped; both panelists are tested
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -60,8 +62,17 @@ T1_VERSIONS = (
 T2_TEMPLATE = "{name}, {question}"
 VOCATIVE = re.compile(r"^\s*(?:Ryan|Amy)\s*[,—–:\-]\s*")
 T3_MAX_EDITS = 2
+T3_OTHER_FACTS = 5
+SEED = 20261110  # seeds the T3 question template and the edited fact's position
+# T3: the audience asks about the edited fact's subject (its Wikipedia page title). No number in any template.
+T3_QUESTIONS = (
+    "What does the record actually say about {subject}? I want the specifics.",
+    "Can you walk me through the facts on {subject}?",
+    "I keep hearing about {subject}. What do we actually know?",
+    "Before we go further, what are the hard facts about {subject}?",
+)
 DROPPED: list[dict] = []  # implausible T3 edits seen by the last build (written to build/t3_dropped_<split>.jsonl)
-REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3": "fact_orig", "T4": "persona_orig"}
+REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3": "fact_orig_1", "T4": "persona_orig"}  # T3: per pair
 
 # The host's opening lines in the show (the first two lines of every recorded show state).
 OPENING = (
@@ -215,20 +226,46 @@ def _env(**kv: str | None) -> Iterator[None]:
                 os.environ[k] = v
 
 
-def offered_facts(pack_path: str, t: dict, audience: str) -> list[int]:
-    """Pack indices of the facts the show offers the panelist at this turn (agent/panel/fact_pack.pack_block, default
-    number of facts)."""
+def offered_facts(pack_path: str, t: dict, audience: str, k: int | None = None) -> list[int]:
+    """Pack indices of the facts the show offers the panelist at this turn (agent/panel/fact_pack.pack_block; k facts,
+    default the show's number), most relevant first."""
     from agent.panel.fact_pack import pack_block
     from eval.model_only import _data_for
 
-    with _env(TALKSHOW_FACT_PACK=pack_path, TALKSHOW_FACT_PACK_K=None, TALKSHOW_FACT_PACK_TOPIC=None):
+    with _env(TALKSHOW_FACT_PACK=pack_path, TALKSHOW_FACT_PACK_K=str(k) if k else None, TALKSHOW_FACT_PACK_TOPIC=None):
         data = _data_for(prefix_from_history(t["history"], t["show_state"]), audience)
         _block, info = pack_block(data, t["slug"])
     return list(info.get("fact_pack_offered") or [])
 
 
+def _hash(*parts: Any) -> int:
+    return int(hashlib.sha256(":".join(map(str, (SEED, *parts))).encode()).hexdigest()[:8], 16)
+
+
+def page_subject(page: str) -> str:
+    """A page title as the subject of a question: no parenthetical, no token with a digit ("Fair Labor Standards Act of
+    1938" -> "Fair Labor Standards Act")."""
+    title = re.sub(r"\s*\([^)]*\)", "", page or "").strip()
+    words = [w for w in title.split() if not re.search(r"\d", w)]
+    while words and words[-1].lower() in ("of", "in", "from", "to", "and", "the", "–", "-"):
+        words.pop()
+    return " ".join(words)
+
+
+def t3_question(subject: str, role: str, group: str) -> str:
+    """The audience question for a T3 pair: one of T3_QUESTIONS (by seeded hash of the pair), put to the panelist."""
+    q = T3_QUESTIONS[_hash(group, "question") % len(T3_QUESTIONS)].format(subject=subject)
+    if not q.startswith("I "):  # "I keep hearing" keeps its capital after the name
+        q = q[0].lower() + q[1:]
+    return T2_TEMPLATE.format(name=names()[role], question=q)
+
+
 def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> list[Item]:
+    """Per topic up to 2 pairs. A pair edits one numeric fact; the audience asks about that fact's page, and the panelist
+    is offered the fact (original or edited) plus the 5 most relevant facts from other pages, the fact at a seeded
+    position. The edited facts are taken, in the show's order, from the 6 facts it would offer for the original turn."""
     from eval.bench.fact_edit import edit_fact
+    from eval.quality_ruler.specifics import extract
 
     pack = json.loads(Path(pack_path).read_text(encoding="utf-8"))
     items, cards = [], persona_cards(False)
@@ -236,41 +273,64 @@ def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> li
         if t["slug"] not in pack:
             log["T3 skipped topic: not in the fact pack"] += 1
             continue
-        audience = t["turn2"]["orig"]
-        role = addressed(audience) or "commentator"
+        role = addressed(t["turn2"]["orig"]) or "commentator"
         facts = pack[t["slug"]]["facts"]
-        idx = offered_facts(pack_path, t, audience)
-        offered = [facts[i]["fact"].strip() for i in idx]
-        sources = [{"pack_index": i, "page": facts[i].get("page"), "url": facts[i].get("url")} for i in idx]
-        context = [t["topic"], audience, *(h["text"] for h in t["history"])]
-        edits = []
-        for j, fact in enumerate(offered):
-            if len(edits) == T3_MAX_EDITS:
+        context = [t["topic"], *(h["text"] for h in t["history"])]
+        pairs, pages_used = [], set()
+        for i in offered_facts(pack_path, t, t["turn2"]["orig"]):
+            if len(pairs) == T3_MAX_EDITS:
                 break
+            page = facts[i].get("page") or ""
+            subject = page_subject(page)
+            if not subject or page in pages_used:
+                continue
             dropped: list = []
-            got = edit_fact(fact, context + [f for k, f in enumerate(offered) if k != j], dropped)
+            got = edit_fact(facts[i]["fact"].strip(), context, dropped)
             for why, old_f, new_f in dropped:
                 log[f"T3 edit dropped as implausible: {why}"] += 1
                 DROPPED.append({"split": split, "topic_id": t["slug"], "reason": why, "fact": old_f, "edited": new_f})
-            if got:
-                edits.append((j, *got))
-        if not edits:
-            log["T3 skipped topic: no offered fact with an editable number"] += 1
+            if not got:
+                continue
+            new_fact, e = got
+            n = len(pairs) + 1
+            group = f"T3:{split}:{t['slug']}:{n}"
+            question = t3_question(subject, role, group)
+            # the other 5: most relevant to the question first, other pages only, neither value anywhere in them
+            others = []
+            for k in offered_facts(pack_path, t, question, k=len(facts)):
+                if len(others) == T3_OTHER_FACTS:
+                    break
+                if k == i or (facts[k].get("page") or "") == page:
+                    continue
+                keys = {s["key"] for s in extract(facts[k]["fact"])}
+                if e.old_key in keys or e.new_key in keys:
+                    continue
+                others.append(k)
+            if len(others) < T3_OTHER_FACTS:
+                log["T3 edit skipped: fewer than 5 facts from other pages"] += 1
+                continue
+            pos = _hash(group, "position") % (T3_OTHER_FACTS + 1)
+            idx = others[:pos] + [i] + others[pos:]
+            pages_used.add(page)
+            pairs.append((n, group, question, idx, pos, new_fact, e))
+        if not pairs:
+            log["T3 skipped topic: no usable pair (no editable number, or fewer than 5 facts from other pages)"] += 1
             continue
-        log[f"T3 topics with {len(edits)} edited fact(s)"] += 1
-        group = f"T3:{split}:{t['slug']}"
-        common = {"source": "turn2.orig", "fact_sources": sources}
-        items.append(_item("T3", split, t, "fact_orig", role, group, audience=audience, personas=cards,
-                           fact_pack=offered, meta=common,
-                           expected={"edits": [{"fact_index": j, "old_key": e.old_key, "new_key": e.new_key}
-                                               for j, _f, e in edits]}))
-        for n, (j, new_fact, e) in enumerate(edits, start=1):
-            pack_v = list(offered)
-            pack_v[j] = new_fact
+        log[f"T3 topics with {len(pairs)} pair(s)"] += 1
+        for n, group, question, idx, pos, new_fact, e in pairs:
+            offered = [facts[k]["fact"].strip() for k in idx]
+            sources = [{"pack_index": k, "page": facts[k].get("page"), "url": facts[k].get("url")} for k in idx]
+            common = {"source": "fact_page_question", "fact_sources": sources, "reference_version": f"fact_orig_{n}",
+                      "question_template": _hash(group, "question") % len(T3_QUESTIONS)}
+            edited = list(offered)
+            edited[pos] = new_fact
+            items.append(_item("T3", split, t, f"fact_orig_{n}", role, group, audience=question, personas=cards,
+                               fact_pack=offered, meta=common,
+                               expected={"edits": [{"fact_index": pos, "old_key": e.old_key, "new_key": e.new_key}]}))
             items.append(_item(
-                "T3", split, t, f"fact_edit_{n}", role, group, audience=audience, personas=cards, fact_pack=pack_v,
-                meta={**common, "fact_edit": {"fact_index": j, "start": e.start, "end": e.end}},
-                expected={"fact_index": j, "old_fact": offered[j], "new_fact": new_fact, "old_value": e.old,
+                "T3", split, t, f"fact_edit_{n}", role, group, audience=question, personas=cards, fact_pack=edited,
+                meta={**common, "fact_edit": {"fact_index": pos, "start": e.start, "end": e.end}},
+                expected={"fact_index": pos, "old_fact": offered[pos], "new_fact": new_fact, "old_value": e.old,
                           "new_value": e.new, "kind": e.kind, "old_key": e.old_key, "new_key": e.new_key}))
     return items
 
