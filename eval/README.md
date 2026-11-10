@@ -8,6 +8,9 @@ Two tools tell whether a change to the show helps:
 Both run on Babel with the SLURM wrappers below. Every tool also runs as `python -m eval.<tool>` from the repo root and
 has `--help`. A single "compare two versions" entry point is planned for a later change.
 
+The benchmark built on them (fixed items, any system, counterfactual pairs, hybrid scoring) is in
+`eval/bench/README.md`.
+
 ## Listening test
 
 We replay the same show up to one human turn, then change one detail of that turn and watch the reply.
