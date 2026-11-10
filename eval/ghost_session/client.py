@@ -229,6 +229,9 @@ class GhostRoomClient:
                 return
             self._seen.add(key)
             self.agent_lines += 1
+            # The worker announces a line's transcript before its audio starts: the
+            # line is on air from now until its playout goes idle.
+            self.speaking = True
             if role in ("guest", "commentator"):
                 self.panel_transcripts += 1
             self.first_line.set()
