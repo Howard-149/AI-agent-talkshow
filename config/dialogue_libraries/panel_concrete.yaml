@@ -1,0 +1,97 @@
+id: panel_concrete
+description: >
+  The production panel moves with CONCRETE examples: every panel example carries a specific
+  figure, name, place or case, on topics unrelated to the show's motions. Same moves, preamble and roles as panel.yaml.
+
+preamble: |
+  DIALOGUE STYLE REFERENCE ONLY — do not copy topics, A/B labels, or move names into [reply].
+  These examples teach rhetorical moves. Pick the move that fits your genuine stance:
+  - When you disagree with a claim on the table, use pushback examples as models — be direct;
+    the catalog is meant to sharpen challenge, not soften it.
+  - When you agree or want to extend, use collaborative examples — build the thread forward.
+  - Match move to stance, not to "keep the peace." A provocative guest claim deserves a clear pushback line when you disagree.
+  - Notice that every good example names something concrete — a number, a place, a person, a specific case.
+  - Wait for your turn; do not interrupt the host's floor control.
+
+moves:
+  - id: build_on
+    label: Build on
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Bike lanes changed how people get around Paris.
+      B: Exactly — and the Rue de Rivoli now carries more bikes than cars at rush hour.
+
+  - id: agree_extend
+    label: Agree and extend
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Vaccination campaigns work when trust is high.
+      B: I agree, and Portugal shows it — over 98 percent of adults were vaccinated once the navy admiral took over.
+
+  - id: add_angle
+    label: Add angle
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Everyone focuses on what the stadium cost.
+      B: Another way to look at it: the neighbourhood lost its only grocery store when the lots were cleared.
+
+  - id: invite
+    label: Invite
+    tone: collaborative
+    roles: [commentator, guest]
+    example: |
+      A: Four-hour flights are cheaper than the train now.
+      B: Right — I'd love to hear whether a 40-euro Madrid–Barcelona train ticket would change anyone's mind.
+
+  - id: challenge
+    label: Challenge
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: The new curriculum is clearly working.
+      B: If it's working, why did reading scores in the pilot schools drop four points last spring?
+
+  - id: pushback
+    label: Pushback
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: The real issue is much broader than one factory closing.
+      B: Maybe, but 1,200 jobs in a town of 9,000 isn't a side issue — that doesn't answer my question.
+
+  - id: reframe
+    label: Reframe
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: We could argue about the 2008 bailout all day.
+      B: Fair enough, but the question is what the next bank failure costs taxpayers, not the last one.
+
+  - id: concede
+    label: Concede
+    tone: pushback
+    roles: [commentator, guest]
+    example: |
+      A: Rents in Lisbon have doubled in ten years.
+      B: I'll grant you that figure, but short-term rentals are under 10 percent of the stock, so they can't be the whole cause.
+
+  - id: moderate
+    label: Moderate
+    tone: host
+    roles: [host]
+    example: |
+      A: That's completely ridiculous.
+      B: No, you're the one being ridiculous.
+      Host: One at a time. Let's hear the full argument before responding.
+
+  - id: humor
+    label: Humor
+    tone: host
+    roles: [host]
+    example: |
+      A: You're wrong.
+      B: No, you're wrong.
+      Host: Great. We've reached the stage where everyone is equally unhappy.

@@ -351,6 +351,9 @@ class ThinkActionInteraction(TextOnlyInteraction):
             if role in self.actions and self.actions[role].decision == "speak"
         ]
         candidate_roles = {item["role"] for item in candidate_payload}
+        directed = self._addressee_pick(data, history, candidate_payload, interval)
+        if directed is not None:
+            return directed
         invited_role = self.pending_invitation_target
         recent_fallbacks = self.fallback_history[-4:]
         participant_counts = {
@@ -526,6 +529,62 @@ class ThinkActionInteraction(TextOnlyInteraction):
                 }
                 if outcome.decision == "host_fallback" else None
             ),
+            candidates=candidate_payload,
+        )
+        return outcome
+
+    def _addressee_pick(
+        self,
+        data: Any,
+        history: Any,
+        candidate_payload: list[dict[str, Any]],
+        interval: int,
+    ) -> FloorOutcome | None:
+        """TALKSHOW_ADDRESSEE_FLOOR (default off): the panelist the human just named takes the
+        free floor without a controller call, if their own decision was "speak". A named
+        panelist who chose silent is not forced to speak: the controller decides as usual."""
+        from agent.floor.addressee import addressed_after_human, addressee_floor_enabled
+
+        if not addressee_floor_enabled() or history is None:
+            return None
+        host_role = data.scenario.turn_control.listen_role
+        panel_roles = [role for role in self._floor_roles(data) if role not in {host_role, "human"}]
+        addressed = addressed_after_human(history.lines, panel_roles, host_role=host_role)
+        if addressed is None:
+            return None
+        action = self.actions.get(addressed)
+        picked = any(item["role"] == addressed for item in candidate_payload)
+        data.runtime.gemma_client.log_text_only_event(
+            "floor",
+            "addressee",
+            addressed_role=addressed,
+            decision=action.decision if action is not None else None,
+            picked=picked,
+        )
+        if not picked:
+            logger.info("addressee floor: %s was named but did not choose speak", addressed)
+            return None
+        outcome = FloorOutcome(
+            "speak",
+            selected_role=addressed,
+            reason="The human guest addressed this panelist by name.",
+            reason_code="directed_response",
+        )
+        self.host_fallback_streak = 0
+        self.host_fallback_instruction = None
+        self.host_fallback_strategy = None
+        self.host_fallback_target = None
+        self.pending_invitation_target = None
+        self.last_floor_outcome = outcome
+        data.runtime.gemma_client.log_text_only_event(
+            "floor",
+            f"floor control - interval {interval}",
+            floor_state="free",
+            decision=outcome.decision,
+            selected_role=outcome.selected_role,
+            reason=outcome.reason,
+            reason_code=outcome.reason_code,
+            host_fallback=None,
             candidates=candidate_payload,
         )
         return outcome
@@ -1273,6 +1332,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
     ) -> Action | None:
         from agent.config import load_persona_name
         from agent.panel.panel_prompts import panelist_personality_block
+        from agent.panel.think_prompt import think_prompt_additions
 
         prompt = (
             f"You are {load_persona_name(role)} ({role}).\n"
@@ -1330,6 +1390,13 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "For silent: intent and content must be null. For speak/interrupt: both are required. "
             "Interrupt is valid only while occupied; speak is valid only when free."
         )
+        # Dialogue quality fixes for panelists (flags default off: nothing is added).
+        extra, extra_info = await think_prompt_additions(data, role, history)
+        prompt += extra
+        if extra_info:
+            data.runtime.gemma_client.log_text_only_event(
+                role, f"think additions - interval {checkpoint}", **extra_info
+            )
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
             system_prompt=panelist_personality_block(role),

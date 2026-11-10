@@ -137,6 +137,10 @@ async def _run_ghost_human_turn_locked(
     from agent.show.show_context import host_text_user_hint
 
     await await_pending_appraisal(data, "host")
+    # Uptake planner (no-op unless TALKSHOW_UPTAKE_PLANNER): runs alongside the host reply.
+    from agent.panel.uptake import start_uptake_plan
+
+    start_uptake_plan(data, heard)
     user_hint = f"{host_text_user_hint(heard)}\n\n{mood_prompt_block(data, 'host')}"
     hist = data.show_history.prior_messages(perspective=controller.listen_role())
     t0 = time.monotonic()
