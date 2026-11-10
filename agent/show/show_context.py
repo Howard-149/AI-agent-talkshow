@@ -57,43 +57,19 @@ def host_after_human_card(scenario) -> str:
         you=host,
         you_role="host / moderator",
         just_spoke="the human guest",
-        up_next="host moderates — panelists may raise hands; you grant the floor",
+        up_next="the show picks who speaks next; panelists ask for the floor",
         human_floor="frozen",
-    ) + (
-        f"\nYour beat: 1–2 sentences to the ROOM.\n"
-        f"- Name a panelist ({panel}) to speak next → matching [next:<role>]\n"
-        f"- Open floor for volunteers → [next:host]"
-    )
+    ) + f"\nYour beat: 1–2 sentences to the ROOM; you may name a panelist ({panel})."
 
 
 def host_audio_user_hint() -> str:
-    from agent.config import load_scenario
-    from agent.emotion import emotion_source, mood_output_block
-
-    scenario = load_scenario()
-    panel_roles = panel_speaker_roles(scenario)
-    tags = next_tag_options(panel_roles, include_host=True) + " | human | close"
-    mood_rule = (
-        "[reply] must acknowledge what the human raised and match your current affect "
-        "(see mood / PAD block). Not a 1-on-1 interview."
-        if emotion_source() != "llm"
-        else (
-            "[reply] must acknowledge what the human raised and match your [emotion]. "
-            "Not a 1-on-1 interview."
-        )
-    )
+    """Mic turn: transcribe the human's audio. Think & Action decides who answers, so no
+    host reply is drafted here."""
     return (
-        f"{host_after_human_card(scenario)}\n\n"
-        "Listen to the human's audio. Output exactly:\n"
-        "[heard]: <transcript>\n"
-        "[reply]: <short host tee-up to the room>\n"
-        f"[next]: {tags}\n"
-        f"{mood_output_block()}\n"
-        "[next] rules:\n"
-        "- You named a panelist to speak next → their role id\n"
-        "- Open floor, no one picked → host (panel raises hands)\n"
-        "- If [reply] names someone but you forget the tag, the show may still route from your tee-up\n"
-        f"{mood_rule}"
+        "Listen to the human guest's audio, including tone and pacing, and transcribe "
+        "what they said.\n"
+        "Output exactly one line:\n"
+        "[heard]: <verbatim English transcript>"
     )
 
 
@@ -124,7 +100,7 @@ def host_text_user_hint(human_text: str) -> str:
         f"{mood_output_block()}\n"
         "[next] rules:\n"
         "- You named a panelist to speak next → their role id\n"
-        "- Open floor, no one picked → host (panel raises hands)\n"
+        "- Open floor, no one picked → host\n"
         "- If [reply] names someone but you forget the tag, the show may still route from your tee-up\n"
         f"{mood_rule}"
     )
@@ -185,10 +161,9 @@ PANEL SHOW — floor awareness (not a rule list; keep the scene coherent):
 
 You are {host}, moderator. This is a recorded panel, not a private chat with the human.
 
-After the human speaks, you tee up the room; panelists ({panel}) join via hand-raise queue
-and your grants — order is NOT fixed. Until you return the floor, the human is listening.
-
-{host_after_human_card(scenario)}
+The panelists ({panel}) ask for the floor and the show picks who speaks; the order is NOT
+fixed. You speak when the show gives you the floor: to open, to steer, or to close.
+The human guest may speak at any time.
 """.strip()
 
 
