@@ -30,6 +30,7 @@ class _RecordingClient:
     def __init__(self, plan: str) -> None:
         self.plan = plan
         self.requests: list[dict[str, Any]] = []
+        self.events: list[tuple[str, str, dict[str, Any]]] = []
 
     async def complete_text(self, prompt: str, **kw: Any) -> str:
         from agent.panel.uptake import PLANNER_SYSTEM
@@ -39,11 +40,11 @@ class _RecordingClient:
         self.requests.append({"prompt": prompt, **kw})
         return "{}"
 
-    def log_text_only_event(self, *args: Any, **kwargs: Any) -> None:
-        return None
+    def log_text_only_event(self, role: str, kind: str, **fields: Any) -> None:
+        self.events.append((role, kind, fields))
 
 
-def _data_for(prefix: dict, human_text: str | None, plan: str) -> Any:
+def _data_for(prefix: dict, human_text: str | None, plan: str, topic_id: str | None = None) -> Any:
     from agent.config import load_scenario
     from agent.data import TalkShowData
     from agent.session.ghost_replay import apply_prefix
@@ -51,6 +52,7 @@ def _data_for(prefix: dict, human_text: str | None, plan: str) -> Any:
     data = TalkShowData(scenario=load_scenario(), runtime=None)  # type: ignore[arg-type]
     data.room_name = "think-action-offline"
     data.turn_log = None
+    data.fact_pack_topic = topic_id  # read by the fact pack block (TALKSHOW_FACT_PACK)
     apply_prefix(data, {k: v for k, v in prefix.items() if k not in ("persona_swap", "flags")})
     if human_text is not None:
         data.show_history.append("human", human_text)
@@ -74,6 +76,7 @@ def think_request(
     human_text: str | None = None,
     plan: str = "",
     interval_text: str | None = None,
+    topic_id: str | None = None,
 ) -> dict[str, Any]:
     """The think call ``role`` makes on a free floor after the last turn of ``prefix`` (+ ``human_text`` if given).
 
@@ -81,6 +84,7 @@ def think_request(
     GemmaMMClient sends (system + history, the instruction folded into a trailing user turn).
     ``plan``: the uptake planner's output for the human line (used only when TALKSHOW_UPTAKE_PLANNER is on).
     ``interval_text``: override the final interval of a panel line (default: split as the live show does).
+    ``topic_id``: the fact pack topic (TALKSHOW_FACT_PACK); "fact_pack" in the result has the facts offered.
     """
     from agent.adapters.gemma_mm_client import GemmaMMClient
     from agent.config import set_persona_swap
@@ -89,7 +93,7 @@ def think_request(
 
     set_persona_swap(bool(prefix.get("persona_swap")))
     try:
-        data = _data_for(prefix, human_text, plan)
+        data = _data_for(prefix, human_text, plan, topic_id)
         lines = [line for line in data.show_history.lines if not line.procedural]
         if not lines:
             raise ValueError("think_request needs at least one spoken line to react to")
@@ -118,7 +122,9 @@ def think_request(
         history_messages=req["history_messages"],
         tail_user=req["prompt"],
     )
+    additions = next((f for _r, kind, f in data.runtime.gemma_client.events if kind.startswith("think additions")), {})
     return {
+        "fact_pack": {k: v for k, v in additions.items() if k.startswith("fact_pack")},
         "messages": messages,
         "temperature": req["temperature"],
         "max_tokens": req["max_tokens"],

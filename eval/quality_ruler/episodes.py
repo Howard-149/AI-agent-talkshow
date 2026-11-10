@@ -264,12 +264,14 @@ def generate(args) -> None:
                     # Live, the speaker's content comes from its think on the previous turn, before the tee-up.
                     before = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
                                          "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
-                    think = think_request(before, role, plan=e["fact_plan"].get(beat, ""))
+                    think = think_request(before, role, plan=e["fact_plan"].get(beat, ""), topic_id=e["topic_id"])
                 e["lines"].append({"role": "host", "speaker": "Lessac", "procedural": True,
                                    "text": rng.choice(_INTRO_SPEAKER).format(name=NAMES[role])})
                 prefix = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
                                      "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
                 if think_path:
+                    if think.get("fact_pack"):
+                        think["think_fact_pack"] = {"line": len(e["lines"]), **think["fact_pack"]}
                     think["fallback"] = build_request(prefix, "", role, False, include_human=False, live_fixes=live,
                                                       plan=e["fact_plan"].get(beat, "") if live else "",
                                                       topic_id=e["topic_id"])
@@ -323,6 +325,8 @@ def generate(args) -> None:
                         if r.get("fact_pack"):
                             eps[i].setdefault("fact_pack", []).append({"line": len(eps[i]["lines"]), **r["fact_pack"]})
                 for i, (e, line) in enumerate(zip(eps, spoken)):
+                    if i not in redo and reqs[i].get("think_fact_pack"):
+                        e.setdefault("fact_pack", []).append(reqs[i]["think_fact_pack"])
                     e["lines"].append({"role": role, "speaker": NAMES[role], "text": line or "…",
                                        "source": "worker_fallback" if i in redo else "think"})
                 print(f"[think_action] beat {beat} step {step} done ({len(eps)} episodes, "

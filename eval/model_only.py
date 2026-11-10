@@ -229,14 +229,15 @@ def _items(topics_filter: str = "", roles: tuple[str, ...] = ("commentator", "gu
                 yield t, prefix, cond, text, role
 
 
-def build_think_request(prefix: dict, human_text: str, role: str, persona_swap: bool, plan: str = "") -> dict:
+def build_think_request(prefix: dict, human_text: str, role: str, persona_swap: bool, plan: str = "",
+                        topic_id: str | None = None) -> dict:
     """Think & Action: the think call ``role`` makes on the edited human turn (eval/think_action_prompt.py)."""
     from eval.think_action_prompt import think_request
 
     p = dict(prefix)
     if persona_swap:
         p["persona_swap"] = True
-    req = think_request(p, role, human_text=human_text, plan=plan)
+    req = think_request(p, role, human_text=human_text, plan=plan, topic_id=topic_id)
     req["panel_roles"] = ["commentator", "guest"]
     return req
 
@@ -258,12 +259,10 @@ def cmd_trace(args: argparse.Namespace) -> None:
 
         plan = PLAN_PLACEHOLDER if uptake_planner_enabled() else ""
 
-        def builder(prefix, text, role, swap):  # noqa: F811
-            return build_think_request(prefix, text, role, swap, plan=plan)
     for t, prefix, cond, text, role in _items(slug, roles=("guest",) if args.guest else ("commentator",),
                                               conditions=conds, pairs=args.pairs):
-        if args.path == "think_action":
-            req = builder(prefix, text, role, cond == "persona_swap")  # flags from the arm (apply_env) or the env
+        if args.path == "think_action":  # flags from the arm (apply_env) or the environment
+            req = build_think_request(prefix, text, role, cond == "persona_swap", plan=plan, topic_id=t["slug"])
         elif arm.get("live_flags"):
             # No model on this path: the planner output is a marked placeholder.
             req = build_request(prefix, text, role, cond == "persona_swap", live_fixes=True, topic_id=t["slug"],
@@ -436,7 +435,8 @@ def generate_think_action(args: argparse.Namespace) -> None:
         plans = {x: clean(o.outputs[0].text) for x, o in zip(texts, outs)}
     items, convs = [], []
     for t, prefix, cond, text, role in rows:
-        req = build_think_request(prefix, text, role, cond == "persona_swap", plan=plans.get(text, ""))
+        req = build_think_request(prefix, text, role, cond == "persona_swap", plan=plans.get(text, ""),
+                                  topic_id=t["slug"])
         for k in range(args.k):
             items.append((t, cond, k, role, text, req))
             convs.append(req["messages"])
@@ -459,6 +459,7 @@ def generate_think_action(args: argparse.Namespace) -> None:
                 "slug": t["slug"], "topic": t["topic"], "cond": cond, "k": k, "pos": 1, "role": role, "text": line,
                 "heard": text, "between": [], "decision": decision,
                 "log": f"{tag}/think_action/{t['slug']}/{cond}/{role}/{k}",
+                **({"fact_pack": req["fact_pack"]} if req.get("fact_pack") else {}),
             }, ensure_ascii=False) + "\n")
     print(f"[{args.model} | think_action | {args.arm or 'flags from the environment'}] generated {len(items)} items ({n_silent} without a spoken line) → "
           f"{out}/lines.jsonl")

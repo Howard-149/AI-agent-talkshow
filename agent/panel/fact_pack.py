@@ -176,9 +176,9 @@ def select_facts(facts: list[dict], query: str, panel_lines: list[str], k: int) 
     return sorted(range(len(facts)), key=key)[:k]
 
 
-def query_text(data: Any) -> str:
-    """Latest human turn plus the last 2 lines of the show."""
-    hist = data.show_history
+def query_text(data: Any, history: Any = None) -> str:
+    """Latest human turn plus the last 2 lines of the show (``history``: default the show's)."""
+    hist = history if history is not None else data.show_history
     last = [ln.text for ln in hist.lines[-2:]]
     return " ".join([hist.latest_human_text() or "", *last])
 
@@ -189,8 +189,11 @@ def fact_block(facts: list[dict], idx: list[int]) -> str:
 
 # ------------------------------------------------------------------------------------------------- prompt
 
-def pack_block(data: Any, topic_id: str | None = None) -> tuple[str, dict[str, Any]]:
-    """(text to append to the panel turn prompt, turn-log fields). ("", {}) when the flag is off."""
+def pack_block(data: Any, topic_id: str | None = None, history: Any = None) -> tuple[str, dict[str, Any]]:
+    """(text to append to the panel turn prompt, turn-log fields). ("", {}) when the flag is off.
+
+    Shared by the worker prompt and the Think & Action think prompt (agent/panel/think_prompt.py), which passes the
+    ``history`` its think call sees (default: the show's)."""
     path = pack_path()
     if not path:
         return "", {}
@@ -203,8 +206,9 @@ def pack_block(data: Any, topic_id: str | None = None) -> tuple[str, dict[str, A
             logger.info("fact pack: no topic match (room=%r topic_id=%r); no facts offered", key[0], key[1])
         return "", {"fact_pack_topic": None}
     facts = pack[tid]["facts"]
-    panel_lines = [ln.text for ln in data.show_history.lines if ln.role_id in PANEL]
-    idx = select_facts(facts, query_text(data), panel_lines, k_facts())
+    hist = history if history is not None else data.show_history
+    panel_lines = [ln.text for ln in hist.lines if ln.role_id in PANEL]
+    idx = select_facts(facts, query_text(data, hist), panel_lines, k_facts())
     return fact_block(facts, idx), {"fact_pack_topic": tid, "fact_pack_match": how, "fact_pack_offered": idx}
 
 
