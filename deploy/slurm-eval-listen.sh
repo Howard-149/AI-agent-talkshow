@@ -22,7 +22,8 @@
 # Stages: generate (eval.model_only, Gemma), embed + logprob + report (eval.responsiveness), judge (eval.judge_context,
 # 70B-class model, tensor parallel 2: submit with --gpus=2).
 # Env: LISTEN_OUT (results dir), LISTEN_STAGES (default "embed logprob report"), LISTEN_K (generate, default 5),
-#      LISTEN_SCAFFOLD (generate: system | minimal | both), LISTEN_GEN_ARGS (extra eval.model_only generate flags,
+#      LISTEN_SCAFFOLD (generate: system | minimal | both), LISTEN_PATH (generate: worker | think_action, the
+#      Think & Action think content; TALKSHOW_* flags from the environment), LISTEN_GEN_ARGS (extra eval.model_only generate flags,
 #      e.g. "--arm concrete"), LISTEN_RESP_ARGS (extra
 #      eval.responsiveness global flags), JUDGE_MODEL (default Qwen/Qwen2.5-72B-Instruct-AWQ), JUDGE_ARGS.
 #
@@ -45,7 +46,8 @@ for stage in ${LISTEN_STAGES:-embed logprob report}; do
   case "${stage}" in
     generate)
       PYTHONPATH="$(talkshow_tf_overlay_pythonpath)" \
-        python -m eval.model_only --out "${OUT}" --scaffold "${LISTEN_SCAFFOLD:-system}" generate -k "${LISTEN_K:-5}" \
+        python -m eval.model_only --out "${OUT}" --scaffold "${LISTEN_SCAFFOLD:-system}" --path "${LISTEN_PATH:-worker}" \
+        generate -k "${LISTEN_K:-5}" \
         --model "${VLLM_MODEL:-google/gemma-4-E4B-it}" ${LISTEN_GEN_ARGS:-}
       ;;
     embed|logprob|report)

@@ -721,6 +721,9 @@ def main() -> None:
     p.add_argument("--arm", default="production", help="knob preset from eval/quality_ruler/arms.py ARMS")
     p.add_argument("--arm-spec", default="", help="JSON knobs added to the preset")
     p.add_argument("--pairs", default=str(E.PUBLIC / "build" / "pairs_public.yaml"))
+    p.add_argument("--path", choices=("worker", "think_action"), default="worker",
+                   help="panel lines from the worker prompt (default) or from the Think & Action think content "
+                   "(TALKSHOW_* flags from the environment; --arm must stay production)")
     p.set_defaults(fn=lambda a: E.generate(a))
     sub.add_parser("build", help="validation episode set, first measures (CPU)").set_defaults(fn=cmd_build)
     p = sub.add_parser("invert", help="persona-inversion rewrites for build (GPU)")

@@ -44,7 +44,11 @@ Scripts: `scripts/smoke.yaml` (hiring-freeze debate, PAD stays near 0) and
 | Session JSONL (`ghost_human_*`, panel, avatar) | Real |
 | Gemma **audio-in** / VAD / mic | Skipped (text inject) |
 
-Opening-only (`--opening-only`) stops after welcome + human floor grant. Default smoke script injects 3Q Test 1 (one human turn, then the panel).
+With the Think & Action floor (the default worker) the human may speak at any time and the show sends no human floor
+grant, so the client injects each turn without waiting for one (`--floor-wait none`, the default; use `--beat-panel N`
+to let the show run N panel lines before each turn). `--floor-wait grant` restores the older raise-hand-and-wait flow.
+
+Opening-only (`--opening-only`) stops after welcome (and the human floor grant with `--floor-wait grant`). Default smoke script injects 3Q Test 1 (one human turn, then the panel).
 
 ## Run (Babel, recommended)
 
@@ -102,7 +106,9 @@ flags: {TALKSHOW_ADDRESSEE_FLOOR: "1"}                     # optional: dialogue-
 ```
 
 The worker applies them only with `TALKSHOW_GHOST_REPLAY=1`, and then also logs a `history_snapshot` event before each
-ghost turn. With the flag off the prefix is ignored. The client re-sends a turn that got no reply within 30 s; the
+ghost turn. With the Think & Action floor the prefix is applied when the turn is committed (after the barge-in
+rollback, between show beats), and the floor counts saved in the snapshot (`floor`) are restored with it. With the flag
+off the prefix is ignored. The client re-sends a turn that got no reply within 30 s; the
 worker drops a ghost turn whose text equals the previous ghost turn. `--stop-after-panel N` leaves after N panel lines
 following the last turn.
 

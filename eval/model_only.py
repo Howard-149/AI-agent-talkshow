@@ -9,6 +9,12 @@ speaker-perspective history), at production sampling (temperature 0.45, max_toke
     python -m eval.model_only trace [--out DIR]         # CPU: dump one full prompt per condition
     python -m eval.model_only generate -k 5 [--out DIR] # GPU: Gemma via vLLM offline
 
+`--path think_action` uses the Think & Action think call instead of the worker prompt (eval/think_action_prompt.py): the
+panelist's reaction to the human turn, whose `content` is what the live show speaks. Its sampling is the think call's
+(temperature 0.2, max_tokens 768), and the TALKSHOW_* dialogue quality flags are read from the environment as live
+(with TALKSHOW_UPTAKE_PLANNER on, `generate` first runs the production planner prompt on each human line). A panelist
+whose think decision is not "speak" has no line: it goes to raw.jsonl only (the live floor would not pick it).
+
 `generate` writes <out>/lines.jsonl in eval/responsiveness.py format, so the same embed / logprob / report stages and
 the judge apply (deploy/slurm-eval-listen.sh).
 
@@ -197,11 +203,31 @@ def _items(topics_filter: str = "", roles: tuple[str, ...] = ("commentator", "gu
                 yield t, prefix, cond, text, role
 
 
+def build_think_request(prefix: dict, human_text: str, role: str, persona_swap: bool, plan: str = "") -> dict:
+    """Think & Action: the think call ``role`` makes on the edited human turn (eval/think_action_prompt.py)."""
+    from eval.think_action_prompt import think_request
+
+    p = dict(prefix)
+    if persona_swap:
+        p["persona_swap"] = True
+    req = think_request(p, role, human_text=human_text, plan=plan)
+    req["panel_roles"] = ["commentator", "guest"]
+    return req
+
+
 def cmd_trace(args: argparse.Namespace) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     slug = args.topic
     builder = build_minimal_request if args.scaffold == "minimal" else build_request
+    if args.path == "think_action":
+        from agent.panel.uptake import uptake_planner_enabled
+        from eval.think_action_prompt import PLAN_PLACEHOLDER
+
+        plan = PLAN_PLACEHOLDER if uptake_planner_enabled() else ""
+
+        def builder(prefix, text, role, swap):  # noqa: F811
+            return build_think_request(prefix, text, role, swap, plan=plan)
     conds = tuple(args.conditions.split(",")) if args.conditions else CONDITIONS
     for t, prefix, cond, text, role in _items(slug, roles=("guest",) if args.guest else ("commentator",),
                                               conditions=conds, pairs=args.pairs):
@@ -221,6 +247,9 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
     from transformers import AutoTokenizer  # noqa: F401  (fail early if env is broken)
     from vllm import LLM, SamplingParams
+
+    if args.path == "think_action":
+        return generate_think_action(args)
 
     scaffolds = ("system", "minimal") if args.scaffold == "both" else (args.scaffold,)
     llm = LLM(
@@ -313,11 +342,72 @@ def cmd_generate(args: argparse.Namespace) -> None:
               f"({n_empty} empty after post-processing) → {out}/{name}")
 
 
+def generate_think_action(args: argparse.Namespace) -> None:
+    """`generate --path think_action`: what each panelist's think call would say to each condition."""
+    import re
+
+    from vllm import LLM, SamplingParams
+
+    from agent.panel.uptake import uptake_planner_enabled
+    from eval.think_action_prompt import spoken_content
+
+    if args.arm:
+        raise SystemExit("--arm sets worker-prompt knobs; with --path think_action set the TALKSHOW_* flags instead")
+    llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=args.max_model_len,
+              gpu_memory_utilization=0.88, seed=args.seed, disable_custom_all_reduce=args.tp > 1)
+    chat_kwargs = {"enable_thinking": False} if "qwen3" in args.model.lower() else None
+
+    def chat(convs, sp):
+        return llm.chat(convs, sp, chat_template_kwargs=chat_kwargs) if chat_kwargs else llm.chat(convs, sp)
+
+    def clean(text: str) -> str:
+        return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+    conds = tuple(args.conditions.split(",")) if args.conditions else CONDITIONS
+    rows = list(_items(args.topics, conditions=conds, pairs=args.pairs))
+    plans: dict[str, str] = {}
+    if uptake_planner_enabled():  # production planner prompt and sampling (agent/panel/uptake.py)
+        texts = sorted({text for _t, _p, _c, text, _r in rows})
+        outs = chat([planner_messages(x) for x in texts], SamplingParams(temperature=0.0, max_tokens=160))
+        plans = {x: clean(o.outputs[0].text) for x, o in zip(texts, outs)}
+    items, convs = [], []
+    for t, prefix, cond, text, role in rows:
+        req = build_think_request(prefix, text, role, cond == "persona_swap", plan=plans.get(text, ""))
+        for k in range(args.k):
+            items.append((t, cond, k, role, text, req))
+            convs.append(req["messages"])
+    req0 = items[0][5] if items else {"temperature": 0.2, "max_tokens": 768}
+    outs = chat(convs, SamplingParams(temperature=req0["temperature"], max_tokens=req0["max_tokens"]))
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    tag = args.model.split("/")[-1]
+    n_silent = 0
+    with (out / "lines.jsonl").open("w") as f, (out / "raw.jsonl").open("w") as fr:
+        for (t, cond, k, role, text, req), o in zip(items, outs):
+            raw = clean(o.outputs[0].text)
+            decision, line = spoken_content(raw, req["interval_text"])
+            fr.write(json.dumps({"slug": t["slug"], "cond": cond, "k": k, "role": role, "decision": decision,
+                                 "raw": raw}) + "\n")
+            if not line:
+                n_silent += 1
+                continue
+            f.write(json.dumps({
+                "slug": t["slug"], "topic": t["topic"], "cond": cond, "k": k, "pos": 1, "role": role, "text": line,
+                "heard": text, "between": [], "decision": decision,
+                "log": f"{tag}/think_action/{t['slug']}/{cond}/{role}/{k}",
+            }, ensure_ascii=False) + "\n")
+    print(f"[{args.model} | think_action] generated {len(items)} items ({n_silent} without a spoken line) → "
+          f"{out}/lines.jsonl")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(ROOT / "eval" / "results" / "responsiveness-model"))
     ap.add_argument("--scaffold", choices=("system", "minimal", "both"), default="system",
                     help="system = the panel worker's prompt; minimal = persona + transcript only")
+    ap.add_argument("--path", choices=("worker", "think_action"), default="worker",
+                    help="worker = the panel worker's prompt (default); think_action = the Think & Action think call, "
+                    "whose content the live show speaks (ignores --scaffold)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("trace", help="write one full prompt per condition (CPU)")
     p.add_argument("--topic", default="nuclear-power")

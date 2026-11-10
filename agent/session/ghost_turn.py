@@ -48,7 +48,19 @@ async def run_ghost_human_turn(
     if human_may_speak(data) and controller.is_host_moderated_mode():
         # Like a mic turn: the scripted human takes the floor whenever it speaks
         # (submit_human_turn hands the transcript over as a barge-in).
-        return await _submit_ghost_transcript(session, data, controller, heard=heard)
+        if getattr(data, "ghost_last_heard", None) == heard:
+            logger.info("ghost_human_turn skip: duplicate of the last ghost turn")
+            return False
+        data.ghost_last_heard = heard  # type: ignore[attr-defined]
+        if prefix and not ghost_replay_enabled():
+            logger.warning("ghost_human_turn prefix ignored: TALKSHOW_GHOST_REPLAY is off")
+            prefix = None
+        # The prefix is applied when the turn is committed (between show beats, after the
+        # barge-in rollback): see LiveActuators.commit_human_turn.
+        ok = await _submit_ghost_transcript(session, data, controller, heard=heard, prefix=prefix)
+        if not ok:
+            data.ghost_last_heard = None  # type: ignore[attr-defined]  # not taken: a re-send may run
+        return ok
     if data.panel_chain_running:
         logger.info("ghost_human_turn skip — panel chain running")
         return False
@@ -90,6 +102,7 @@ async def _submit_ghost_transcript(
     controller: TurnController,
     *,
     heard: str,
+    prefix: dict | None = None,
 ) -> bool:
     """Think & Action floor: the agents react to the transcript (no host draft)."""
     from agent.adapters.response_parser import ParsedTurn
@@ -113,6 +126,7 @@ async def _submit_ghost_transcript(
             "raw": None,
             "model_latency_s": 0.0,
             "done_event": "ghost_human_done",
+            **({"prefix": prefix} if prefix else {}),
         },
         background=False,
     )

@@ -28,7 +28,10 @@ Two numbers per edit type:
 
 `eval.responsiveness` also reports a log-likelihood shift (KL_lp) and "landing" (does the addressed panelist speak
 first). `eval.model_only` runs the same prompts on the model alone, without the live show, to separate the model from
-the show's machinery. The public test set (42 real debate turns, `eval/data/public_set/`) is built locally and
+the show's machinery. With the Think & Action floor the selected panelist speaks the `content` of its own think call,
+so `eval.model_only --path think_action` (and `ruler generate --path think_action`) build that think call instead of
+the worker prompt (`eval/think_action_prompt.py`: the production `_think_and_act` with a recording client, so prompt,
+history and sampling match the live show, and the `TALKSHOW_*` flags apply as live). The public test set (42 real debate turns, `eval/data/public_set/`) is built locally and
 never committed.
 
 ## Quality ruler
@@ -92,6 +95,9 @@ New topics need saved show states first: `make_pairs prefix`, run those scripts 
 
 ```bash
 LISTEN_OUT=eval/results/listen-model LISTEN_STAGES="generate embed logprob report" $SB deploy/slurm-eval-listen.sh
+# Think & Action think content instead of the worker prompt (flags as in .env or exported):
+LISTEN_PATH=think_action LISTEN_OUT=eval/results/listen-ta LISTEN_STAGES="generate embed logprob report" \
+  $SB deploy/slurm-eval-listen.sh
 LISTEN_OUT=eval/results/listen-model LISTEN_STAGES=judge $SB --gpus=2 deploy/slurm-eval-listen.sh
 ```
 

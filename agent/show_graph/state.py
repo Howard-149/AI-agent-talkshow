@@ -76,6 +76,7 @@ class HumanEvent(TypedDict, total=False):
     raw: str | None
     model_latency_s: float
     done_event: str  # gemma_stt_done | ghost_human_done
+    prefix: dict[str, Any]  # ghost replay (TALKSHOW_GHOST_REPLAY=1): show state to swap in first
 
 
 class AppraiseJob(TypedDict):
