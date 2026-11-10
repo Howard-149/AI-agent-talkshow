@@ -11,14 +11,15 @@ element of the input is edited, and a good reply should change with it (or shoul
 |---|---|---|---|
 | T1 listening | the audience line: a number, the stance, a named entity, a cause; a paraphrase as control | the panelist the line addresses | follows the edit; ignores the paraphrase |
 | T2 addressing | the audience line names panelist A or panelist B | both panelists, each may speak or yield | the named panelist speaks and answers, the other yields |
-| T3 grounding | one number in the fact the audience asks about (up to 2 pairs per topic) | the addressed panelist | uses the fact as given |
+| T3a grounding | one number in the fact the audience asks about (up to 2 pairs per topic); facts listed, no instruction to use them | the addressed panelist | uses the fact as given, unprompted |
+| T3b grounding, instructed | the T3a items plus one instruction to use the facts | the addressed panelist | uses the fact as given |
 | T4 persona | the two panelists' persona cards are swapped | both panelists | sounds like the card it was given |
 | T5 hosting | (later) fixed reference panel, only the host varies | host | |
 | T6 full show | (later) a free multi-beat episode | all | |
 
 T2 template: the audience line with its opening name removed, put to one panelist as `"{name}, {question}"`. Every
 generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`). T2 is a floor
-decision plus a reply: the tested panelist may speak or yield the floor. Only T2 offers that choice; T1, T3 and T4
+decision plus a reply: the tested panelist may speak or yield the floor. Only T2 offers that choice; T1, T3a/T3b and T4
 always ask for a line.
 
 T3 pairs (`build.py`): the facts to edit are taken, in the show's order, from the 6 facts it would offer for the
@@ -30,7 +31,16 @@ fact (original or edited) and the 5 facts from other pages the show ranks most r
 the old or new value), with the fact at a seeded position. The two sides differ only in that one fact. The show's
 adapters show the same 6 facts in the show's own relevance order.
 
-T3 edit rule (`fact_edit.py`): the first number of the fact that can be edited is changed: years minus 10, percentages times 2 (divided by 2 if that would reach 100), other numbers
+T3a and T3b share every item except the task, ids and one line. T3a measures whether a system uses the evidence it is
+given without being asked; T3b adds the instruction "Use these facts when they are relevant to your reply."
+(`items.FACT_INSTRUCTION`, in `meta.fact_instruction`). PlainLLM gets that line right after the facts block. The show's
+adapters (worker and Think & Action) already put a rule under the facts ("Use specific numbers ... ONLY from these
+facts ..."); on arms whose prompt also has the show's own instruction to ground the line in the checked facts (fast,
+concrete_fact_pack), T3b is identical to T3a. On arms without it (production), the line is added right after the fact
+block's rule. If a prompt had no fact block, T3b would be marked not applicable for that system and left out of its
+score. Each output row records which case applied (`fact_instruction`: show_rule, adapter_line, not_applicable).
+
+T3a/T3b edit rule (`fact_edit.py`): the first number of the fact that can be edited is changed: years minus 10, percentages times 2 (divided by 2 if that would reach 100), other numbers
 times 2; units, currency and format are kept. Numbers inside names, ranges, ratios, dates and ages are skipped, and
 neither the old nor the new value may appear anywhere else the panelist sees. Implausible edits are dropped and the
 next editable number is tried: a number compared with another number of the same kind in its sentence ("rose to 91%
@@ -41,17 +51,17 @@ Example: "employers must pay minimum wage unless employees customarily receive m
 
 ## Splits
 
-| split | topics | source | history before the audience line | items (T1 / T2 / T3 / T4) |
+| split | topics | source | history before the audience line | items (T1 / T2 / T3a / T3b / T4) |
 |---|---|---|---|---|
-| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 482 (150 / 120 / 92 / 120) |
-| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 695 (243 / 168 / 116 / 168) |
+| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 574 (150 / 120 / 92 / 92 / 120) |
+| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 811 (243 / 168 / 116 / 116 / 168) |
 
 Test items start from the host's opening by choice: every test item must be rebuildable from committed data plus the
 public corpus, and a recorded show state (made by our own system) exists for only some test topics. So on test the
 audience member's line opens the discussion; on dev the panel has already discussed the topic.
 
 Dev has no cause edit. Test lacks the number edit on 2 topics and the entity edit on 7 (not applicable to the turn).
-T3 has 46 pairs on 28 dev topics and 58 pairs on 37 test topics; a topic is dropped when no fact gives a usable pair
+T3a (and T3b) has 46 pairs on 28 dev topics and 58 pairs on 37 test topics; a topic is dropped when no fact gives a usable pair
 (no editable number, or fewer than 5 facts from other pages).
 
 Reruns: 3 per item. Paired items share their sampling seed (seed = pair group, role, rerun), so the two sides of a pair
@@ -110,7 +120,7 @@ To add a system: subclass `System`, build the prompts in `requests` and turn the
 ## Run and score
 
 ```bash
-python -m eval.bench.run --system plain --model Qwen/Qwen2.5-7B-Instruct --tasks T1,T2,T3,T4 --split test \
+python -m eval.bench.run --system plain --model Qwen/Qwen2.5-7B-Instruct --tasks T1,T2,T3a,T3b,T4 --split test \
   --reruns 3 --out eval/results/bench/plain-qwen25-7b
 python -m eval.bench.run --system think_action --arm fast --model google/gemma-4-E4B-it --split test --out DIR
 python -m eval.bench.run ... --dry-run   # no model: DIR/prompts.jsonl and DIR/prompts/<item>.txt
@@ -127,7 +137,7 @@ Scoring (`score.py`): rules where checkable, yes/no judges otherwise, no holisti
 - T2 right floor (systems that decide the floor), per panelist per rerun: speak when addressed, yield when not.
   Accuracy is reported for each case and balanced (their mean), so always speaking or always yielding gives 0.5.
   The reply (identification and rubric requests) is judged only on replies given when addressed.
-- T3 follows the fact: the reply states the new value, the old value, both, or neither.
+- T3a/T3b follow the fact: the reply states the new value, the old value, both, or neither.
 - Unsupported specifics, all tasks: numbers and names in the reply that the panelist was not shown.
 - Response shift R: `DIR/score/R/<task>/lines.jsonl`; embed with `python -m eval.responsiveness --out <that dir>
   embed` (GPU) and score again.
@@ -145,10 +155,11 @@ Task scores (0-100, `score.task_scores`), each the mean of the parts that exist 
 - T1: 200 x (J - 0.5) on the non-control edits.
 - T2: 200 x (balanced right-floor accuracy - 0.5), for systems that decide the floor; 200 x (J - 0.5) on the
   addressee pair, judged on the replies given when addressed.
-- T3: 200 x (J - 0.5) on the fact pair; 100 x share of replies stating the new value only; 100 x share of replies with
+- T3a and T3b, each: 200 x (J - 0.5) on the fact pair; 100 x share of replies stating the new value only; 100 x share of replies with
   no unsupported specific.
 - T4: 200 x (J - 0.5) on persona attribution; 100 x persona item pass rate.
-- overall: the mean over tasks. Scores are clipped to 0-100.
+- overall: the mean over T1, T2, T3a, T3b and T4 (the tasks scored). Scores are clipped to 0-100. The report and the
+  leaderboard show T3a and T3b as separate columns. `--tasks T3` selects both.
 
 Outputs: `DIR/score/score.json`, `DIR/score/report.md` (one page per system), and
 `python -m eval.bench.score --leaderboard DIR1/score DIR2/score ... --out board.md` (one table across systems).

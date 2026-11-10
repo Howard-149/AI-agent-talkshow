@@ -5,7 +5,7 @@
 Rules, no model:
   T2 right floor       systems that decide the floor (floor_action set): per panelist per rerun, speak when
                        addressed, yield when not; accuracy for each case and balanced (always-speak = 0.5)
-  T3 follows the fact  does the reply state the edited value ("new"), the original value ("old"), both, or neither
+  T3a/T3b follows     does the reply state the edited value ("new"), the original value ("old"), both, or neither
                        (fact_edit.follows); on fact_orig_<n> replies, how often the original values are stated
   unsupported specifics  every reply: numbers, years, amounts and names that appear nowhere in what the panelist was
                        shown (the item's facts, the transcript, the audience line; eval/quality_ruler/specifics.py).
@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.bench.items import PANEL, Item, read_items  # noqa: E402
+from eval.bench.items import GROUNDING, PANEL, Item, read_items  # noqa: E402
 
 IDENT_FACT_SYSTEM = (
     "You are a careful annotator of talk-show transcripts. A panelist was shown a list of checked facts; one fact came "
@@ -109,13 +109,13 @@ def right_floor(rows: list[dict], items: dict[str, Item]) -> dict:
             "balanced": round(sum(parts) / len(parts), 3)}
 
 
-def follows_fact(rows: list[dict], items: dict[str, Item]) -> dict:
+def follows_fact(rows: list[dict], items: dict[str, Item], task: str = "T3a") -> dict:
     from eval.bench.fact_edit import follows
 
     edited, orig = Counter(), Counter()
     for r in rows:
         it = items[r["item_id"]]
-        if it.task != "T3" or not r["text"]:
+        if it.task != task or not r["text"]:
             continue
         if it.version.startswith("fact_orig"):
             for e in it.expected.get("edits", []):
@@ -229,7 +229,7 @@ def judge_requests(rows: list[dict], items: dict[str, Item], out: Path, rubric_r
                     a, b = (a, b) if true_is_a else (b, a)
                     msgs = [{"role": "system", "content": IDENT_SYSTEM},
                             {"role": "user", "content": ident_prompt(it.topic, a, b, r["text"])}]
-                elif it.task == "T3":
+                elif it.task in GROUNDING:
                     j = edit.expected["fact_index"]
                     a, b = it.fact_pack[j], other.fact_pack[j]
                     a, b = (a, b) if true_is_a else (b, a)
@@ -339,10 +339,11 @@ def task_scores(per_task: dict, judged: dict) -> dict:
     T1  200*(J-0.5) on the non-control edits
     T2  200*(balanced right-floor accuracy - 0.5) (systems that decide the floor); 200*(J-0.5) on the addressee
         pair, judged on the replies given when addressed
-    T3  200*(J-0.5) on the fact pair; 100*share of edited-fact replies stating the new value only;
+    T3a, T3b (each)  200*(J-0.5) on the fact pair; 100*share of edited-fact replies stating the new value only;
         100*(1 - share of replies with an unsupported specific)
     T4  200*(J-0.5) on persona attribution; 100*persona item pass rate
-    J is pooled over all judges. Components without data are left out; the overall score is the mean over tasks."""
+    J is pooled over all judges. Components without data are left out; the overall score is the mean over the tasks
+    scored (T1, T2, T3a, T3b, T4 on a full run)."""
     jt = {k: v.get("all", {}) for k, v in judged.get("tasks", {}).items()}
     comps: dict[str, dict[str, float]] = defaultdict(dict)
     for task in per_task:
@@ -352,12 +353,13 @@ def task_scores(per_task: dict, judged: dict) -> dict:
     rf = per_task.get("T2", {}).get("right_floor", {})
     if rf.get("applicable"):
         comps["T2"]["right_floor"] = _clip(200 * (rf["balanced"] - 0.5))
-    ff = per_task.get("T3", {}).get("follows_fact", {}).get("edited", {})
-    if ff.get("new") is not None:
-        comps["T3"]["follows_fact"] = _clip(100 * ff["new"])
-    us = per_task.get("T3", {}).get("unsupported_specifics", {})
-    if us.get("share_lines_unsupported") is not None:
-        comps["T3"]["supported_specifics"] = _clip(100 * (1 - us["share_lines_unsupported"]))
+    for task in GROUNDING:
+        ff = per_task.get(task, {}).get("follows_fact", {}).get("edited", {})
+        if ff.get("new") is not None:
+            comps[task]["follows_fact"] = _clip(100 * ff["new"])
+        us = per_task.get(task, {}).get("unsupported_specifics", {})
+        if us.get("share_lines_unsupported") is not None:
+            comps[task]["supported_specifics"] = _clip(100 * (1 - us["share_lines_unsupported"]))
     fid = jt.get("T4", {}).get("rubric_pass", {}).get("fidelity")
     if fid is not None:
         comps["T4"]["persona_items"] = _clip(100 * fid)
@@ -443,6 +445,8 @@ def leaderboard(score_dirs: list[Path]) -> str:
 def score(run: Path, items_path: str = "", pack_path: str = "", out: Path | None = None, boot: int = 1000,
           rubric_reruns: set[int] | None = frozenset({0})) -> dict:
     rows = load_rows(run)
+    n_na = sum(r.get("fact_instruction") == "not_applicable" for r in rows)
+    rows = [r for r in rows if r.get("fact_instruction") != "not_applicable"]  # T3b the system could not be given
     items = items_for(run, items_path)
     missing = {r["item_id"] for r in rows} - set(items)
     if missing:
@@ -461,12 +465,15 @@ def score(run: Path, items_path: str = "", pack_path: str = "", out: Path | None
         per_task[task]["unsupported_specifics"] = v
     if "T2" in per_task:
         per_task["T2"]["right_floor"] = right_floor(rows, items)
-    if "T3" in per_task:
-        per_task["T3"]["follows_fact"] = follows_fact(rows, items)
+    for task in GROUNDING:
+        if task in per_task:
+            per_task[task]["follows_fact"] = follows_fact(rows, items, task)
+            modes = Counter(r.get("fact_instruction") or "none" for r in rows if r["task"] == task)
+            per_task[task]["fact_instruction"] = dict(modes)
     for task, v in r_hook(rows, items, out, boot).items():
         per_task[task]["response_shift_R"] = v
     report = {"run": str(run), "config": json.loads((run / "run.json").read_text()) if (run / "run.json").is_file()
-              else {}, "tasks": per_task,
+              else {}, "tasks": per_task, "t3b_not_applicable_rows": n_na,
               "judge_requests": judge_requests(rows, items, out, None if rubric_reruns is None else set(rubric_reruns))}
     report["judged"] = judge_scores(load_answers(out), items, out, boot)
     report["task_scores"] = task_scores(per_task, report["judged"])

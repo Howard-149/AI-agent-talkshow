@@ -107,7 +107,7 @@ class ItemIOTests(_Env):
         self.assertIsNone(items.observation(host)["audience_turn"])
 
     def test_observation(self) -> None:
-        it = next(i for i in self.dev_items() if i.task == "T3")
+        it = next(i for i in self.dev_items() if i.task == "T3a")
         obs = items.observation(it)
         self.assertEqual(obs["name"], "Ryan")
         self.assertEqual(obs["fact_pack"], it.fact_pack)
@@ -135,7 +135,7 @@ class BuilderTests(_Env):
 
     def test_dev_counts_pairing_controls(self) -> None:
         its = self.dev_items()
-        t1, t2, t3, t4 = (self.by(its, t) for t in ("T1", "T2", "T3", "T4"))
+        t1, t2, t3, t4 = (self.by(its, t) for t in ("T1", "T2", "T3a", "T4"))
         self.assertEqual(len(t1), 2 * 5)  # orig, paraphrase, number, stance, entity (no cause edit in dev)
         self.assertEqual(len(t2), 2 * 2 * 2)  # 2 addressees x 2 panelists
         self.assertEqual(len(t4), 2 * 2 * 2)
@@ -147,6 +147,7 @@ class BuilderTests(_Env):
         self.assert_pairs_differ_only_in(t1, "audience_turn")
         self.assert_pairs_differ_only_in(t2, "audience_turn")
         self.assert_pairs_differ_only_in(t3, "fact_pack")
+        self.assert_pairs_differ_only_in(self.by(its, "T3b"), "fact_pack")
         self.assert_pairs_differ_only_in(t4, "personas")
         self.assertEqual(len({i.item_id for i in its}), len(its))
 
@@ -167,7 +168,7 @@ class BuilderTests(_Env):
     def test_t3_pairs_target_the_edited_fact(self) -> None:
         from agent.floor.addressee import addressed_role
 
-        t3 = self.by(self.dev_items(), "T3")
+        t3 = self.by(self.dev_items(), "T3a")
         self.assertEqual({i.topic_id for i in t3}, set(TOPICS))
         groups: dict = {}
         for it in t3:
@@ -354,14 +355,14 @@ class AdapterTests(_Env):
 
         for system in (systems.TalkshowWorker, systems.TalkshowThinkAction):
             for version in ("fact_orig_1", "fact_edit_1"):
-                it = self.item("T3", version)
+                it = self.item("T3a", version)
                 text = self.prompt(system, it)[-1]["content"]
                 block = text[text.index(HEADER):].split("\n")[1:]
                 shown = [line[2:] for line in block if line.startswith("- ")][:len(it.fact_pack)]
                 self.assertEqual(sorted(shown), sorted(it.fact_pack), (system.name, version))
 
     def test_plain_prompt(self) -> None:
-        it = self.item("T3", "fact_edit_1")
+        it = self.item("T3a", "fact_edit_1")
         msgs = self.prompt(systems.PlainLLM, it)
         self.assertEqual(msgs[0]["content"], it.personas["commentator"])
         user = msgs[1]["content"]
@@ -411,7 +412,7 @@ class AdapterTests(_Env):
         plain_talk = systems.PlainLLM(systems.FakeBackend(lambda r: "Amy should take this, but I will add one thing."))
         self.assertEqual(plain_talk.respond(obs)["floor_action"], "speak")
         self.assertTrue(self.prompt(systems.PlainLLM, addr_other)[1]["content"].endswith("\n" + systems.PLAIN_PASS))
-        for task, version in (("T1", "orig"), ("T3", "fact_edit_1"), ("T4", "persona_swap")):
+        for task, version in (("T1", "orig"), ("T3a", "fact_edit_1"), ("T4", "persona_swap")):
             it = self.item(task, version)
             self.assertNotIn("PASS", self.prompt(systems.PlainLLM, it)[1]["content"])
             self.assertIsNone(plain_pass.respond(items.observation(it))["floor_action"])  # no floor choice
@@ -421,6 +422,49 @@ class AdapterTests(_Env):
         ta = systems.TalkshowThinkAction(systems.FakeBackend(lambda r: silent if r.kind == "think" else "[reply]: x"))
         self.assertIn(ta.respond(obs)["floor_action"], systems.YIELDS)
         self.assertIsNone(systems.TalkshowWorker(systems.FakeBackend()).respond(obs)["floor_action"])
+
+    def test_t3b_items(self) -> None:
+        its = self.dev_items()
+        a = {i.item_id.split("/", 1)[1]: i for i in its if i.task == "T3a"}
+        b = {i.item_id.split("/", 1)[1]: i for i in its if i.task == "T3b"}
+        self.assertEqual(set(a), set(b))
+        for k, ia in a.items():
+            ib = b[k]
+            self.assertEqual(ib.pair_group, "T3b:" + ia.pair_group.split(":", 1)[1])
+            self.assertEqual(ib.meta["fact_instruction"], items.FACT_INSTRUCTION)
+            self.assertNotIn("fact_instruction", ia.meta)
+            for f in ("audience_turn", "fact_pack", "history", "personas", "expected", "version", "role_under_test"):
+                self.assertEqual(getattr(ia, f), getattr(ib, f), f)
+        self.assertEqual(items.expand_tasks("T1,T3"), ["T1", "T3a", "T3b"])
+        self.assertEqual({i.task for i in build.build("dev", tasks=("T3b",), pack=str(self.pack),
+                                                      pairs=self.pairs_file())}, {"T3b"})
+
+    def test_t3b_prompts(self) -> None:
+        from agent.panel.fact_pack import CONCRETE_WITH_PACK, RULE
+
+        line = items.FACT_INSTRUCTION
+        ia, ib = self.item("T3a", "fact_edit_1"), self.item("T3b", "fact_edit_1")
+        pa, pb = self.prompt(systems.PlainLLM, ia), self.prompt(systems.PlainLLM, ib)
+        last_fact = f"- {ia.fact_pack[-1]}\n"
+        self.assertEqual(pb[1]["content"], pa[1]["content"].replace(last_fact, last_fact + line + "\n", 1))
+        self.assertNotIn(line, pa[1]["content"])
+        for system in (systems.TalkshowWorker, systems.TalkshowThinkAction):
+            # production: no grounding instruction of its own, so the line follows the fact block's rule
+            wa, wb = self.prompt(system, ia), self.prompt(system, ib)
+            self.assertEqual(wb[-1]["content"], wa[-1]["content"].replace(RULE, RULE + "\n" + line, 1), system.name)
+            res = system(systems.FakeBackend(), arm="production").respond(items.observation(ib))
+            self.assertEqual(res["fact_instruction"], "adapter_line")
+            # fast: the show's concrete instruction already asks for the facts, so T3b = T3a
+            backend_a, backend_b = systems.DryRunBackend(), systems.DryRunBackend()
+            system(backend_a, arm="fast").respond(items.observation(ia))
+            res = system(backend_b, arm="fast").respond(items.observation(ib))
+            msgs = [[r.messages for r in be.records if r.kind in ("reply", "think")][0] for be in (backend_a, backend_b)]
+            self.assertIn(CONCRETE_WITH_PACK, msgs[0][-1]["content"])
+            self.assertEqual(msgs[0], msgs[1])
+            self.assertEqual(res["fact_instruction"], "show_rule")
+        msgs, how = systems.show_fact_instruction([{"role": "user", "content": "no facts here"}],
+                                                  {"fact_instruction": line})
+        self.assertEqual(how, "not_applicable")
 
     def test_fast_arm_runs_the_planner(self) -> None:
         backend = systems.DryRunBackend()
@@ -465,12 +509,12 @@ class RunScoreTests(_Env):
         self.assertEqual(len({r["seed"] for r in t1}), 2)
         with contextlib.redirect_stdout(io.StringIO()):
             rep = score.score(out, str(path))
-        self.assertEqual(set(rep["tasks"]), {"T1", "T2", "T3", "T4"})
+        self.assertEqual(set(rep["tasks"]), {"T1", "T2", "T3a", "T3b", "T4"})
         rf = rep["tasks"]["T2"]["right_floor"]  # the fake speaks every time
         self.assertEqual((rf["acc_addressed"], rf["acc_not_addressed"], rf["balanced"]), (1.0, 0.0, 0.5))
         self.assertTrue((out / "score" / "R" / "T1" / "lines.jsonl").is_file())
         ident = [json.loads(l) for l in (out / "score" / "judge" / "identification.jsonl").read_text().splitlines()]
-        self.assertEqual({r["task"] for r in ident}, {"T1", "T2", "T3", "T4"})
+        self.assertEqual({r["task"] for r in ident}, {"T1", "T2", "T3a", "T3b", "T4"})
         t2 = [r for r in ident if r["task"] == "T2"]  # only replies given when addressed are judged
         self.assertTrue(t2 and all(r["item_id"].split("/")[3] == f"addr_{r['item_id'].split('/')[4]}" for r in t2))
         self.assertTrue(all(r["true"] in ("A", "B") and r["messages"][-1]["role"] == "user" for r in ident))
@@ -487,8 +531,8 @@ class RunScoreTests(_Env):
         self.assertEqual((rf["n"], rf["balanced"], rf["acc_not_addressed"]), (8, 1.0, 1.0))
         rows = []
         for it in its.values():
-            if it.task == "T3" and it.version.startswith("fact_edit"):
-                rows.append({"item_id": it.item_id, "task": "T3", "rerun": 0,
+            if it.task == "T3a" and it.version.startswith("fact_edit"):
+                rows.append({"item_id": it.item_id, "task": "T3a", "rerun": 0,
                              "text": f"The number is {it.expected['new_value']}, believe it."})
         res = score.follows_fact(rows, its)
         self.assertEqual(res["edited"]["n"], len(rows))
@@ -563,7 +607,7 @@ class JudgeTests(_Env):
         self.assertLessEqual(lo, t1["all"]["J"]["J"])
         self.assertLessEqual(t1["all"]["J"]["J"], hi)
         self.assertEqual(judged["tasks"]["T4"]["oracle"]["rubric_pass"]["fidelity"], 1.0)
-        self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T3", "T4", "overall"})
+        self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T3a", "T3b", "T4", "overall"})
         self.assertIn("right_floor", rep["task_scores"]["T2"]["components"])
         self.assertIn("# think_action (production)", (d / "report.md").read_text())
 
@@ -590,14 +634,14 @@ class JudgeTests(_Env):
         self.assertNotIn("T2", score.task_scores({"T2": {"right_floor": none}}, {}))
 
     def test_task_score_formula(self) -> None:
-        per_task = {"T1": {}, "T3": {"follows_fact": {"edited": {"new": 0.4}},
+        per_task = {"T1": {}, "T3a": {"follows_fact": {"edited": {"new": 0.4}},
                                      "unsupported_specifics": {"share_lines_unsupported": 0.25}}}
-        judged = {"tasks": {"T1": {"all": {"J": {"J": 0.8}}}, "T3": {"all": {"J": {"J": 0.45}}}}}
+        judged = {"tasks": {"T1": {"all": {"J": {"J": 0.8}}}, "T3a": {"all": {"J": {"J": 0.45}}}}}
         sc = score.task_scores(per_task, judged)
         self.assertEqual(sc["T1"]["score"], 60.0)  # 200 * (0.8 - 0.5)
-        self.assertEqual(sc["T3"]["components"], {"identification": 0.0, "follows_fact": 40.0,
+        self.assertEqual(sc["T3a"]["components"], {"identification": 0.0, "follows_fact": 40.0,
                                                   "supported_specifics": 75.0})
-        self.assertEqual(sc["T3"]["score"], 38.3)
+        self.assertEqual(sc["T3a"]["score"], 38.3)
         self.assertEqual(sc["overall"], round((60.0 + 38.3) / 2, 1))
 
     def test_leaderboard(self) -> None:

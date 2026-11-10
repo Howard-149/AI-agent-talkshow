@@ -17,8 +17,9 @@ item must be rebuildable from committed data plus the public corpus.
 Tasks (README.md):
   T1 listening   the audience line, edited one element at a time; the addressed panelist answers
   T2 addressing  the same question put to each panelist by name (template below); both panelists are tested
-  T3 grounding   the audience asks about one fact's subject; that fact (original or with one number edited by the
+  T3a grounding  the audience asks about one fact's subject; that fact (original or with one number edited by the
                  rule in fact_edit.py) is offered among 6 facts
+  T3b            the T3a items plus one instruction to use the facts (meta.fact_instruction)
   T4 persona     the two panelists' persona cards swapped; both panelists are tested
 """
 
@@ -72,7 +73,8 @@ T3_QUESTIONS = (
     "Before we go further, what are the hard facts about {subject}?",
 )
 DROPPED: list[dict] = []  # implausible T3 edits seen by the last build (written to build/t3_dropped_<split>.jsonl)
-REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3": "fact_orig_1", "T4": "persona_orig"}  # T3: per pair
+REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3a": "fact_orig_1", "T3b": "fact_orig_1",
+             "T4": "persona_orig"}  # T3a/T3b: set per pair
 
 # The host's opening lines in the show (the first two lines of every recorded show state).
 OPENING = (
@@ -271,7 +273,7 @@ def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> li
     items, cards = [], persona_cards(False)
     for t in topics:
         if t["slug"] not in pack:
-            log["T3 skipped topic: not in the fact pack"] += 1
+            log["T3a skipped topic: not in the fact pack"] += 1
             continue
         role = addressed(t["turn2"]["orig"]) or "commentator"
         facts = pack[t["slug"]]["facts"]
@@ -287,14 +289,15 @@ def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> li
             dropped: list = []
             got = edit_fact(facts[i]["fact"].strip(), context, dropped)
             for why, old_f, new_f in dropped:
-                log[f"T3 edit dropped as implausible: {why}"] += 1
+                log[f"T3a edit dropped as implausible: {why}"] += 1
                 DROPPED.append({"split": split, "topic_id": t["slug"], "reason": why, "fact": old_f, "edited": new_f})
             if not got:
                 continue
             new_fact, e = got
             n = len(pairs) + 1
-            group = f"T3:{split}:{t['slug']}:{n}"
-            question = t3_question(subject, role, group)
+            group = f"T3a:{split}:{t['slug']}:{n}"
+            key = f"T3:{split}:{t['slug']}:{n}"  # seeds the question and the position (the key the items were first built with)
+            question = t3_question(subject, role, key)
             # the other 5: most relevant to the question first, other pages only, neither value anywhere in them
             others = []
             for k in offered_facts(pack_path, t, question, k=len(facts)):
@@ -307,32 +310,50 @@ def build_t3(topics: list[dict], split: str, pack_path: str, log: Counter) -> li
                     continue
                 others.append(k)
             if len(others) < T3_OTHER_FACTS:
-                log["T3 edit skipped: fewer than 5 facts from other pages"] += 1
+                log["T3a edit skipped: fewer than 5 facts from other pages"] += 1
                 continue
-            pos = _hash(group, "position") % (T3_OTHER_FACTS + 1)
+            pos = _hash(key, "position") % (T3_OTHER_FACTS + 1)
             idx = others[:pos] + [i] + others[pos:]
             pages_used.add(page)
-            pairs.append((n, group, question, idx, pos, new_fact, e))
+            pairs.append((n, group, key, question, idx, pos, new_fact, e))
         if not pairs:
-            log["T3 skipped topic: no usable pair (no editable number, or fewer than 5 facts from other pages)"] += 1
+            log["T3a skipped topic: no usable pair (no editable number, or fewer than 5 facts from other pages)"] += 1
             continue
-        log[f"T3 topics with {len(pairs)} pair(s)"] += 1
-        for n, group, question, idx, pos, new_fact, e in pairs:
+        log[f"T3a topics with {len(pairs)} pair(s)"] += 1
+        for n, group, key, question, idx, pos, new_fact, e in pairs:
             offered = [facts[k]["fact"].strip() for k in idx]
             sources = [{"pack_index": k, "page": facts[k].get("page"), "url": facts[k].get("url")} for k in idx]
             common = {"source": "fact_page_question", "fact_sources": sources, "reference_version": f"fact_orig_{n}",
-                      "question_template": _hash(group, "question") % len(T3_QUESTIONS)}
+                      "question_template": _hash(key, "question") % len(T3_QUESTIONS)}
             edited = list(offered)
             edited[pos] = new_fact
-            items.append(_item("T3", split, t, f"fact_orig_{n}", role, group, audience=question, personas=cards,
+            items.append(_item("T3a", split, t, f"fact_orig_{n}", role, group, audience=question, personas=cards,
                                fact_pack=offered, meta=common,
                                expected={"edits": [{"fact_index": pos, "old_key": e.old_key, "new_key": e.new_key}]}))
             items.append(_item(
-                "T3", split, t, f"fact_edit_{n}", role, group, audience=question, personas=cards, fact_pack=edited,
+                "T3a", split, t, f"fact_edit_{n}", role, group, audience=question, personas=cards, fact_pack=edited,
                 meta={**common, "fact_edit": {"fact_index": pos, "start": e.start, "end": e.end}},
                 expected={"fact_index": pos, "old_fact": offered[pos], "new_fact": new_fact, "old_value": e.old,
                           "new_value": e.new, "kind": e.kind, "old_key": e.old_key, "new_key": e.new_key}))
     return items
+
+
+def t3b_from_t3a(items: list[Item]) -> list[Item]:
+    """T3b: the T3a items unchanged except the task, ids and one instruction (meta.fact_instruction)."""
+    import copy
+    from dataclasses import replace
+
+    from eval.bench.items import FACT_INSTRUCTION
+
+    out = []
+    for it in items:
+        meta = copy.deepcopy(it.meta)
+        meta["fact_instruction"] = FACT_INSTRUCTION
+        out.append(replace(it, task="T3b", item_id="T3b/" + it.item_id.split("/", 1)[1],
+                           pair_group="T3b:" + it.pair_group.split(":", 1)[1], meta=meta,
+                           personas=dict(it.personas), history=[dict(h) for h in it.history],
+                           fact_pack=list(it.fact_pack or []), expected=copy.deepcopy(it.expected)))
+    return out
 
 
 def build_t4(topics: list[dict], split: str, log: Counter) -> list[Item]:
@@ -352,20 +373,25 @@ def build_t4(topics: list[dict], split: str, log: Counter) -> list[Item]:
 BUILDERS = {"T1": build_t1, "T2": build_t2, "T4": build_t4}
 
 
-def build(split: str, tasks: tuple[str, ...] = ("T1", "T2", "T3", "T4"), pack: str = "", history: str = "",
+def build(split: str, tasks: tuple[str, ...] = ("T1", "T2", "T3a", "T3b", "T4"), pack: str = "", history: str = "",
           pairs: Path | None = None, prefix_dir: Path | None = None, log: Counter | None = None) -> list[Item]:
     log = log if log is not None else Counter()
     history = history or ("prefix" if split == "dev" else "opening")
     pairs = pairs or (DEV_PAIRS if split == "dev" else TEST_PAIRS)
     prefix_dir = prefix_dir or (DEV_PREFIX if split == "dev" else TEST_PREFIX)
     topics = load_topics(split, Path(pairs), Path(prefix_dir), history)
+    from eval.bench.items import GROUNDING, expand_tasks
+
     items: list[Item] = []
-    for task in tasks:
-        if task == "T3":
+    t3a: list[Item] | None = None
+    for task in expand_tasks(list(tasks)):
+        if task in GROUNDING:
             if not pack:
-                log["T3 skipped: no fact pack given"] += 1
+                log[f"{task} skipped: no fact pack given"] += 1
                 continue
-            items += build_t3(topics, split, pack, log)
+            if t3a is None:
+                t3a = build_t3(topics, split, pack, log)
+            items += t3a if task == "T3a" else t3b_from_t3a(t3a)
         else:
             items += BUILDERS[task](topics, split, log)
     return items
@@ -410,7 +436,7 @@ def counts(items: list[Item]) -> dict[str, Any]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--split", choices=("dev", "test"), required=True)
-    ap.add_argument("--tasks", default="T1,T2,T3,T4")
+    ap.add_argument("--tasks", default="T1,T2,T3a,T3b,T4", help="T3 = T3a and T3b")
     ap.add_argument("--pack", default=os.environ.get("TALKSHOW_FACT_PACK", ""),
                     help="fact pack json for T3 (default TALKSHOW_FACT_PACK; none = T3 skipped)")
     ap.add_argument("--history", choices=("prefix", "opening"), default="",

@@ -4,7 +4,8 @@ An item is everything a system sees at one turn of a talk show (topic, persona c
 new line, optional checked facts) and the expected behaviour that scoring checks. Items that differ only in the edited
 element share a ``pair_group``; the group's reference version is ``meta["reference_version"]``.
 
-Tasks (README.md): T1 listening, T2 addressing, T3 grounding, T4 persona, T5 hosting, T6 full show.
+Tasks (README.md): T1 listening, T2 addressing, T3a grounding (facts listed), T3b grounding (facts listed plus an
+instruction to use them), T4 persona, T5 hosting, T6 full show.
 """
 
 from __future__ import annotations
@@ -18,7 +19,8 @@ from typing import Any, Iterable
 TASKS = {
     "T1": "listening",
     "T2": "addressing",
-    "T3": "grounding",
+    "T3a": "grounding",  # facts listed, no instruction to use them
+    "T3b": "grounding_instructed",  # the same items, plus one instruction to use the facts
     "T4": "persona",
     "T5": "hosting",
     "T6": "full_show",
@@ -27,7 +29,24 @@ SPLITS = ("dev", "test")
 ROLES = ("host", "commentator", "guest")
 PANEL = ("commentator", "guest")
 HISTORY_ROLES = ("host", "commentator", "guest", "human")
-FLOOR_TASKS = ("T2",)  # tasks where the tested panelist may yield the floor instead of replying
+FLOOR_TASKS = ("T2",)
+GROUNDING = ("T3a", "T3b")
+ALIASES = {"T3": GROUNDING}  # --tasks T3 selects both grounding variants
+# T3b: the instruction PlainLLM gets right after the facts (the show's adapters: systems.py)
+FACT_INSTRUCTION = "Use these facts when they are relevant to your reply."
+
+
+def expand_tasks(spec: str | list[str]) -> list[str]:
+    """"T1,T3" -> ["T1", "T3a", "T3b"]."""
+    parts = spec.split(",") if isinstance(spec, str) else list(spec)
+    out = []
+    for p in (x.strip() for x in parts if x.strip()):
+        for t in ALIASES.get(p, (p,)):
+            if t not in TASKS:
+                raise ValueError(f"unknown task {t!r}")
+            if t not in out:
+                out.append(t)
+    return out  # tasks where the tested panelist may yield the floor instead of replying
 
 
 @dataclass
@@ -119,6 +138,8 @@ def observation(item: Item) -> dict[str, Any]:
         "task": item.task,
         # T2: the panelist decides whether to take the floor (speak) or leave it to the addressed panelist (yield)
         "floor_choice": item.task in FLOOR_TASKS,
+        # T3b: an instruction to use the facts (None elsewhere)
+        "fact_instruction": item.meta.get("fact_instruction"),
         "topic_id": item.topic_id,
         "topic": item.topic,
         "role": role,

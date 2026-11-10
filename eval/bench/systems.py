@@ -208,6 +208,8 @@ def plain_messages(obs: dict) -> list[dict]:
     facts = ""
     if obs.get("fact_pack"):
         facts = PLAIN_FACTS.format(facts="\n".join(f"- {f}" for f in obs["fact_pack"]))
+        if obs.get("fact_instruction"):  # T3b: one line right after the facts
+            facts += obs["fact_instruction"] + "\n"
     persona = obs["personas"].get(obs["role"], f"You are {obs['name']} on a live talk show panel.")
     user = PLAIN_USER.format(topic=obs["topic"], transcript="\n".join(lines), facts=facts, name=obs["name"])
     if obs.get("floor_choice"):
@@ -254,6 +256,27 @@ class PlainLLM(System):
 # ------------------------------------------------------------------------------------------------ the show
 
 SHOW_ARMS = ("production", "fast", "concrete_fact_pack")
+
+
+def show_fact_instruction(messages: list[dict], obs: dict) -> tuple[list[dict], str | None]:
+    """T3b on the show's prompts. (messages, how the instruction was given):
+    "show_rule"     the prompt already tells the panelist to ground its line in the checked facts (the concrete
+                    instruction that comes with a fact block on the fast and fact-pack arms): unchanged, T3b = T3a;
+    "adapter_line"  otherwise the instruction line is added right after the fact block's rule;
+    "not_applicable" no fact block found (the prompt is left unchanged)."""
+    from agent.panel.fact_pack import CONCRETE_WITH_PACK, RULE
+
+    line = obs.get("fact_instruction")
+    if not line:
+        return messages, None
+    text = messages[-1]["content"]
+    if CONCRETE_WITH_PACK in text:
+        return messages, "show_rule"
+    if RULE not in text:
+        return messages, "not_applicable"
+    out = [dict(m) for m in messages]
+    out[-1]["content"] = text.replace(RULE, RULE + "\n" + line, 1)
+    return out, "adapter_line"
 
 
 def show_persona_swap(obs: dict) -> bool:
@@ -355,6 +378,7 @@ class TalkshowWorker(_Show):
             req = build_request(self.prefix(obs), human or "", obs["role"], swap, include_human=human is not None,
                                 live_fixes=self.live or bool(env["TALKSHOW_FACT_PACK"]),
                                 plan=self.plan(p), topic_id=tid)
+        req["messages"], p.state["fact_instruction"] = show_fact_instruction(req["messages"], obs)
         return Request(kind, req["messages"], TEMPERATURE, 512, p.seed, obs["item_id"]), req
 
     def requests(self, p: Pending, stage: int) -> list[Request]:
@@ -376,6 +400,7 @@ class TalkshowWorker(_Show):
         raw = p.state["outputs"]["reply"]
         text = postprocess(raw, p.obs["role"], req["panel_roles"], req["data"].show_history)
         return {"text": text, "speaker": p.obs["role"], "floor_action": None, "raw": raw,
+                **({"fact_instruction": p.state["fact_instruction"]} if p.state.get("fact_instruction") else {}),
                 "fact_pack_offered": req.get("fact_pack") or None}
 
 
@@ -413,6 +438,7 @@ class TalkshowThinkAction(TalkshowWorker):
             with _env(**env):
                 req = think_request(prefix, obs["role"], human_text=obs.get("audience_turn"), plan=self.plan(p),
                                     topic_id=tid)
+            req["messages"], p.state["fact_instruction"] = show_fact_instruction(req["messages"], obs)
             p.state["think"] = req
             return [Request("think", req["messages"], req["temperature"], req["max_tokens"], p.seed, obs["item_id"])]
         if stage == first + 1 and p.state.get("need_fallback"):
@@ -443,6 +469,7 @@ class TalkshowThinkAction(TalkshowWorker):
         if p.state.get("need_fallback") and "fallback" not in outs:
             return None
         res = {"speaker": p.obs["role"], "floor_action": p.state["action"], "decision": p.state["decision"],
+               **({"fact_instruction": p.state["fact_instruction"]} if p.state.get("fact_instruction") else {}),
                "raw": outs["think"], "fact_pack_offered": think.get("fact_pack") or None}
         if p.state.get("line"):
             return {**res, "text": p.state["line"], "text_source": "think"}

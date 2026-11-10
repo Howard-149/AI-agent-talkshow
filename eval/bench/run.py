@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from eval.bench.items import Item, observation, read_items  # noqa: E402
+from eval.bench.items import Item, expand_tasks, observation, read_items  # noqa: E402
 
 DEV_ITEMS = ROOT / "eval" / "data" / "bench" / "dev.jsonl"
 TEST_ITEMS = ROOT / "eval" / "data" / "bench" / "build" / "test.jsonl"
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--system", choices=("plain", "worker", "think_action"), required=True)
     ap.add_argument("--model", default="", help="HF model id or path (not needed with --dry-run / --fake)")
     ap.add_argument("--arm", default="production", help="show systems: production | fast | concrete_fact_pack")
-    ap.add_argument("--tasks", default="T1,T2,T3,T4")
+    ap.add_argument("--tasks", default="T1,T2,T3a,T3b,T4", help="comma list; T3 = T3a and T3b")
     ap.add_argument("--split", choices=("dev", "test"), default="dev")
     ap.add_argument("--items", default="", help="items jsonl (default: eval/data/bench/dev.jsonl or build/test.jsonl)")
     ap.add_argument("--topics", default="", help="comma list of topic ids (default all)")
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     items_path = Path(args.items) if args.items else (DEV_ITEMS if args.split == "dev" else TEST_ITEMS)
     if not items_path.is_file():
         sys.exit(f"{items_path} not found (test items: python -m eval.bench.build --split test)")
-    items = select(read_items(items_path), args.tasks.split(","), args.topics, args.limit_topics)
+    items = select(read_items(items_path), expand_tasks(args.tasks), args.topics, args.limit_topics)
     items = [it for it in items if it.split == args.split]
     if not items:
         sys.exit("no items selected")
