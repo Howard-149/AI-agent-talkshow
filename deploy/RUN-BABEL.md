@@ -35,11 +35,9 @@ cp .env.example .env   # 填 LiveKit、PIPER_*、PIPER_MODEL_PATH_ZH*、VLLM_*
 ### 2. DyStream 代码 + 权重（repo 外）
 
 ```bash
-export DYSTREAM_ROOT=/data/user_data/$USER/dystream
-bash deploy/clone-dystream.sh
+export DYSTREAM_ROOT=/data/user_data/$USER/dystream   # clone the DyStream code here first
 export HF_TOKEN=hf_...
 bash deploy/download-dystream-weights.sh
-bash deploy/verify-hf-token.sh
 ```
 
 ### 3. DyStream **独立** conda env（推荐）
@@ -145,7 +143,7 @@ bash deploy/run-cosyvoice-sidecar.sh
 
 `.env` 需有 `DYSTREAM_SIDECAR_URL=http://127.0.0.1:8766`；agent 会对 sidecar POST `/bake`（传 portrait/audio/output 路径），不再每句 spawn subprocess。
 
-Agent 改代码：`git pull` 或 `./scripts/sync-to-babel.sh` → 重启 tmux 2。Sidecar 改 avatar 代码 → 重启 tmux 3。
+Agent 改代码：`git pull` → 重启 tmux 2。Sidecar 改 avatar 代码 → 重启 tmux 3。
 
 ---
 

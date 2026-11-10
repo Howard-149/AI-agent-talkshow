@@ -140,13 +140,13 @@ def dystream_root() -> Path:
             "DYSTREAM_ROOT is not set. Example (Babel):\n"
             "  export DYSTREAM_ROOT=/data/user_data/$USER/dystream\n"
             "  # or add DYSTREAM_ROOT=... to repo .env\n"
-            "  bash deploy/clone-dystream.sh"
+            "  # and clone the DyStream code there"
         )
     path = _expand_user_path(raw)
     if not path.is_dir() or not (path / "app.py").is_file():
         raise FileNotFoundError(
             f"DYSTREAM_ROOT invalid (missing app.py): {path}\n"
-            "Run: bash deploy/clone-dystream.sh"
+            "Clone the DyStream code there first."
         )
     return path
 

@@ -35,10 +35,7 @@ class HostAgent(HandoffToolsMixin, TalkShowAgent):
             "yes",
         ):
             return
-        if self._data.scenario.turn_control.mode in (
-            "panel_round_robin",
-            "host_moderated",
-        ):
+        if self._data.scenario.turn_control.mode == "host_moderated":
             # Opening runs from main.entrypoint after room connect (session_opening.py)
             return
         host = load_persona_name("host")

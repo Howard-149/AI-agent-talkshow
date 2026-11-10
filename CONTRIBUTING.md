@@ -29,7 +29,7 @@ Local-only notes (e.g. `.cursor/`, `docs/`, personal `ROADMAP.md`) may use any l
 
 - **Laptop:** do not use `requirements.txt` unless running the full agent on a GPU machine.
 - **Babel:** default TTS is CosyVoice (`TALKSHOW_TTS_ENGINE=cosyvoice` + sidecar). How to run: [README.md](README.md). Sidecar install: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
-- Agent on Babel: `git pull` or `./scripts/sync-to-babel.sh`, then resubmit `sbatch deploy/slurm-talkshow-3gpu.sh`. Copy `.env` to Babel separately (never commit it).
+- Agent on Babel: `git pull`, then resubmit `sbatch deploy/slurm-talkshow-3gpu.sh`. Copy `.env` to Babel separately (never commit it).
 
 ## Pull requests
 

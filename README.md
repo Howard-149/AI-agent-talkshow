@@ -48,7 +48,7 @@ From a Babel **login** node (not an interactive GPU shell). The job starts vLLM,
 ssh babel
 cd ~/AI-agent-talkshow
 mkdir -p slurm-logs
-git pull    # or sync from the laptop: ./scripts/sync-to-babel.sh
+git pull
 
 sbatch deploy/slurm-talkshow-3gpu.sh
 # Override partition if needed:  sbatch -p <name> deploy/slurm-talkshow-3gpu.sh
@@ -409,7 +409,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | Start the show stack | Babel login | `sbatch deploy/slurm-talkshow-3gpu.sh` |
 | UI / panel / transcript | Laptop | `cd talkshow-web && pnpm dev` |
 | Mint token | Laptop | `python api/tokens.py --room talkshow-dev --identity <you>` |
-| Edit agent logic | Git + Babel | edit `agent/`, push / `sync-to-babel.sh`, `deploy/talkshow-ctl.sh restart agent` |
+| Edit agent logic | Git + Babel | edit `agent/`, push, `git pull` on Babel, `deploy/talkshow-ctl.sh restart agent` |
 | Ghost session (no mic) | Babel | `python -m eval.ghost_session` |
 | Record ghost frontend | Laptop | `python -m eval.ghost_session --record` |
 | Change persona text | Git | `config/personas/*.yaml` |
@@ -427,9 +427,8 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 | `config/personas/guest.yaml` | Amy |
 | `config/personas/commentator.yaml` | Ryan |
 | `config/scenarios/default.yaml` | `host_moderated` (default) |
-| `config/scenarios/panel_fixed.yaml` | Legacy fixed Ryan → Amy |
 
-Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interaction`: the interaction *generates* each agent line and discloses it interval by interval to the other agents, who think and may request an interrupt, speak, or backchannel; a controller arbitrates. Speech is *consumed* separately — printed in text-only mode, TTS + avatar video live — and a human can speak at any time, cutting the current line. The `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals; side effects via `agent/show_graph/actuators.py`), **`panel_round_robin`** (fixed order), **`rotate_after_user`**, **`manual_only`**.
+Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interaction`: the interaction *generates* each agent line and discloses it interval by interval to the other agents, who think and may request an interrupt, speak, or backchannel; a controller arbitrates. Speech is *consumed* separately — printed in text-only mode, TTS + avatar video live — and a human can speak at any time, cutting the current line. The `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals; side effects via `agent/show_graph/actuators.py`), **`rotate_after_user`**, **`manual_only`**.
 
 ---
 

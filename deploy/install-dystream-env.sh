@@ -40,7 +40,7 @@ pip install --upgrade pip wheel
 
 if [[ "${1:-}" == "--full" ]]; then
   if [[ ! -f "${UPSTREAM_REQ}" ]]; then
-    echo "Missing ${UPSTREAM_REQ} — run deploy/clone-dystream.sh first" >&2
+    echo "Missing ${UPSTREAM_REQ} — clone the DyStream code into DYSTREAM_ROOT first" >&2
     exit 1
   fi
   PATCHED="$(mktemp)"
