@@ -44,6 +44,9 @@ class Action:
     intent: CommunicativeIntent | None
     content: str | None
     backchannels: tuple[Backchannel, ...] = ()
+    # Interrupt only: the words of the visible speech it reacts to (asked for, and
+    # checked, only when the floor rules are on; see agent/floor/floor_rules.py).
+    quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,9 +158,11 @@ def parse_think_action(
         return ThinkAction(think.strip(), Action("silent", None, None))
 
     valid_backchannels = backchannels if allow_backchannels else []
+    quote = action_data.get("quote") if decision == "interrupt" else None
+    quote = quote.strip() or None if isinstance(quote, str) else None
     return ThinkAction(
         think.strip(),
-        Action(decision, intent, content, tuple(valid_backchannels)),
+        Action(decision, intent, content, tuple(valid_backchannels), quote),
     )
 
 
