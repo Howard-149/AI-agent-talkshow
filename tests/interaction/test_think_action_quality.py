@@ -220,6 +220,7 @@ class ThinkPromptBlocksTests(_Base):
         data.floor_interaction = interaction
         controller = SimpleNamespace(listen_role=lambda: "host")
         act = LiveActuators(None, data, controller)
+        act.listeners = lambda speaker: []  # no appraisal of the human line here
         started = Mock()
         with (
             patch("agent.panel.uptake.start_uptake_plan", started),

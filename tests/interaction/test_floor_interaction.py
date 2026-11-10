@@ -443,6 +443,68 @@ class HumanReactionTests(FloorInteractionTestCase):
         self.assertEqual(interaction.consume_proposed_reply("guest"), "Rural access matters.")
 
 
+class EmotionHookTests(FloorInteractionTestCase):
+    async def test_queued_line_keeps_the_emotion_it_was_queued_with(self) -> None:
+        interaction, consumer, data = self.make()
+        interaction.cue_emotion = lambda data, role: data.role_emotion[role]
+        data.role_emotion["guest"] = "Sadness"
+        await interaction.play_line(data, "guest", "heard line", step="a")
+        data.role_emotion["guest"] = "Anger"  # a later appraisal must not change it
+
+        self.assertEqual(consumer.cues[0].emotion, "Sadness")
+
+    async def test_finished_line_is_appraised_before_its_last_interval(self) -> None:
+        interaction, _, data = self.make()
+        order: list[str] = []
+
+        async def complete(data, speaker, text):
+            order.append(f"complete:{speaker}:{text}")
+
+        interaction.on_line_complete = complete
+        await self.speak(
+            interaction, data, "guest", LINE_A, on_interval=lambda n: order.append(f"interval:{n}")
+        )
+
+        self.assertEqual(
+            order, ["interval:1", "interval:2", f"complete:guest:{LINE_A}", "interval:3"]
+        )
+
+    async def test_cut_line_is_not_reported_finished(self) -> None:
+        interaction, _, data = self.make()
+        interaction.on_line_complete = AsyncMock()
+
+        async def listeners(data, **kw):
+            interaction._interval_backchannels = []
+            return "commentator"  # approved interrupt at the first interval
+
+        interaction._update_listeners = listeners
+        data.show_history.append("guest", LINE_A)
+        await interaction.disclose_panel_line(data, {"role": "guest", "text": LINE_A})
+
+        interaction.on_line_complete.assert_not_awaited()
+
+    async def test_mood_goes_into_the_think_and_host_prompts(self) -> None:
+        interaction, _, data = self.make()
+        interaction.mood_block = lambda data, role: f"Your current mood: gloomy ({role})."
+        complete = data.runtime.gemma_client.complete_text
+        complete.return_value = (
+            '{"think": "x", "action": {"decision": "silent", "intent": null, '
+            '"content": null, "backchannels": []}}'
+        )
+        with patch("agent.panel.panel_prompts.panelist_personality_block", return_value="persona"):
+            await interaction._think_and_act(
+                data, "guest", history=data.show_history, speaker="commentator",
+                interval_text="x", visible_text="x", checkpoint=1, floor_state="free",
+            )
+        self.assertIn("Your current mood: gloomy (guest).", complete.await_args.args[0])
+
+        interaction.host_fallback_instruction = "Invite the guest."
+        interaction.host_fallback_strategy = "invite"
+        complete.return_value = "Amy, your view?"
+        await interaction.host_fallback_line(data, "host")
+        self.assertIn("Your current mood: gloomy (host).", complete.await_args.args[0])
+
+
 class ActuatorTests(FloorInteractionTestCase):
     def make_actuators(self, interaction):
         from agent.show_graph.actuators import LiveActuators
@@ -468,6 +530,7 @@ class ActuatorTests(FloorInteractionTestCase):
         interaction = ThinkActionInteraction(RecordingConsumer())
         interaction.react_to_human = AsyncMock(return_value=FloorOutcome("speak", "commentator"))
         act, data = self.make_actuators(interaction)
+        act.listeners = lambda speaker: []
         routed: list[str] = []
         with (
             patch("agent.session.human_turn.record_human_line", AsyncMock()),
@@ -480,7 +543,7 @@ class ActuatorTests(FloorInteractionTestCase):
             reply, utt = await act.commit_human_turn({"heard": "Is that fair?"})
 
         self.assertEqual(reply, "")
-        self.assertEqual(utt.speaker, "human")
+        self.assertIsNone(utt)  # appraised here already; the graph has nothing left to fan out
         self.assertEqual(routed, ["commentator"])
         interaction.react_to_human.assert_awaited_once_with(data, "Is that fair?")
 
@@ -488,6 +551,7 @@ class ActuatorTests(FloorInteractionTestCase):
         interaction = ThinkActionInteraction(RecordingConsumer())
         interaction.react_to_human = AsyncMock(return_value=FloorOutcome("speak", "guest"))
         act, data = self.make_actuators(interaction)
+        act.listeners = lambda speaker: []
         data.show_history.append("guest", "heard line")
         await interaction.play_line(data, "guest", "heard line", step="a")
         data.show_history.append("host", "never heard")
@@ -508,6 +572,79 @@ class ActuatorTests(FloorInteractionTestCase):
         self.assertEqual(
             [line.text for line in data.show_history.lines], ["heard line", "Is that fair?"]
         )
+
+    async def test_human_words_are_appraised_before_anyone_reacts(self) -> None:
+        interaction = ThinkActionInteraction(RecordingConsumer())
+        order: list[str] = []
+
+        async def react(data, heard):
+            order.append("react")
+            return FloorOutcome("speak", "guest")
+
+        interaction.react_to_human = react
+        act, _ = self.make_actuators(interaction)
+
+        async def appraise(utt, role):
+            order.append(f"appraise:{role}:{utt.text}")
+            return {"role": role}
+
+        act.appraise = appraise
+        act.listeners = lambda speaker: ["host", "guest"]
+        with (
+            patch("agent.session.human_turn.record_human_line", AsyncMock()),
+            patch("agent.floor.floor_control.apply_floor_next", lambda data, role: None),
+            patch("agent.emotion.appraisal.snapshot_context", return_value=None),
+        ):
+            await act.commit_human_turn({"heard": "Is that fair?"})
+
+        self.assertEqual(
+            order, ["appraise:host:Is that fair?", "appraise:guest:Is that fair?", "react"]
+        )
+
+    async def test_human_appraisal_applies_while_the_human_holds_the_floor(self) -> None:
+        from agent.emotion.appraisal import Utterance
+
+        interaction = ThinkActionInteraction(RecordingConsumer())
+        interaction.human_floor_pending = True
+        act, _ = self.make_actuators(interaction)
+        applied: list[str] = []
+        result = SimpleNamespace(delta=(0.1, 0.0, 0.0), word="moved")
+        with (
+            patch("agent.emotion.appraisal.run_appraisal", AsyncMock(return_value=result)),
+            patch(
+                "agent.emotion.appraisal.apply_appraisal",
+                lambda data, utt, result: applied.append(utt.speaker),
+            ),
+        ):
+            await act.appraise(Utterance("human", "Is that fair?", 1, None), "guest")
+            agent = await act.appraise(Utterance("host", "written past the barge-in", 2, None), "guest")
+
+        self.assertEqual(applied, ["human"])
+        self.assertTrue(agent["barge_in"])
+
+    async def test_finished_line_is_appraised_once_inside_its_disclosure(self) -> None:
+        from agent.emotion.appraisal import Utterance
+
+        interaction = ThinkActionInteraction(RecordingConsumer())
+        act, _ = self.make_actuators(interaction)
+        appraised: list[tuple[str, str]] = []
+
+        async def appraise(utt, role):
+            appraised.append((role, utt.text))
+            return {"role": role}
+
+        async def disclose(data, line, on_start=None):
+            await interaction.on_line_complete(data, "guest", "Full line.")
+
+        act.appraise = appraise
+        act.listeners = lambda speaker: ["host", "commentator"]
+        interaction.disclose_panel_line = disclose
+        interaction.latest_line_text = lambda role: "Full line."
+        act._deferred_utterance = Utterance(speaker="guest", text="Full line.", seq=1, context=None)
+        with patch("agent.emotion.appraisal.snapshot_context", return_value=None):
+            await act.speak({"role": "guest", "kind": "panelist"})
+
+        self.assertEqual(appraised, [("host", "Full line."), ("commentator", "Full line.")])
 
     async def test_free_floor_host_fallback_selects_host(self) -> None:
         interaction = ThinkActionInteraction(RecordingConsumer())
@@ -565,6 +702,21 @@ class AVSpeechConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.consumer.idle())
         self.session.interrupt.assert_called_once_with(force=True)
         self.assertEqual(self.spoken, ["one two three"])
+
+    async def test_playback_uses_the_emotion_fixed_when_queued(self) -> None:
+        self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
+        seen: list[str | None] = []
+
+        async def speak_panel_line(session, data, *, speak_role, text, **kw):
+            seen.append(kw.get("emotion"))
+
+        with patch("agent.session.session_handoff.speak_panel_line", speak_panel_line):
+            cue = Cue("guest", "one two", "s", emotion="Sadness")
+            await self.consumer.submit(self.data, cue)
+            self.consumer.close(cue, len("one two"))
+            await self.consumer.drain()
+
+        self.assertEqual(seen, ["Sadness"])
 
     async def test_script_cut_decided_before_playback_plays_only_the_prefix(self) -> None:
         self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)

@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from agent.adapters.cosyvoice_voices import cosyvoice_mode, mode_needs_prompt_wav
+from agent.adapters.cosyvoice_voices import cosyvoice_mode, mode_needs_prompt_wav, zero_shot_prompt_text
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,9 @@ async def synthesize_pcm_via_sidecar(
         payload["spk_id"] = spk_id
     if prompt_wav:
         payload["prompt_wav"] = prompt_wav
+        prompt_text = zero_shot_prompt_text(prompt_wav) if use_mode == "zero_shot" else ""
+        if prompt_text:
+            payload["prompt_text"] = prompt_text
 
     url = f"{base}/synthesize"
     client = await _http_client(timeout_sec)

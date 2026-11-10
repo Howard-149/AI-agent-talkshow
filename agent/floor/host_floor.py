@@ -56,23 +56,6 @@ def topic_announcement(default: str = "") -> str:
     return f"{TOPIC_PREFIX} {topic}" if topic else ""
 
 
-async def host_announce_topic(
-    session: AgentSession | None,
-    data: TalkShowData,
-    controller: TurnController,
-    *,
-    default: str = "",
-) -> None:
-    """After the welcome the host announces the topic (an on-record show line)."""
-    text = topic_announcement(default)
-    if not text:
-        return
-    listen = controller.listen_role()
-    append_role(data, listen, text, appraise=False, procedural=False)
-    log_show_topic(data, text)
-    await speak_panel_line(session, data, speak_role=listen, text=text, step="topic")
-
-
 async def host_opening_line(data: TalkShowData, *, default: str = "") -> str:
     """The host's one opening turn: self-introduction, today's topic, the question to
     weigh, and an invitation to the first panelist (who then gets the first pick).
@@ -196,37 +179,6 @@ def log_show_topic(data: TalkShowData, text: str) -> None:
         interaction.log_topic(data, text)
 
 
-async def host_speak_session_welcome(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-) -> None:
-    """Opening beat — welcome only; no topic, no direct call-outs."""
-    from agent.locale.viewer_locales import primary_delivery_locale
-
-    canonical, texts = session_welcome_line(data)
-    needed = frozenset(getattr(data, "needed_locales", None) or {"en"})
-    primary = primary_delivery_locale(needed)
-    listen = controller.listen_role()
-    # History stays English for shared transcript / prompts.
-    append_role(data, listen, canonical, appraise=False)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=canonical,
-        step="session_welcome",
-        texts=texts,
-    )
-    apply_floor_next(data, "host")
-    logger.info(
-        "session_welcome spoken primary=%s needed=%s line=%.60r",
-        primary,
-        sorted(needed),
-        texts.get(primary) or canonical,
-    )
-
-
 async def run_host_moderation_from_queue(
     session: AgentSession,
     data: TalkShowData,
@@ -238,7 +190,7 @@ async def run_host_moderation_from_queue(
     spoken_roles: set[str] | None = None,
 ) -> str | None:
     """
-    Whenever the host must pick the next speaker: poll into queue, resolve, grant.
+    Whenever the host must pick the next speaker: select a speaker and grant the floor.
     Orchestrated by LangGraph (agent.show_graph); actuators stay in this module.
     """
     from agent.show_graph.runner import (
@@ -293,7 +245,7 @@ async def run_host_moderated_panel(
     """
     Floor routing via [next] tags:
     - panelist role → direct grant (chain if panelists tag each other)
-    - host / unset → hand-raise pending, then host moderates
+    - host / unset → host moderates, then the next speaker is selected
 
     Orchestrated by LangGraph (agent.show_graph).
     """

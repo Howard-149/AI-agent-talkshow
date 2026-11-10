@@ -29,7 +29,7 @@
 #
 # Submit:
 #   mkdir -p ~/AI-agent-talkshow/slurm-logs
-#   sbatch ~/AI-agent-talkshow/deploy/slurm-talkshow-text.sh
+#   sbatch ~/AI-agent-talkshow/deploy/slurm-talkshow-1gpu.sh
 # ============================================================
 
 set -euo pipefail

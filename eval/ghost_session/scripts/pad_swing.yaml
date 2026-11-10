@@ -1,5 +1,6 @@
 # Two human beats meant to move PAD off Neutral: humiliation, then relief.
 # Not a policy debate — personal, high-arousal, then a clear mood reversal.
+# The second beat cuts into a panelist mid-line, like news arriving.
 locale: en
 identity: ghost-guest
 turns:
@@ -10,9 +11,16 @@ turns:
       That is not a review — that is public humiliation. I want to hear if
       any of you still call this industry a meritocracy.
     topic: loyalty award then walkout
+    after_lines: 1          # right after the host's opening
+    when: line_end
+    emotion: Anger
   - text: >
       Wait — he just texted. A competitor hired the whole backend group at a
       raise, and our CEO is on a call begging them back. I still think the
       firing was cruel, but I am relieved he landed on his feet. Does that
       change how you judge the company, or only the outcome?
     topic: team hired away after walkout
+    after_lines: 4
+    when: mid_line          # barge in on the fourth line, 3 s after it starts
+    after_sec: 3
+    emotion: Happiness

@@ -30,7 +30,7 @@ PANEL_HOST_AUDIO_USER_HINT = host_audio_user_hint()
 
 
 def panelist_personality_block(role: str) -> str:
-    """Personality traits from persona yaml — used for speaking and hand-raise polls."""
+    """Personality traits from persona yaml — used for speaking and Think & Action decisions."""
     personality = load_persona_personality(role)
     if personality:
         return personality

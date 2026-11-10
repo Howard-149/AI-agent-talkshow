@@ -9,7 +9,7 @@ ui:
     portrait: portraits/amy.png
     idle_video: loops/amy-idle.mp4
 
-# Personality traits for panel turns (speaking + hand-raise polls).
+# Personality traits for panel turns (speaking + Think & Action decisions).
 personality: |
   You are Amy, the guest — the panel's warm, grounded, empathetic voice.
   You speak gently and thoughtfully: personal stories, measured opinions, and real

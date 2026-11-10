@@ -95,6 +95,22 @@ class TextOnlyInteractionTests(unittest.TestCase):
         self.assertIn('text: "Actually disclosed wording."', text)
         self.assertNotIn("step:", text)
 
+    def test_human_and_rollback_events_have_no_persona_file(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from agent.telemetry.model_output_logger import ModelOutputLogger
+
+        with TemporaryDirectory() as directory:
+            output = ModelOutputLogger(Path(directory))
+            # A barge-in and its rollback: neither role has a config/personas/*.yaml.
+            output.event("human", "barge-in", speaker="guest", heard="Last Friday")
+            output.event("rollback", "rollback", lines=2)
+            text = _without_timestamps(output.path.read_text(encoding="utf-8"))
+
+        self.assertIn('[barge-in]\nspeaker: "Human guest"\nrole: "human"', text)
+        self.assertIn("[rollback]\nlines: 2", text)
+
     def test_event_headers_and_selection_block_spacing(self) -> None:
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -679,21 +695,6 @@ class ThinkCheckpointTests(unittest.IsolatedAsyncioTestCase):
             selected_role="close",
             eligible_candidates=[],
             decisions=[],
-        )
-
-    def test_host_direct_call_repeats_spoken_roles_only_in_text_only_mode(self) -> None:
-        from agent.floor.host_direct_call import _host_call_candidates
-
-        panel_roles = ["guest", "commentator"]
-        spoken_roles = set(panel_roles)
-
-        self.assertEqual(
-            _host_call_candidates(panel_roles, spoken_roles, allow_repeat=True),
-            panel_roles,
-        )
-        self.assertEqual(
-            _host_call_candidates(panel_roles, spoken_roles, allow_repeat=False),
-            [],
         )
 
     async def test_direct_trigger_is_structured(self) -> None:

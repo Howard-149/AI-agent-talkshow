@@ -206,13 +206,8 @@ class GemmaAudioSTT(stt.STT):
                     room=data.room_name,
                 )
             from agent.show.show_context import host_audio_user_hint
-            from agent.emotion import mood_prompt_block
-            from agent.emotion.appraisal import await_pending_appraisal
 
-            await await_pending_appraisal(data, "host")
-            user_hint = (
-                f"{host_audio_user_hint()}\n\n{mood_prompt_block(data, 'host')}"
-            )
+            user_hint = host_audio_user_hint()
         else:
             user_hint = None
 

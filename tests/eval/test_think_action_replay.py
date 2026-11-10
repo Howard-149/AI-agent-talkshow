@@ -190,6 +190,7 @@ class GhostTurnThinkActionTests(unittest.IsolatedAsyncioTestCase):
             data.show_history.append("human", heard)
 
         act = LiveActuators(None, data, SimpleNamespace(listen_role=lambda: "host"))
+        act.listeners = lambda speaker: []  # no appraisal of the human line here
         with (
             mock.patch("agent.session.human_turn.record_human_line", record),
             mock.patch("agent.floor.floor_control.apply_floor_next", lambda data, role: None),
@@ -202,11 +203,12 @@ class GhostTurnThinkActionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GhostClientTests(unittest.TestCase):
-    def test_default_floor_wait_is_think_action(self) -> None:
-        from eval.ghost_session.client import _build_parser
+    def test_replay_scripts_always_send_the_exact_text(self) -> None:
+        from eval.ghost_session.client import GhostScript, speaks_turns
 
-        self.assertEqual(_build_parser().parse_args([]).floor_wait, "none")
-        self.assertEqual(_build_parser().parse_args(["--floor-wait", "grant"]).floor_wait, "grant")
+        self.assertTrue(speaks_turns(GhostScript(), text_turns=False))
+        self.assertFalse(speaks_turns(GhostScript(), text_turns=True))
+        self.assertFalse(speaks_turns(GhostScript(prefix={"lines": []}), text_turns=False))
 
 
 if __name__ == "__main__":

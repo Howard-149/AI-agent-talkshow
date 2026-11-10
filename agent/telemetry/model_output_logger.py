@@ -14,11 +14,26 @@ class ModelOutputLogger:
     def __init__(self, log_dir: Path) -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         self._path = log_dir / f"session-{time.time_ns()}.log"
-        self._names: dict[str, str] = {}
+        self._names: dict[str, str | None] = {}
 
     @property
     def path(self) -> Path:
         return self._path
+
+    def _speaker_name(self, role: str) -> str | None:
+        """Display name of a speaker; None for an event category (floor, rollback, …)."""
+        if role not in self._names:
+            if role in {"floor", "topic", "interval"}:
+                name = None
+            elif role == "human":
+                name = "Human guest"
+            else:
+                try:
+                    name = load_persona_name(role)
+                except FileNotFoundError:  # rollback, selection, speech: not a persona
+                    name = None
+            self._names[role] = name
+        return self._names[role]
 
     def event(self, role: str, kind: str, **fields: object) -> None:
         if kind == "topic":
@@ -29,10 +44,8 @@ class ModelOutputLogger:
         # Wall-clock time of the entry; a field, so header lines stay parseable.
         stamp = datetime.now().isoformat(sep=" ", timespec="milliseconds")
         lines.append(f"time: {json.dumps(stamp)}")
-        if role not in {"floor", "topic", "interval"} and kind != "topic":
-            if role not in self._names:
-                self._names[role] = load_persona_name(role)
-            name = self._names[role]
+        name = self._speaker_name(role) if kind != "topic" else None
+        if name is not None:
             lines.append(f"speaker: {json.dumps(name, ensure_ascii=False)}")
             lines.append(f"role: {json.dumps(role, ensure_ascii=False)}")
         if kind != "topic":

@@ -97,6 +97,17 @@ class PromptModeTests(unittest.TestCase):
             self.assertEqual(mood_output_lines(), "")
 
 
+    def test_mood_wording_expressive_by_default_subtle_on_flag(self) -> None:
+        data = _FakeData()
+        data.role_pad["guest"] = (-0.5, 0.5, -0.4)
+        data.role_pad_neighbors["guest"] = ["Anger", "Anger", "Contempt"]
+        with mock.patch.dict(os.environ, {**_SEPARATE, "TALKSHOW_MOOD_WORDING": ""}):
+            block = pad_prompt_block(data, "guest")
+            self.assertIn("so a listener could hear it", block)
+            self.assertNotIn("do not name it", block)
+        with mock.patch.dict(os.environ, {**_SEPARATE, "TALKSHOW_MOOD_WORDING": "subtle"}):
+            self.assertIn("do not name it", pad_prompt_block(data, "guest"))
+
     def test_llm_rollback_disables_appraisal(self) -> None:
         with mock.patch.dict(os.environ, {"TALKSHOW_EMOTION_SOURCE": "llm"}):
             self.assertFalse(A.appraisal_enabled())

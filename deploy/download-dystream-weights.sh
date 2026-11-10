@@ -6,7 +6,6 @@
 #
 # Auth (required on Babel shared egress IPs):
 #   export HF_TOKEN=hf_...          # https://huggingface.co/settings/tokens (read)
-#   bash deploy/verify-hf-token.sh
 #
 # Usage:
 #   bash deploy/download-dystream-weights.sh
@@ -16,7 +15,7 @@ REPO="${DYSTREAM_HF_REPO:-robinwitch/DyStream}"
 TARGET="${DYSTREAM_ROOT:-/data/user_data/${USER}/dystream}"
 
 if [[ ! -f "$TARGET/app.py" ]]; then
-  echo "DyStream code missing at $TARGET — run: bash deploy/clone-dystream.sh" >&2
+  echo "DyStream code missing at $TARGET — clone the DyStream code there first" >&2
   exit 1
 fi
 

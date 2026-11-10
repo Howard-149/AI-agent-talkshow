@@ -85,11 +85,6 @@ class TalkShowData:
         return self.hand_raise_queue.has("human")
 
     @property
-    def human_hand_reason(self) -> str:
-        entry = self.hand_raise_queue.get("human")
-        return entry.reason if entry else ""
-
-    @property
     def human_hand_topic(self) -> str:
         entry = self.hand_raise_queue.get("human")
         return entry.topic if entry else ""
@@ -144,9 +139,6 @@ class TalkShowData:
                 room=self.room_name,
                 queue=self.hand_raise_queue.roles(),
             )
-
-    def clear_human_hand(self) -> None:
-        self.hand_raise_queue.remove("human")
 
     def touch_activity(self) -> None:
         import time

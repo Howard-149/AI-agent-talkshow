@@ -176,7 +176,7 @@ def _raw_personality(persona_id: str) -> str:
 
 
 def load_persona_personality(persona_id: str) -> str:
-    """In-character personality for panel turns (speaking + hand-raise polls)."""
+    """In-character personality for panel turns (speaking + Think & Action decisions)."""
     other = _SWAP_PAIR.get(persona_id) if _PERSONA_SWAP else None
     if other is None:
         return _raw_personality(persona_id)
@@ -193,7 +193,7 @@ class DialogueConfig:
 
 @dataclass(frozen=True)
 class TurnControlConfig:
-    mode: str  # manual_only | rotate_after_user | panel_round_robin | host_moderated
+    mode: str  # manual_only | rotate_after_user | host_moderated
     order: tuple[str, ...]
     listen_role: str  # who hears the human (Gemma audio-in) in panel mode
 

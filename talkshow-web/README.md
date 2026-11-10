@@ -69,12 +69,13 @@ Meet includes `/api/connection-details` — uses root `.env` `LIVEKIT_*` and **M
 - `panel_roster` — on connect, from `config/scenarios/*.yaml` + `config/personas/*.yaml`
 - `role_active` — signaled speaker (`emotion` optional closed-set mood); UI waits for agent audio before highlight
 - `transcript` — final lines (AI lines buffered until agent audio is active)
-- `hand_raise` — panelist wants floor (✋ on avatar)
 - `floor_grant` — host gave floor to role
 
 **Human → agent (`talkshow/control`):**
 
-- `hand_raise` — `{ type, raised, topic?, reason? }` from Raise hand button
+- `set_locale` — viewer's transcript language
+
+The UI has no Raise hand button: with Think & Action floor control a human takes the floor by speaking.
 
 Late joiners can also read roster from agent participant **metadata** (`talkshowAgent` + `panelRoster`).
 
@@ -97,9 +98,3 @@ npm install -g pnpm
 # or: brew install pnpm
 ```
 
-**Build: background image "not a valid image file"** — JPEGs are Git LFS in upstream Meet. If you only got 130-byte pointer files:
-
-```bash
-bash scripts/fetch-background-images.sh
-pnpm build
-```
