@@ -22,6 +22,8 @@ eval/results/
 docs/
 scripts/
 !eval/ghost_session/scripts/
+# A person's recorded voice (the ghost guest's reference): never commit
+eval/ghost_session/voice/
 avatar/assets/portraits/*.png
 avatar/assets/loops/*
 !avatar/assets/loops/README.md

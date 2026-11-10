@@ -89,7 +89,10 @@ def mux_recording(
     dest: Path,
     audio_t0: float | None = None,
     video_t0: float | None = None,
+    guest_audio: list[tuple[Path, float]] | None = None,
 ) -> Path:
+    """``guest_audio``: the ghost's own spoken wavs with their monotonic start times,
+    mixed over the show audio (the tap only hears the room, not the ghost's mic)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -113,12 +116,19 @@ def mux_recording(
             cmd.extend(["-i", str(audio)])
         if abs(shift) > 0.02:
             logger.info("mux clock shift audio-video=%.3fs", shift)
+        segments = [(p, t) for p, t in (guest_audio or []) if p.is_file()]
+        for path, _ in segments:
+            cmd.extend(["-i", str(path)])
+        audio_map = "1:a:0"
+        if segments:
+            cmd.extend(["-filter_complex", guest_mix_filter(segments, video_t0=video_t0)])
+            audio_map = "[aout]"
         cmd.extend(
             [
                 "-map",
                 "0:v:0",
                 "-map",
-                "1:a:0",
+                audio_map,
                 "-shortest",
                 "-c:v",
                 "libx264",
@@ -140,6 +150,19 @@ def mux_recording(
     logger.info("mux %s", " ".join(cmd))
     subprocess.run(cmd, check=True, capture_output=True)
     return dest
+
+
+def guest_mix_filter(segments: list[tuple[Path, float]], *, video_t0: float | None) -> str:
+    """ffmpeg filter: show audio (input 1) plus each guest wav (inputs 2…) delayed to
+    when it was spoken, on the video's clock."""
+    t0 = video_t0 if video_t0 is not None else min(t for _, t in segments)
+    parts, labels = [], ["[1:a]"]
+    for i, (_, started) in enumerate(segments):
+        ms = max(0, int(round((started - t0) * 1000)))
+        parts.append(f"[{i + 2}:a]adelay={ms}:all=1[g{i}]")
+        labels.append(f"[g{i}]")
+    parts.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=first[aout]")
+    return ";".join(parts)
 
 
 @dataclass

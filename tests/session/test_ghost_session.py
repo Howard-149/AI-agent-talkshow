@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -104,6 +106,26 @@ class ScriptAndLogTests(unittest.TestCase):
         self.assertEqual(len(swing.turns), 2)
         self.assertIn("humiliation", swing.turns[0].text.lower())
         self.assertIn("relieved", swing.turns[1].text.lower())
+        first, second = swing.turns
+        self.assertEqual((first.after_lines, first.when, first.emotion), (1, "line_end", "Anger"))
+        self.assertEqual((second.after_lines, second.when, second.after_sec), (4, "mid_line", 3.0))
+
+    def test_script_rejects_an_unknown_cut_in_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.yaml"
+            path.write_text("turns:\n  - text: hi\n    when: whenever\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_script(path)
+
+    def test_guest_mix_delays_each_turn_onto_the_video_clock(self) -> None:
+        from eval.ghost_session.record_frontend import guest_mix_filter
+
+        mix = guest_mix_filter([(Path("a.wav"), 12.0), (Path("b.wav"), 40.5)], video_t0=10.0)
+        self.assertEqual(
+            mix,
+            "[2:a]adelay=2000:all=1[g0];[3:a]adelay=30500:all=1[g1];"
+            "[1:a][g0][g1]amix=inputs=3:normalize=0:duration=first[aout]",
+        )
 
     def test_extract_ghost_turn_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -188,3 +210,87 @@ class ScriptAndLogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GhostVoiceTests(unittest.TestCase):
+    def test_reference_prefers_the_emotion_take(self) -> None:
+        from eval.ghost_session.voice import reference_wav
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            with unittest.mock.patch.dict(os.environ, {"GHOST_VOICE_DIR": tmp}):
+                with self.assertRaises(FileNotFoundError):
+                    reference_wav("Anger")
+                (folder / "Neutral.wav").write_bytes(b"")
+                self.assertEqual(reference_wav("Anger").name, "Neutral.wav")
+                (folder / "Anger.wav").write_bytes(b"")
+                self.assertEqual(reference_wav("anger").name, "Anger.wav")
+                self.assertEqual(reference_wav("").name, "Neutral.wav")
+
+
+class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
+    def client(self):
+        from eval.ghost_session.client import GhostRoomClient
+
+        return GhostRoomClient()
+
+    def line(self, client, role: str, step: str) -> None:
+        client.on_ui_event({"type": "transcript", "role": role, "step": step, "text": "x"})
+
+    async def test_line_end_waits_for_the_line_to_finish(self) -> None:
+        from eval.ghost_session.client import ScriptedTurn
+
+        client = self.client()
+        turn = ScriptedTurn(text="hi", after_lines=2, when="line_end", max_wait_sec=5)
+        waiter = asyncio.ensure_future(client.wait_for_turn(turn, lines_before=0))
+        self.line(client, "host", "opening")
+        self.line(client, "host", "opening")  # the same line announced twice counts once
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        self.line(client, "guest", "speech_guest_1")
+        client.on_ui_event({"type": "role_active", "role": "guest"})
+        await asyncio.sleep(0.3)
+        self.assertFalse(waiter.done())  # the second line is still playing
+        client.on_ui_event({"type": "role_idle"})
+        self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
+
+    async def test_mid_line_cuts_in_while_the_line_plays(self) -> None:
+        from eval.ghost_session.client import ScriptedTurn
+
+        client = self.client()
+        turn = ScriptedTurn(text="hi", after_lines=1, when="mid_line", after_sec=0.1, max_wait_sec=5)
+        waiter = asyncio.ensure_future(client.wait_for_turn(turn, lines_before=0))
+        self.line(client, "commentator", "speech_commentator_2")
+        client.on_ui_event({"type": "role_active", "role": "commentator"})
+        self.assertEqual(await asyncio.wait_for(waiter, 3), "mid_line")
+        self.assertTrue(client.speaking)
+
+    async def test_gives_up_waiting_after_max_wait(self) -> None:
+        from eval.ghost_session.client import ScriptedTurn
+
+        client = self.client()
+        turn = ScriptedTurn(text="hi", after_lines=3, max_wait_sec=0.2)
+        self.assertEqual(await client.wait_for_turn(turn, lines_before=0), "timeout")
+
+    async def test_speech_goes_out_in_real_time_frames_then_silence(self) -> None:
+        from eval.ghost_session import client as ghost
+        from eval.ghost_session.voice import Speech
+
+        client = self.client()
+        frames: list[int] = []
+
+        class Source:
+            async def capture_frame(self, frame):
+                frames.append(len(bytes(frame.data)))
+                await asyncio.sleep(0)
+
+        client._source = Source()
+        mic = asyncio.ensure_future(client._mic_loop())
+        try:
+            speech = Speech(pcm=bytes(2 * 2400), sample_rate=24000)  # 0.1 s
+            await asyncio.wait_for(client.say(speech, Path("turn.wav")), 3)
+        finally:
+            mic.cancel()
+        samples = ghost.MIC_RATE * ghost.FRAME_MS // 1000
+        self.assertEqual(client.spoken[0][0], Path("turn.wav"))
+        self.assertGreaterEqual(len(frames), 10)  # 0.1 s at 10 ms frames, resampled to 48 kHz
+        self.assertTrue(all(n == 2 * samples for n in frames))

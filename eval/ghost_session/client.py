@@ -1,4 +1,12 @@
-"""Join a LiveKit room as a silent human and inject scripted turns."""
+"""Join a LiveKit room as a human and speak scripted turns into the show.
+
+Think & Action floor: the human never waits for a floor grant. Each scripted turn
+says when to cut in (after how many agent lines, at a line's end or partway into it),
+and is spoken as microphone audio — CosyVoice from a recorded reference (see voice.py)
+— so the agent hears it through VAD, barge-in and STT like a real guest, and a
+recording has the guest's voice. ``--text-turns`` sends the text instead (no audio,
+no STT): faster and the same every run.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +16,7 @@ import json
 import logging
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -23,11 +32,27 @@ logger = logging.getLogger("ghost_session")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+WHEN = ("line_end", "mid_line")
+# Silence after an agent playout that counts as the end of its line. Sentences of one
+# line follow each other closely; a new speaker waits TALKSHOW_TURN_GAP_S (≥ 1 s).
+LINE_END_QUIET_S = 0.8
+MIC_RATE = 48000
+FRAME_MS = 10
+
 
 @dataclass
 class ScriptedTurn:
     text: str
     topic: str = ""
+    # Speak once this many agent lines have started since the guest last spoke
+    # (since the session started, for the first turn).
+    after_lines: int = 1
+    # line_end: wait for that line to finish. mid_line: cut in after_sec into it.
+    when: str = "line_end"
+    after_sec: float = 0.0
+    emotion: str = ""  # CosyVoice delivery (Anger, Sadness, …); "" = Neutral
+    audio: str = ""  # a recorded wav to play instead of synthesizing
+    max_wait_sec: float = 180.0  # speak anyway after this long
 
 
 @dataclass
@@ -37,24 +62,36 @@ class GhostScript:
     turns: list[ScriptedTurn] = field(default_factory=list)
 
 
+def _turn(item: Any) -> ScriptedTurn | None:
+    if isinstance(item, str):
+        return ScriptedTurn(text=item.strip()) if item.strip() else None
+    if not isinstance(item, dict):
+        return None
+    text = str(item.get("text") or "").strip()
+    if not text:
+        return None
+    when = str(item.get("when") or "line_end").strip()
+    if when not in WHEN:
+        raise ValueError(f"ghost turn: when must be one of {WHEN}, got {when!r}")
+    return ScriptedTurn(
+        text=text,
+        topic=str(item.get("topic") or "").strip(),
+        after_lines=max(0, int(item.get("after_lines", 1))),
+        when=when,
+        after_sec=max(0.0, float(item.get("after_sec", 0.0))),
+        emotion=str(item.get("emotion") or "").strip(),
+        audio=str(item.get("audio") or "").strip(),
+        max_wait_sec=float(item.get("max_wait_sec", 180.0)),
+    )
+
+
 def load_script(path: Path) -> GhostScript:
     import yaml
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise ValueError(f"ghost script must be a mapping: {path}")
-    turns: list[ScriptedTurn] = []
-    for item in raw.get("turns") or []:
-        if isinstance(item, str):
-            text = item.strip()
-            topic = ""
-        elif isinstance(item, dict):
-            text = str(item.get("text") or "").strip()
-            topic = str(item.get("topic") or "").strip()
-        else:
-            continue
-        if text:
-            turns.append(ScriptedTurn(text=text, topic=topic))
+    turns = [t for t in (_turn(item) for item in raw.get("turns") or []) if t is not None]
     return GhostScript(
         locale=str(raw.get("locale") or "en").strip() or "en",
         identity=str(raw.get("identity") or "ghost-guest").strip() or "ghost-guest",
@@ -135,12 +172,86 @@ def _decode_ui_event(raw: bytes | str | dict[str, Any]) -> dict[str, Any] | None
 
 
 class GhostRoomClient:
+    """The guest in the room: follows the show from UI events and speaks on a mic track."""
+
     def __init__(self, audio_tap: Any | None = None) -> None:
         self.room: Any = None
-        self.welcome = asyncio.Event()
-        self.human_floor = asyncio.Event()
-        self._ui_types: list[str] = []
+        self.first_line = asyncio.Event()
         self._audio_tap = audio_tap
+        # Agent lines that started playing (one transcript event per line).
+        self.agent_lines = 0
+        self._seen: set[tuple[str, str]] = set()
+        self.speaking = False  # an agent playout (one sentence) is on air
+        self.idle_since = time.monotonic()
+        self._changed = asyncio.Event()
+        # Microphone: frames waiting to go out, and when each spoken segment started.
+        self._source: Any = None
+        self._mic_task: asyncio.Task[None] | None = None
+        self._pending: deque[bytes] = deque()
+        self._segment_started: asyncio.Future[float] | None = None
+        self._segment_done: asyncio.Event | None = None
+        self.spoken: list[tuple[Path, float]] = []  # (wav, monotonic start) for the recording
+
+    # --- following the show -------------------------------------------------
+
+    def on_ui_event(self, ev: dict[str, Any]) -> None:
+        ev_type = str(ev.get("type") or "")
+        role = str(ev.get("role") or "")
+        if ev_type == "transcript" and role and role != "human":
+            key = (role, str(ev.get("step") or ""))
+            if key in self._seen:
+                return
+            self._seen.add(key)
+            self.agent_lines += 1
+            self.first_line.set()
+            logger.info(
+                "agent line %d %s step=%s %r",
+                self.agent_lines, ev.get("speaker") or role, ev.get("step"),
+                (ev.get("text") or "")[:80],
+            )
+        elif ev_type == "role_active":
+            self.speaking = True
+        elif ev_type == "role_idle":
+            self.speaking = False
+            self.idle_since = time.monotonic()
+        else:
+            return
+        self._changed.set()
+
+    async def _until(self, predicate: Any, deadline: float) -> bool:
+        while not predicate():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            self._changed.clear()
+            try:
+                await asyncio.wait_for(self._changed.wait(), timeout=min(remaining, 0.2))
+            except asyncio.TimeoutError:
+                pass
+        return True
+
+    async def wait_for_turn(self, turn: ScriptedTurn, *, lines_before: int) -> str:
+        """Block until the script says the guest cuts in; returns why it did."""
+        deadline = time.monotonic() + turn.max_wait_sec
+        target = lines_before + turn.after_lines
+        if not await self._until(lambda: self.agent_lines >= target, deadline):
+            return "timeout"
+        if turn.when == "mid_line":
+            await asyncio.sleep(min(turn.after_sec, max(0.0, deadline - time.monotonic())))
+            return "mid_line"
+
+        def line_over() -> bool:
+            # A later line starting also means the target line is over.
+            return self.agent_lines > target or (
+                not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
+            )
+
+        if not await self._until(line_over, deadline):
+            return "timeout"
+        await asyncio.sleep(turn.after_sec)
+        return "line_end"
+
+    # --- room ---------------------------------------------------------------
 
     async def connect(self, url: str, token: str) -> None:
         from livekit import rtc
@@ -156,20 +267,8 @@ class GhostRoomClient:
             if topic != UI_TOPIC or payload is None:
                 return
             ev = _decode_ui_event(payload)
-            if ev is None:
-                return
-            ev_type = str(ev.get("type") or "")
-            self._ui_types.append(ev_type)
-            if ev_type == "transcript" and ev.get("step") == "session_welcome":
-                self.welcome.set()
-                logger.info("welcome transcript received")
-            if ev_type == "floor_grant" and ev.get("role") == "human":
-                self.human_floor.set()
-                logger.info("human floor granted reason=%s", ev.get("reason"))
-            if ev_type == "transcript":
-                speaker = ev.get("speaker") or ev.get("role")
-                text = (ev.get("text") or "")[:80]
-                logger.info("ui transcript %s step=%s %r", speaker, ev.get("step"), text)
+            if ev is not None:
+                self.on_ui_event(ev)
 
         self.room.on("data_received", _on_data)
         if self._audio_tap is not None:
@@ -191,22 +290,60 @@ class GhostRoomClient:
             topic=CONTROL_TOPIC,
         )
 
-    async def raise_hand(self, *, topic: str, reason: str = "ghost_script") -> None:
-        await self.publish_control(
-            {
-                "type": "hand_raise",
-                "raised": True,
-                "topic": topic,
-                "reason": reason,
-            }
-        )
-        logger.info("hand raised topic=%r", topic)
-
     async def inject_turn(self, text: str) -> None:
         await self.publish_control({"type": "ghost_human_turn", "text": text})
         logger.info("injected ghost turn chars=%d %r", len(text), text[:80])
 
+    # --- microphone ---------------------------------------------------------
+
+    async def open_mic(self) -> None:
+        """Publish a mic track that carries silence between turns, like a real mic
+        (the agent's VAD needs the silence after speech to end the turn)."""
+        from livekit import rtc
+
+        self._source = rtc.AudioSource(MIC_RATE, 1, queue_size_ms=50)
+        track = rtc.LocalAudioTrack.create_audio_track("ghost-mic", self._source)
+        options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
+        await self.room.local_participant.publish_track(track, options)
+        self._mic_task = asyncio.create_task(self._mic_loop(), name="ghost:mic")
+        logger.info("ghost mic published rate=%d", MIC_RATE)
+
+    async def _mic_loop(self) -> None:
+        from livekit import rtc
+
+        samples = MIC_RATE * FRAME_MS // 1000
+        silence = bytes(2 * samples)
+        while True:
+            if self._pending:
+                chunk = self._pending.popleft()
+                if self._segment_started is not None and not self._segment_started.done():
+                    self._segment_started.set_result(time.monotonic())
+                if not self._pending and self._segment_done is not None:
+                    self._segment_done.set()
+            else:
+                chunk = silence
+            await self._source.capture_frame(rtc.AudioFrame(chunk, MIC_RATE, 1, samples))
+
+    async def say(self, speech: Any, wav: Path) -> None:
+        """Play ``speech`` (voice.Speech) on the mic in real time."""
+        import numpy as np
+
+        pcm = np.frombuffer(speech.pcm, dtype=np.int16).astype(np.float32)
+        if speech.sample_rate != MIC_RATE:
+            n = int(round(len(pcm) * MIC_RATE / speech.sample_rate))
+            pcm = np.interp(np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm)
+        samples = MIC_RATE * FRAME_MS // 1000
+        pcm = np.pad(pcm, (0, (-len(pcm)) % samples)).astype(np.int16).tobytes()
+        loop = asyncio.get_running_loop()
+        self._segment_started, self._segment_done = loop.create_future(), asyncio.Event()
+        self._pending.extend(pcm[i : i + 2 * samples] for i in range(0, len(pcm), 2 * samples))
+        started = await self._segment_started
+        await self._segment_done.wait()
+        self.spoken.append((wav, started))
+
     async def disconnect(self) -> None:
+        if self._mic_task is not None:
+            self._mic_task.cancel()
         if self.room is None:
             return
         try:
@@ -215,40 +352,14 @@ class GhostRoomClient:
             logger.debug("ghost disconnect raised", exc_info=True)
 
 
-async def _wait_human_floor(
-    client: GhostRoomClient,
-    *,
-    topic: str,
-    timeout_sec: float,
-    raise_every_sec: float,
-) -> bool:
-    """Wait for ``floor_grant`` human; optionally re-raise so late control works."""
-    if client.human_floor.is_set():
-        return True
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(0.0, timeout_sec)
-    while True:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            return False
-        slice_sec = remaining
-        if raise_every_sec > 0:
-            slice_sec = min(slice_sec, raise_every_sec)
-        try:
-            await asyncio.wait_for(client.human_floor.wait(), timeout=slice_sec)
-            return True
-        except asyncio.TimeoutError:
-            if raise_every_sec > 0 and not client.human_floor.is_set():
-                await client.raise_hand(topic=topic)
-
-
 async def run_ghost_session(
     *,
     room: str,
     script: GhostScript,
     opening_only: bool = False,
+    text_turns: bool = False,
     welcome_timeout_sec: float = 90.0,
-    floor_timeout_sec: float = 180.0,
+    tail_lines: int = 3,
     hold_sec: float = 8.0,
     record: bool = False,
     frontend_url: str = "http://localhost:3000",
@@ -264,18 +375,28 @@ async def run_ghost_session(
         viewer_page_url,
     )
 
+    turns = [] if opening_only else script.turns
+    speeches: list[tuple[Any, Path] | None] = [None] * len(turns)
+    if not text_turns:
+        from eval.ghost_session.voice import speech_for_turn
+
+        # Synthesize before joining, so a turn is never late because of TTS.
+        for i, turn in enumerate(turns):
+            speeches[i] = await speech_for_turn(
+                turn.text, emotion=turn.emotion, audio=turn.audio, locale=script.locale
+            )
+
     url, token = mint_ghost_token(
         room=room,
         identity=script.identity,
         locale=script.locale,
     )
-    stamp = int(time.time())
-    out_dir = record_dir or default_record_dir()
     recorder: FrontendRecorder | None = None
     audio_tap: RoomAudioTap | None = None
     recorded: Path | None = None
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = record_dir or default_record_dir()
     if record:
-        out_dir.mkdir(parents=True, exist_ok=True)
         audio_tap = RoomAudioTap(out_dir / f"ghost-{room}-{stamp}.wav")
         recorder = FrontendRecorder(
             frontend_url=frontend_url,
@@ -301,62 +422,32 @@ async def run_ghost_session(
     client = GhostRoomClient(audio_tap=audio_tap)
     await client.connect(url, token)
     try:
-        first_topic = script.turns[0].topic if script.turns else "ghost opening"
-        await client.raise_hand(topic=first_topic)
+        if not text_turns and turns:
+            await client.open_mic()
         if recorder is not None:
-            # Guest is already in the room so opening waits on a real raise, not the viewer.
             await recorder.start(page_url)
         try:
-            await asyncio.wait_for(client.welcome.wait(), timeout=welcome_timeout_sec)
+            await asyncio.wait_for(client.first_line.wait(), timeout=welcome_timeout_sec)
         except asyncio.TimeoutError:
-            logger.warning(
-                "no session_welcome UI event after %.0fs — continuing",
-                welcome_timeout_sec,
-            )
-        # Control channel is registered during bootstrap; raise again after welcome
-        # so an early packet is not dropped before the agent is listening.
-        if not client.human_floor.is_set():
-            await client.raise_hand(topic=first_topic)
+            logger.warning("no agent line after %.0fs — continuing", welcome_timeout_sec)
 
-        if opening_only or not script.turns:
-            await _wait_human_floor(
-                client,
-                topic=first_topic,
-                timeout_sec=floor_timeout_sec,
-                raise_every_sec=8.0,
+        lines_before = 0
+        for idx, (turn, speech) in enumerate(zip(turns, speeches), start=1):
+            why = await client.wait_for_turn(turn, lines_before=lines_before)
+            logger.info(
+                "turn %d: cutting in (%s, %d agent lines since the last turn)",
+                idx, why, client.agent_lines - lines_before,
             )
-            await asyncio.sleep(max(0.0, hold_sec))
-        else:
-            for idx, turn in enumerate(script.turns, start=1):
-                topic = turn.topic or first_topic or f"ghost turn {idx}"
-                if idx > 1:
-                    client.human_floor.clear()
-                    await client.raise_hand(topic=topic)
-                granted = await _wait_human_floor(
-                    client,
-                    topic=topic,
-                    timeout_sec=floor_timeout_sec,
-                    raise_every_sec=8.0,
-                )
-                if not granted:
-                    raise TimeoutError(
-                        f"timed out waiting for human floor before turn {idx}"
-                    )
-                client.human_floor.clear()
+            if speech is None:
                 await client.inject_turn(turn.text)
-                granted = await _wait_human_floor(
-                    client,
-                    topic=topic,
-                    timeout_sec=floor_timeout_sec,
-                    raise_every_sec=0.0,
-                )
-                if not granted:
-                    logger.warning(
-                        "turn %d: no next human floor grant after %.0fs",
-                        idx,
-                        floor_timeout_sec,
-                    )
-            await asyncio.sleep(max(0.0, hold_sec))
+            else:
+                await client.say(*speech)
+            lines_before = client.agent_lines
+        if turns and tail_lines > 0:
+            # Let the panel answer the last turn before leaving.
+            tail = ScriptedTurn(text="-", after_lines=tail_lines, max_wait_sec=180.0)
+            await client.wait_for_turn(tail, lines_before=lines_before)
+        await asyncio.sleep(max(0.0, hold_sec))
     finally:
         wav: Path | None = None
         video: Path | None = None
@@ -374,6 +465,7 @@ async def run_ghost_session(
                 dest=dest,
                 audio_t0=getattr(audio_tap, "started_at", None),
                 video_t0=recorder.started_at,
+                guest_audio=client.spoken,
             )
             logger.info("ghost recording → %s", recorded)
     return recorded
@@ -382,8 +474,8 @@ async def run_ghost_session(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Join LiveKit as a silent human, inject scripted turns, "
-            "and let TTS / avatar run on the Babel worker."
+            "Join LiveKit as the human guest and speak scripted turns into the show "
+            "(CosyVoice audio on a mic track, or --text-turns)."
         )
     )
     parser.add_argument(
@@ -400,20 +492,25 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--opening-only",
         action="store_true",
-        help="Join + raise hand + wait for welcome / grant; do not inject text",
+        help="Join, wait for the first agent line, hold; speak no turns",
+    )
+    parser.add_argument(
+        "--text-turns",
+        action="store_true",
+        help="Send the turns as text (no audio / STT): faster, same every run",
     )
     parser.add_argument("--locale", default="", help="Override script locale")
     parser.add_argument(
         "--welcome-timeout",
         type=float,
         default=90.0,
-        help="Seconds to wait for session_welcome",
+        help="Seconds to wait for the first agent line",
     )
     parser.add_argument(
-        "--floor-timeout",
-        type=float,
-        default=180.0,
-        help="Seconds to wait for each human floor grant",
+        "--tail-lines",
+        type=int,
+        default=3,
+        help="After the last turn, wait for this many agent lines before leaving",
     )
     parser.add_argument(
         "--hold-sec",
@@ -481,11 +578,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.locale:
         script.locale = args.locale
     logger.info(
-        "ghost session room=%s locale=%s turns=%d opening_only=%s record=%s",
+        "ghost session room=%s locale=%s turns=%d opening_only=%s text_turns=%s record=%s",
         args.room,
         script.locale,
         0 if args.opening_only else len(script.turns),
         args.opening_only,
+        args.text_turns,
         args.record,
     )
     started_at = time.time()
@@ -494,8 +592,9 @@ def main(argv: list[str] | None = None) -> int:
             room=args.room,
             script=script,
             opening_only=args.opening_only,
+            text_turns=args.text_turns,
             welcome_timeout_sec=args.welcome_timeout,
-            floor_timeout_sec=args.floor_timeout,
+            tail_lines=args.tail_lines,
             hold_sec=args.hold_sec,
             record=args.record,
             frontend_url=args.frontend_url,

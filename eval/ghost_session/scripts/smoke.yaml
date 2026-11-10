@@ -7,3 +7,5 @@ turns:
       I'm arguing one senior plus AI tools can replace three mid-level hires —
       convince me I'm wrong, or tell me if I'm right.
     topic: freeze senior hiring
+    after_lines: 1          # right after the host's opening
+    when: line_end
