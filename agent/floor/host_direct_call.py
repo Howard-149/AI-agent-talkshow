@@ -26,6 +26,13 @@ from agent.floor import TurnController
 logger = logging.getLogger(__name__)
 
 
+def _host_call_candidates(
+    panel_roles: list[str], spoken_roles: set[str], *, allow_repeat: bool
+) -> list[str]:
+    unspoken = [role for role in panel_roles if role not in spoken_roles]
+    return unspoken or (list(panel_roles) if allow_repeat else [])
+
+
 async def plan_host_direct_call(
     session: AgentSession,
     data: TalkShowData,
@@ -45,23 +52,40 @@ async def plan_host_direct_call(
     from agent.floor.floor_parser import fallback_floor_decision
 
     host = load_persona_name("host")
-    unspoken = [r for r in panel_roles if r not in spoken_roles]
-    if not unspoken:
+    text_only = session is None and getattr(data, "floor_interaction", None) is not None
+    unspoken = [role for role in panel_roles if role not in spoken_roles]
+    call_candidates = _host_call_candidates(
+        panel_roles, spoken_roles, allow_repeat=text_only
+    )
+    if not call_candidates:
         return "close", "no_panelists_left", None
 
     from agent.emotion.appraisal import await_pending_appraisal
 
     await await_pending_appraisal(data, "host")
     role_map = panel_role_name_map(panel_roles)
-    names_hint = ", ".join(load_persona_name(r) for r in unspoken)
+    names_hint = ", ".join(load_persona_name(r) for r in call_candidates)
     tag_opts = next_tag_options(panel_roles, include_host=False)
+    call_instruction = (
+        (
+            "Continue naturally from the topic and latest conversation. Choose ONE panelist for "
+            "the next turn; use their name in [reply] and set matching [next]. Do not mention "
+            "hand raising, an open floor, or that nobody volunteered."
+            if unspoken
+            else "Everyone has spoken once, but the conversation can continue. Choose ONE panelist "
+            "to speak again based on the latest exchange; use their name in [reply] and set "
+            "matching [next]. Do not mention hand raising or an open floor."
+        )
+        if text_only
+        else "You opened the floor for hand raises but nobody raised. Call on ONE panelist directly "
+        "— use their name in [reply] and set matching [next]."
+    )
     prompt = f"""You are {host}, talk-show host. Trigger: {trigger}.
 
-You opened the floor for hand raises but nobody raised.
-Call on ONE panelist directly — use their name in [reply] and set matching [next]:
+{call_instruction}
 {role_map}
-Prefer someone not heard yet this round: {names_hint}.
-Speak 2–3 sentences with a question or topic angle FOR THEM.
+{"Prefer someone not heard yet this round" if unspoken else "Choose from the panelists"}: {names_hint}.
+Speak 2–3 natural sentences with a specific question or topic angle FOR THEM.
 
 {mood_prompt_block(data, "host")}
 
@@ -77,6 +101,7 @@ Output exactly:
         history_messages=hist,
         raw=True,
         output_role="host",
+        reasoning_effort="low",
     )
     parsed = parse_host_speech(raw)
     emotion = apply_mood_from_parsed(
@@ -97,7 +122,7 @@ Output exactly:
         )
     text = strip_speech_control_tags(parsed.reply.strip())
     if not text or len(text) < 8:
-        pick = unspoken[0]
+        pick = call_candidates[0]
         name = load_persona_name(pick)
         text = host_direct_call_fallback_line(name)
         resolved = pick
@@ -113,7 +138,7 @@ Output exactly:
                 raises=data.hand_raise_queue.snapshot(panel_roles),
                 spoken_roles=spoken_roles,
             )
-            resolved = fb if is_direct_next(fb) else unspoken[0]
+            resolved = fb if is_direct_next(fb) else call_candidates[0]
             name = load_persona_name(resolved)
             if name.lower() not in text.lower():
                 text = (

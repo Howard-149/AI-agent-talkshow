@@ -1,435 +1,38 @@
-"""Host-moderated floor: poll batch, priority tie-break, queue call-ons, welcome."""
+"""Host-moderated floor: session welcome, return to host, graph entry points."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-import time
 
 from livekit.agents import AgentSession
 
-from agent.config import load_persona_name
 from agent.data import TalkShowData
 from agent.floor.floor_control import (
     apply_floor_next,
     peek_floor_next,
 )
-from agent.floor.floor_parser import (
-    HandRaiseResult,
-    fallback_floor_decision,
-    parse_floor_decision,
-    parse_hand_raise,
-)
-from agent.floor.hand_raise_ui import (
-    dequeue_hand_raise,
-    flash_poll_raises,
-    sync_hand_raise_ui,
-    wait_for_hand_raises,
-)
-from agent.floor.host_lines import (
-    host_human_floor_line,
-    host_intro_speaker_line,
-    host_open_floor_line,
-)
-from agent.panel.panel_prompts import panelist_hand_raise_system
-from agent.panel.panel_speech import speak_one_panelist
-from agent.session.session_lifecycle import should_stop_session_work
 from agent.show.show_history import append_role
+from agent.show.show_topic import show_topic
 from agent.session.session_handoff import speak_panel_line
 from agent.floor import TurnController
-from agent.floor.host_direct_call import plan_host_direct_call
-from agent.show_graph.state import FloorPick
-from agent.ui.ui_events import (
-    emit_floor_grant,
-    emit_floor_pending,
-)
 
 logger = logging.getLogger(__name__)
 
 
-def poll_during_open_floor_enabled() -> bool:
-    """Start the hand-raise poll while the open-floor line plays (opt-in)."""
-    raw = os.environ.get("TALKSHOW_POLL_DURING_OPEN_FLOOR", "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
-
-
-def _eligible_panel_raises(
-    data: TalkShowData, panel_roles: list[str], spoken_roles: set[str]
-) -> list[str]:
-    return [
-        r
-        for r in data.hand_raise_queue.raised_roles(panel_roles)
-        if r not in spoken_roles
-    ]
-
-
-def _addressed_after_human(data: TalkShowData, panel_roles: list[str]) -> str | None:
-    """TALKSHOW_ADDRESSEE_FLOOR: panelist the human named, if no panelist has spoken since that turn."""
-    from agent.floor.addressee import addressed_role, addressee_floor_enabled
-
-    if not addressee_floor_enabled():
-        return None
-    for line in reversed(data.show_history.lines):
-        if line.role_id == "host":
-            continue
-        if line.role_id != "human":
-            return None  # a panelist already answered this human turn
-        names = {r: load_persona_name(r) for r in panel_roles}
-        return addressed_role(line.text, names)
-    return None
-
-
-async def run_hand_raise_round(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-    *,
-    panel_roles: list[str],
-    spoken_roles: set[str],
-    turn_idx: int,
-    prefetched_poll: asyncio.Task | None = None,
-) -> FloorPick:
-    """
-    Pick next speaker: FIFO queue (human UI + AI poll).
-    Poll only when queue is empty; wait (5 s by default) only when still empty after poll.
-    ``prefetched_poll`` = a poll already started during the open-floor line.
-    """
-    if should_stop_session_work(data, session):
-        if prefetched_poll is not None:
-            prefetched_poll.cancel()
-        return FloorPick(None, "")
-    await emit_floor_pending(active=True)
-    try:
-        if not data.hand_raise_queue.roles():
-            t0 = time.monotonic()
-            if prefetched_poll is not None:
-                poll = await prefetched_poll
-            else:
-                poll = await poll_panel_hand_raises(data, panel_roles)
-            # With a prefetched poll this is only the wait left after the open-floor line.
-            poll_latency_s = time.monotonic() - t0
-            await flash_poll_raises(data, panel_roles=panel_roles, poll=poll)
-            addressed = _addressed_after_human(data, panel_roles)
-            if addressed:
-                from agent.floor.addressee import pick_with_addressee
-
-                winner, yes_roles, had_tie, _ = pick_with_addressee(
-                    data.hand_raise_queue, poll, data.panel_priority, addressed
-                )
-                if winner:
-                    data.rotate_panel_priority(winner)  # same rotation pick_with_addressee computed; logs it
-            else:
-                winner, yes_roles, had_tie = data.hand_raise_queue.apply_poll_batch(
-                    poll,
-                    data.panel_priority,
-                )
-                if had_tie and winner:
-                    data.rotate_panel_priority(winner)
-            await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="poll")
-            if data.turn_log:
-                data.turn_log.log(
-                    "hand_raise_poll",
-                    results={
-                        role: {"raised": hr.raised, "topic": hr.topic[:40]}
-                        for role, hr in poll.items()
-                    },
-                    winner=winner,
-                    yes_roles=yes_roles,
-                    had_tie=had_tie,
-                    poll_latency_s=round(poll_latency_s, 3),
-                    poll_prefetched=prefetched_poll is not None,
-                    panel_priority=list(data.panel_priority),
-                    room=data.room_name,
-                    queue=data.hand_raise_queue.roles(),
-                    addressed=addressed,
-                )
-        else:
-            if prefetched_poll is not None:
-                prefetched_poll.cancel()
-            logger.info(
-                "hand_raise poll skip queue=%s",
-                data.hand_raise_queue.roles(),
-            )
-            if data.turn_log:
-                data.turn_log.log(
-                    "hand_raise_poll_skip",
-                    reason="queue_nonempty",
-                    room=data.room_name,
-                    queue=data.hand_raise_queue.roles(),
-                )
-
-        if not data.hand_raise_queue.roles():
-            await wait_for_hand_raises(data, panel_roles=panel_roles)
-            await sync_hand_raise_ui(data, panel_roles=panel_roles, phase="wait")
-        else:
-            logger.info(
-                "hand_raise wait skip queue=%s",
-                data.hand_raise_queue.roles(),
-            )
-            if data.turn_log:
-                data.turn_log.log(
-                    "hand_raise_wait_skip",
-                    reason="queue_nonempty",
-                    room=data.room_name,
-                    queue=data.hand_raise_queue.roles(),
-                )
-
-        if data.hand_raise_queue.roles():
-            pause = float(os.environ.get("TALKSHOW_HAND_RAISE_GRANT_PAUSE_SEC", "1"))
-            if pause > 0:
-                if should_stop_session_work(data, session):
-                    return FloorPick(None, "")
-                logger.info(
-                    "hand raise grant pause sec=%.2f queue=%s",
-                    pause,
-                    data.hand_raise_queue.roles(),
-                )
-                if data.turn_log:
-                    data.turn_log.log(
-                        "hand_raise_grant_pause",
-                        pause_sec=pause,
-                        room=data.room_name,
-                        queue=data.hand_raise_queue.roles(),
-                    )
-                await asyncio.sleep(pause)
-                if should_stop_session_work(data, session):
-                    return FloorPick(None, "")
-            role, reason = await resolve_next_speaker(
-                data,
-                panel_roles=panel_roles,
-                spoken_roles=spoken_roles,
-            )
-            return FloorPick(role, reason)
-
-        role, reason, line = await plan_host_direct_call(
-            session,
-            data,
-            controller,
-            panel_roles=panel_roles,
-            spoken_roles=spoken_roles,
-            trigger=f"no_raises_{turn_idx}",
-        )
-        return FloorPick(role, reason, line)
-    finally:
-        await emit_floor_pending(active=False)
-
-
-async def _poll_one_hand_raise(data: TalkShowData, role: str) -> HandRaiseResult:
-    name = load_persona_name(role)
-    hist = data.show_history.prior_messages(perspective=role)
-    prompt = f"""Panel floor check — you are {name}.
-
-Read the transcript. Do you want to raise your hand to speak next?
-You may speak multiple times this round. If you want to OPEN a new topic angle, say so.
-
-Reply ONLY:
-[raise]: yes
-or
-[raise]: no
-[topic]: optional topic you want to bring up (if yes)
-[reason]: optional one short phrase (if yes)
-"""
-    text = await data.runtime.gemma_client.complete_text(
-        prompt,
-        system_prompt=panelist_hand_raise_system(role),
-        history_messages=hist,
-        raw=True,  # parse [raise]/[topic] from the full output
-        output_role=role,
-    )
-    result = parse_hand_raise(role, text)
-    logger.info(
-        "hand_raise poll role=%s raised=%s topic=%.40r reason=%.40r",
-        role,
-        result.raised,
-        result.topic,
-        result.reason,
-    )
-    return result
-
-
-async def poll_panel_hand_raises(
-    data: TalkShowData, panel_roles: list[str]
-) -> dict[str, HandRaiseResult]:
-    """Parallel Gemma polls — same worker, asyncio.gather (not separate processes)."""
-    results = await asyncio.gather(
-        *[_poll_one_hand_raise(data, role) for role in panel_roles]
-    )
-    return {r.role: r for r in results}
-
-
-def _human_hand_raise_result(data: TalkShowData) -> HandRaiseResult | None:
-    entry = data.hand_raise_queue.get("human")
-    if not entry:
-        return None
-    return HandRaiseResult(
-        role="human",
-        raised=True,
-        reason=entry.reason,
-        topic=entry.topic,
-    )
-
-
-def _queue_raises(data: TalkShowData, panel_roles: list[str]) -> dict[str, HandRaiseResult]:
-    return data.hand_raise_queue.snapshot(panel_roles)
-
-
-async def _host_decide_floor(
-    data: TalkShowData,
-    *,
-    panel_roles: list[str],
-    spoken_roles: set[str],
-) -> str:
-    host = load_persona_name("host")
-    from agent.panel.panel_context import next_tag_options, panel_role_name_map
-
-    role_map = panel_role_name_map(panel_roles)
-    next_opts = next_tag_options(panel_roles, include_host=False) + " | human | close"
-    raises = _queue_raises(data, panel_roles)
-    lines = []
-    for role in panel_roles:
-        hr = raises[role]
-        label = load_persona_name(role)
-        if hr.raised:
-            topic_bit = f' topic="{hr.topic}"' if hr.topic else ""
-            lines.append(
-                f"- {label}: RAISED — {hr.reason or '(no reason)'}{topic_bit}"
-            )
-        else:
-            lines.append(f"- {label}: not raised")
-    human_hr = _human_hand_raise_result(data)
-    if human_hr:
-        topic_bit = f' topic="{human_hr.topic}"' if human_hr.topic else ""
-        lines.append(
-            f"- Human guest: RAISED — {human_hr.reason or '(no reason)'}{topic_bit}"
-        )
-    else:
-        lines.append("- Human guest: not raised")
-    raise_block = "\n".join(lines)
-    queue_order = data.hand_raise_queue.roles()
-    order_hint = ""
-    if len(queue_order) > 1:
-        order_hint = f"\nQueue order (FIFO): {', '.join(queue_order)}"
-
-    prompt = f"""You are {host}, moderator. Hand-raise status:
-{raise_block}{order_hint}
-
-Rules:
-- [next:human] returns floor to the human guest (they speak via mic, not TTS)
-- If multiple panelists raised, pick the best next speaker
-- If none raised, pick who should speak OR [next:close] OR [next:human] if the guest raised
-- Panelist names: {role_map}
-- Panelists may speak more than once; honor [topic] angles when choosing
-
-Output ONLY:
-[next]: {next_opts}
-[reason]: one short sentence (optional)
-"""
-    hist = data.show_history.prior_messages(perspective="host")
-    from agent.config import load_persona_instructions
-
-    system = load_persona_instructions("host", panel_mode=True)
-    text = await data.runtime.gemma_client.complete_text(
-        prompt,
-        system_prompt=system,
-        history_messages=hist,
-        raw=True,  # parse [next] from the full output, not the stripped reply
-        output_role="host",
-    )
-    parsed = parse_floor_decision(text)
-    if parsed and parsed.next_role in set(panel_roles) | {"close", "human"}:
-        logger.info(
-            "host floor decision next=%s reason=%.60r",
-            parsed.next_role,
-            parsed.reason,
-        )
-        return parsed.next_role
-
-    fb = fallback_floor_decision(
-        panel_roles=panel_roles,
-        raises=raises,
-        spoken_roles=spoken_roles,
-    )
-    logger.warning("host floor parse failed; fallback next=%s raw=%.80r", fb, text)
-    return fb
-
-
-async def resolve_next_speaker(
-    data: TalkShowData,
-    *,
-    panel_roles: list[str],
-    spoken_roles: set[str],
-) -> tuple[str, str]:
-    """Pick next speaker from the hand-raise queue (strict FIFO)."""
-    first = data.hand_raise_queue.peek_first_eligible(panel_roles)
-    if first is not None:
-        logger.info(
-            "queue fifo pick role=%s queue=%s",
-            first.role,
-            data.hand_raise_queue.roles(),
-        )
-        if data.turn_log:
-            data.turn_log.log(
-                "queue_fifo_pick",
-                role=first.role,
-                queue=data.hand_raise_queue.roles(),
-                room=data.room_name,
-            )
-        return first.role, "queue_fifo"
-    raised = _eligible_panel_raises(data, panel_roles, spoken_roles)
-    if not raised:
-        fb = fallback_floor_decision(
-            panel_roles=panel_roles,
-            raises=_queue_raises(data, panel_roles),
-            spoken_roles=spoken_roles,
-        )
-        return fb, "queue_empty_fallback"
-    return (
-        await _host_decide_floor(
-            data,
-            panel_roles=panel_roles,
-            spoken_roles=spoken_roles,
-        ),
-        "host_moderation",
-    )
-
-
-async def _grant_panelist_turn(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-    role: str,
-    *,
-    grant_reason: str,
-    trigger: str,
-    step: str,
-    skip_intro: bool = False,
-) -> None:
-    await emit_floor_grant(role, reason=grant_reason)
-    await dequeue_hand_raise(data, role)
-    if not skip_intro:
-        await host_introduce_speaker(
-            session, data, controller, role, trigger=trigger
-        )
-    await speak_one_panelist(
-        session,
-        data,
-        speak_role=role,
-        step=step,
-    )
-
-
 def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
     """Canonical (English) welcome text + per-locale delivery texts for the opening."""
+    from agent.config import text_only_enabled
     from agent.locale.viewer_locales import recompute_needed_locales
     from agent.panel.panel_context import session_welcome_texts
 
-    try:
-        from livekit.agents.job import get_job_context
+    room = None
+    if not text_only_enabled():
+        try:
+            from livekit.agents.job import get_job_context
 
-        room = get_job_context().room
-    except Exception:  # text-only mode: no LiveKit job / room
-        room = None
+            room = get_job_context().room
+        except Exception:  # no LiveKit job / room
+            room = None
     if room is not None:
         try:
             recompute_needed_locales(data, room)
@@ -442,6 +45,155 @@ def session_welcome_line(data: TalkShowData) -> tuple[str, dict[str, str]]:
     if not texts:
         texts = {"en": canned["en"]}
     return canned["en"], texts
+
+
+TOPIC_PREFIX = "Today's discussion topic:"
+
+
+def topic_announcement(default: str = "") -> str:
+    """The host's topic line spoken right after the welcome ("" when no topic is set)."""
+    topic = show_topic(default)
+    return f"{TOPIC_PREFIX} {topic}" if topic else ""
+
+
+async def host_announce_topic(
+    session: AgentSession | None,
+    data: TalkShowData,
+    controller: TurnController,
+    *,
+    default: str = "",
+) -> None:
+    """After the welcome the host announces the topic (an on-record show line)."""
+    text = topic_announcement(default)
+    if not text:
+        return
+    listen = controller.listen_role()
+    append_role(data, listen, text, appraise=False, procedural=False)
+    log_show_topic(data, text)
+    await speak_panel_line(session, data, speak_role=listen, text=text, step="topic")
+
+
+async def host_opening_line(data: TalkShowData, *, default: str = "") -> str:
+    """The host's one opening turn: self-introduction, today's topic, the question to
+    weigh, and an invitation to the first panelist (who then gets the first pick).
+
+    Falls back to the canned welcome + topic announcement when no topic is set or
+    the model returns nothing usable."""
+    from agent.config import load_persona_instructions, load_persona_name
+    from agent.floor.floor_parser import spoken_reply_text
+
+    canonical, _ = session_welcome_line(data)
+    topic = show_topic(default)
+    canned = f"{canonical} {topic_announcement(default)}".strip()
+    if not topic:
+        return canned
+    invite = _opening_invite_role(data)
+    invite_line = (
+        f"End by inviting {load_persona_name(invite)} by name to share their view first. "
+        if invite
+        else "End by opening the floor to the panel. "
+    )
+    prompt = (
+        f"The show is starting now. You are {load_persona_name('host')}, the host.\n"
+        f"Today's topic: {topic}\n"
+        "In one natural spoken turn of three or four sentences, in your own words: "
+        "introduce yourself, bring in today's topic, and frame the question the panel "
+        "will weigh. Let the audience know they can jump in at any time. "
+        f"{invite_line}"
+        "Output only the spoken words, with no labels or control tags."
+    )
+    try:
+        raw = await data.runtime.gemma_client.complete_text(
+            prompt,
+            system_prompt=load_persona_instructions("host", panel_mode=True),
+            history_messages=[],
+            raw=True,
+            max_tokens=256,
+            temperature=0.6,
+            reasoning_effort="none",
+        )
+    except Exception:
+        logger.exception("host opening generation failed — using canned welcome + topic")
+        return canned
+    text = spoken_reply_text(raw)
+    if not text:
+        return canned
+    interaction = getattr(data, "floor_interaction", None)
+    if invite and interaction is not None:
+        # The opening handed the floor to ``invite``: the first pick honours that.
+        interaction.pending_invitation_target = invite
+        interaction.opening_invite_role = invite
+    return text
+
+
+def _opening_invite_role(data: TalkShowData) -> str | None:
+    """First panelist in the scenario order (the host's opening invites them)."""
+    turn_control = getattr(getattr(data, "scenario", None), "turn_control", None)
+    if turn_control is None:
+        return None
+    skip = {"human", turn_control.listen_role}
+    return next((role for role in turn_control.order if role not in skip), None)
+
+
+HOST_CLOSE_FALLBACK = (
+    "That brings our discussion to a close. Thanks to our panel and to everyone watching."
+)
+
+
+async def host_closing_line(data: TalkShowData) -> str:
+    """The host's closing turn: a brief wrap-up of the discussion, with no new question."""
+    from agent.config import load_persona_instructions, load_persona_name
+    from agent.floor.floor_parser import spoken_reply_text
+
+    topic = show_topic()
+    topic_line = f"Topic: {topic}\n" if topic else ""
+    prompt = (
+        f"The discussion is over and the show is ending now. You are "
+        f"{load_persona_name('host')}, the host.\n"
+        f"{topic_line}"
+        "In one natural spoken turn of three or four sentences, in your own words: "
+        "sum up the main points the panel made and where they landed, then wrap up the "
+        "show and thank the panel and the audience. Do not ask a question or invite "
+        "anyone to continue. Output only the spoken words, with no labels or control tags."
+    )
+    try:
+        raw = await data.runtime.gemma_client.complete_text(
+            prompt,
+            system_prompt=load_persona_instructions("host", panel_mode=True),
+            history_messages=data.show_history.prior_messages(perspective="host"),
+            raw=True,
+            max_tokens=256,
+            temperature=0.5,
+            reasoning_effort="none",
+        )
+    except Exception:
+        logger.exception("host closing generation failed — using canned close")
+        return HOST_CLOSE_FALLBACK
+    return spoken_reply_text(raw) or HOST_CLOSE_FALLBACK
+
+
+async def host_speak_opening(
+    session: AgentSession | None,
+    data: TalkShowData,
+    controller: TurnController,
+    *,
+    default: str = "",
+) -> None:
+    """Opening beat outside the show graph: the host's merged welcome + topic turn."""
+    text = await host_opening_line(data, default=default)
+    listen = controller.listen_role()
+    append_role(data, listen, text, appraise=False, procedural=False)
+    topic = topic_announcement(default)
+    if topic:
+        log_show_topic(data, topic)
+    await speak_panel_line(session, data, speak_role=listen, text=text, step="opening")
+    apply_floor_next(data, "host")
+
+
+def log_show_topic(data: TalkShowData, text: str) -> None:
+    interaction = getattr(data, "floor_interaction", None)
+    if interaction is not None:
+        interaction.log_topic(data, text)
 
 
 async def host_speak_session_welcome(
@@ -504,48 +256,6 @@ async def run_host_moderation_from_queue(
     )
 
 
-async def host_speak_open_floor(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-    *,
-    trigger: str,
-) -> None:
-    """Host opens hand-raise moderation before panelists are polled."""
-    listen = controller.listen_role()
-    line = host_open_floor_line()
-    append_role(data, listen, line, appraise=False)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=line,
-        step=f"open_floor_{trigger}",
-    )
-
-
-async def host_introduce_speaker(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-    role: str,
-    *,
-    trigger: str,
-) -> None:
-    """Host verbally grants the floor before a panelist speaks."""
-    listen = controller.listen_role()
-    name = load_persona_name(role)
-    line = host_intro_speaker_line(name)
-    append_role(data, listen, line, appraise=False)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=line,
-        step=f"intro_{role}_{trigger}",
-    )
-
-
 async def return_floor_to_host(
     session: AgentSession,
     data: TalkShowData,
@@ -572,41 +282,6 @@ async def return_floor_to_host(
             room=data.room_name,
             active_role=listen,
             floor_next=peek_floor_next(data),
-        )
-
-
-async def grant_human_floor(
-    session: AgentSession,
-    data: TalkShowData,
-    controller: TurnController,
-    *,
-    reason: str,
-) -> None:
-    """End panel beat — human speaks via mic."""
-    listen = controller.listen_role()
-    line = host_human_floor_line(topic=data.human_hand_topic or None)
-    append_role(data, listen, line, appraise=False)
-    await speak_panel_line(
-        session,
-        data,
-        speak_role=listen,
-        text=line,
-        step="grant_human",
-    )
-    apply_floor_next(data, "human")
-    await emit_floor_grant("human", reason=reason)
-    await dequeue_hand_raise(data, "human")
-    logger.info(
-        "granted floor to human reason=%s queue=%s",
-        reason,
-        data.hand_raise_queue.roles(),
-    )
-    if data.turn_log:
-        data.turn_log.log(
-            "floor_grant_human",
-            reason=reason,
-            room=data.room_name,
-            queue_remaining=data.hand_raise_queue.roles(),
         )
 
 

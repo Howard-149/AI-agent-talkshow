@@ -15,13 +15,14 @@ _COMMAND_NODES = (
     "human_turn",
     "panel_consume",
     "moderate",
-    "hand_raise",
+    "select_speaker",
     "panelist_line",
     "grant_human",
     "close",
     "prepare_speak",
     "after_speak",
     "wait_event",
+    "announce_topic",
     "finish",
 )
 

@@ -43,11 +43,15 @@ def _wav_rms(wav_bytes: bytes) -> float:
 
 
 def _human_has_floor(data: object) -> bool:
-    """Panel mode: only run Gemma on human audio when the floor was granted."""
+    """Panel mode: only run Gemma on human audio when the floor was granted.
+
+    With Think & Action floor control the human may speak (and barge in) any time.
+    """
     from agent.floor.floor_control import peek_floor_next
     from agent.floor import TurnController
+    from agent.interaction import human_may_speak
 
-    if peek_floor_next(data) == "human":  # type: ignore[arg-type]
+    if human_may_speak(data) or peek_floor_next(data) == "human":  # type: ignore[arg-type]
         return True
     ctrl = TurnController(data.scenario, data)  # type: ignore[arg-type]
     if not ctrl.is_panel_mode():
@@ -110,6 +114,24 @@ class GemmaAudioSTT(stt.STT):
         *,
         language: NotGivenOr[str],
         conn_options: APIConnectOptions,
+    ) -> stt.SpeechEvent:
+        heard = ""
+        try:
+            event = await self._recognize_utterance(buffer, language=language)
+            heard = event.alternatives[0].text if event.alternatives else ""
+            return event
+        finally:
+            if not heard and self._talkshow_data is not None:
+                from agent.show_graph.runner import abandon_human_turn
+
+                # Barge-in without a usable transcript: the cut show resumes.
+                abandon_human_turn(self._talkshow_data)
+
+    async def _recognize_utterance(
+        self,
+        buffer: AudioBuffer,
+        *,
+        language: NotGivenOr[str],
     ) -> stt.SpeechEvent:
         wav = _buffer_to_wav(buffer)
         logger.info("GemmaAudioSTT: wav_bytes=%d active_role=%s", len(wav), getattr(self._talkshow_data, "active_role", "?"))

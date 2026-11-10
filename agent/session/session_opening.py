@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from livekit.agents import AgentSession
 
 from agent.data import TalkShowData
-from agent.floor.host_floor import host_speak_session_welcome
+from agent.floor.host_floor import host_speak_opening
 from agent.show_graph import run_host_moderation_from_queue
 from agent.floor import TurnController
 
@@ -45,7 +45,7 @@ async def run_session_opening(
         needed = recompute_needed_locales(data, room)
         logger.info("session opening locales=%s", sorted(needed))
 
-    await host_speak_session_welcome(session, data, controller)
+    await host_speak_opening(session, data, controller)
     await run_host_moderation_from_queue(
         session,
         data,

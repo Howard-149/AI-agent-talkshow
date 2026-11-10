@@ -41,6 +41,14 @@
   box-shadow: 0 0 0 1px var(--role-color, #6366f1);
 }
 
+/* Backchannel playing: lighter than the speaking highlight (no lift). */
+.card[data-backchannel='true']:not([data-speaking='true']) {
+  border-color: color-mix(in srgb, var(--role-color, #6366f1) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--role-color, #6366f1) 35%, transparent),
+    0 0 18px color-mix(in srgb, var(--role-color, #6366f1) 30%, transparent);
+}
+
 .avatar,
 .avatarHuman {
   width: 44px;
@@ -108,73 +116,10 @@
   opacity: 0.65;
 }
 
-.transcript {
-  background: rgba(15, 17, 23, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.transcriptTitle {
-  margin: 0;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.transcriptScroll {
-  max-height: 50vh;
-  overflow-y: auto;
-  padding: 0.6rem 0.75rem;
-}
-
 .muted {
   margin: 0;
   font-size: 0.85rem;
   opacity: 0.6;
-}
-
-.line {
-  margin-bottom: 0.75rem;
-}
-
-.lineHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.2rem;
-}
-
-.speaker {
-  font-weight: 600;
-  font-size: 0.78rem;
-}
-
-.line[data-role='host'] .speaker {
-  color: #818cf8;
-}
-
-.line[data-role='commentator'] .speaker {
-  color: #34d399;
-}
-
-.line[data-role='guest'] .speaker {
-  color: #f472b6;
-}
-
-.line[data-role='human'] .speaker {
-  color: #94a3b8;
-}
-
-.time {
-  font-size: 0.7rem;
-  opacity: 0.55;
-}
-
-.lineText {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.4;
 }
 
 .waiting {

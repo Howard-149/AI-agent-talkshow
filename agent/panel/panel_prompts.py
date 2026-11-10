@@ -38,22 +38,6 @@ def panelist_personality_block(role: str) -> str:
     return f"You are {name} on a live English talk-show panel."
 
 
-def panelist_hand_raise_system(role: str) -> str:
-    """System prompt for parallel hand-raise polls — includes personality, not just name."""
-    personality = panelist_personality_block(role)
-    return (
-        f"{personality}\n\n"
-        "Hand-raise decision (stay in character):\n"
-        "- Read the transcript; decide if you want the floor next.\n"
-        "- You may speak more than once this round.\n"
-        "- If yes, you may propose a [topic] angle that fits how YOU would enter the discussion.\n"
-        "Output ONLY:\n"
-        "[raise]: yes | no\n"
-        "[topic]: optional angle (if yes)\n"
-        "[reason]: optional one short phrase (if yes)"
-    )
-
-
 def panelist_role_brief(
     role: str,
     *,
@@ -223,7 +207,6 @@ __all__ = [
     "PANEL_HOST_AUDIO_USER_HINT",
     "panel_opening_line",
     "panel_speech_prompt",
-    "panelist_hand_raise_system",
     "panelist_personality_block",
     panel_room_roster,
     "panelist_system_prompt",

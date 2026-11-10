@@ -58,36 +58,41 @@ export type UiEvent =
       final: boolean;
       step?: string;
       texts?: { en?: string; zh?: string };
+      /** Words arrive on the agent's synced `lk.transcription` stream; `text` is the fallback. */
+      stream?: boolean;
     }
   | {
-      type: 'hand_raise';
+      /** An approved interrupt cut `role`'s line; `by_role` takes the floor. */
+      type: 'interrupt';
       role: PanelRole;
       name: string;
-      raised: boolean;
-      reason?: string;
-      topic?: string;
+      by_role: PanelRole;
+      by_name: string;
+      /** Prefix the script kept (fallback when no synced words arrived). */
+      heard_text?: string;
+    }
+  | {
+      /** A listener's backchannel starts playing over `speaker_role`'s line. */
+      type: 'backchannel';
+      role: PanelRole;
+      name: string;
+      text: string;
+      speaker_role: string;
+      duration_s: number;
     }
   | {
       type: 'floor_grant';
       role: PanelRole;
       name: string;
       reason?: string;
-    }
-  | {
-      type: 'queue_state';
-      queue: Array<{
-        role: PanelRole;
-        name: string;
-        reason?: string;
-        topic?: string;
-      }>;
-      phase?: string;
     };
 
 export type AgentParticipantMetadata = {
   talkshowAgent?: boolean;
   scenario?: string;
   panelRoster?: PanelistDef[];
+  /** Discussion topic (TALKSHOW_TOPIC); empty when none is set. */
+  topic?: string;
 };
 
 export function parseUiEvent(raw: Uint8Array): UiEvent | null {

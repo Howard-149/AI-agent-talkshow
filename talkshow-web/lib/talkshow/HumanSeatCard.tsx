@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Human guest seat card with local camera preview, speaking state, and hand-raise affordance.
+ * Human guest seat card with local camera preview and speaking state.
  */
 import { VideoTrack, useIsSpeaking, useLocalParticipant } from '@livekit/components-react';
 import { Track } from 'livekit-client';
@@ -14,10 +14,9 @@ import styles from '@/styles/TalkshowStage.module.css';
 type Props = {
   human: HumanSeat;
   activeRole: PanelRole | null;
-  handRaised?: boolean;
 };
 
-export function HumanSeatCard({ human, activeRole, handRaised }: Props) {
+export function HumanSeatCard({ human, activeRole }: Props) {
   const { localParticipant, cameraTrack } = useLocalParticipant();
   const isLocalSpeaking = useIsSpeaking(localParticipant);
 
@@ -41,13 +40,7 @@ export function HumanSeatCard({ human, activeRole, handRaised }: Props) {
       className={styles.card}
       data-human
       data-speaking={speaking ? 'true' : 'false'}
-      data-hand={handRaised ? 'raised' : 'false'}
     >
-      {handRaised && (
-        <span className={styles.handBadge} title="Hand raised">
-          ✋
-        </span>
-      )}
       {camTrackRef ? (
         <div className={styles.avatarSlot}>
           <VideoTrack trackRef={camTrackRef} className={styles.videoAvatar} />
