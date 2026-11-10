@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from agent.adapters.response_parser import ParsedTurn, parse_heard_reply
-from agent.config import LocaleLLMConfig
+from agent.config import LocaleLLMConfig, show_seed
 from agent.telemetry.model_output_logger import ModelOutputLogger
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,13 @@ def _silent_wav_bytes(*, duration_sec: float = 0.35, sample_rate: int = 16000) -
         wf.setframerate(sample_rate)
         wf.writeframes(pcm)
     return buf.getvalue()
+
+
+def _add_seed(payload: dict[str, Any]) -> None:
+    """Sample with TALKSHOW_SEED when it's set, so a repeated prompt gets the same reply."""
+    seed = show_seed()
+    if seed is not None:
+        payload["seed"] = seed
 
 
 def _takes_reasoning_effort(model: str) -> bool:
@@ -162,6 +169,7 @@ class GemmaMMClient:
             "max_tokens": self._cfg.max_tokens,
             "temperature": 0.5,
         }
+        _add_seed(payload)
 
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
@@ -246,6 +254,7 @@ class GemmaMMClient:
             payload["reasoning_effort"] = effort
         if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
             payload["temperature"] = 0.45 if temperature is None else temperature
+            _add_seed(payload)
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         hist_n = len(history_messages) if history_messages else 0
@@ -312,6 +321,7 @@ class GemmaMMClient:
             payload["reasoning_effort"] = effort
         if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
             payload["temperature"] = 0.45 if temperature is None else temperature
+            _add_seed(payload)
         url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
         logger.info("Gemma text request (n=%d) → %s persona=%s", n, url, self.active_persona_id)

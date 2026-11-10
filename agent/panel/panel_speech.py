@@ -7,7 +7,6 @@ the show graph records, appraises and speaks the line.
 from __future__ import annotations
 
 import logging
-import os
 
 from livekit.agents import AgentSession
 
@@ -36,12 +35,6 @@ async def draft_panelist(
         data, 
         step=step
     )
-
-
-def draft_ahead_enabled() -> bool:
-    """Draft the next panelist's line while the host's intro plays (opt-in)."""
-    raw = os.environ.get("TALKSHOW_DRAFT_AHEAD", "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
 
 
 def panelist_line_from_draft(data: TalkShowData, draft: AgentDraft) -> PanelistLine:

@@ -1,10 +1,11 @@
 # Latency A/B arms for deploy/ghost-arms.sh. Each arm adds one change to the one
 # before it, so each step's gain reads off directly; the most important come first
 # in case the job is preempted. Flags are documented in .env.example.
-# C and E used hand-raise flags that the Think & Action floor no longer reads, so C
-# now matches B and E matches D; the arm names are kept for comparison with old runs.
+# C and E used hand-raise flags that the Think & Action floor no longer reads, and D
+# and E drafted ahead from the host's canned intro, which Think & Action doesn't play,
+# so C, D and E now match B; the arm names are kept for comparison with old runs.
 A
 B TALKSHOW_PRERENDER_CANNED=1
 C TALKSHOW_PRERENDER_CANNED=1
-D TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_DRAFT_AHEAD=1
-E TALKSHOW_PRERENDER_CANNED=1 TALKSHOW_DRAFT_AHEAD=1
+D TALKSHOW_PRERENDER_CANNED=1
+E TALKSHOW_PRERENDER_CANNED=1
