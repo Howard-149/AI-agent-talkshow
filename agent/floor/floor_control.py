@@ -1,10 +1,10 @@
-"""Apply and consume [next] floor decisions; hand-raise pending vs direct next."""
+"""Apply and consume [next] floor decisions: a panelist directly, or back to the host."""
 
 from __future__ import annotations
 
 import logging
 
-from agent.config import ScenarioConfig, load_scenario
+from agent.config import ScenarioConfig
 from agent.data import TalkShowData
 from agent.panel.panel_context import floor_valid_next_roles, is_panel_speaker_role
 
@@ -20,7 +20,7 @@ def _valid_floor_next(scenario: ScenarioConfig | None = None) -> frozenset[str]:
 def apply_floor_next(data: TalkShowData, role: str | None) -> None:
     """
     Store who speaks next from a Gemma [next]: tag.
-    Missing/unknown/host → hand-raise pending (host moderates).
+    Missing/unknown/host → host (the host moderates and the next speaker is picked).
     """
     if not role:
         data.floor_next_speaker = "host"
@@ -44,8 +44,9 @@ def resolve_floor_after_host_speech(
     Apply floor_next from a Gemma [next] tag; reconcile when tag says host but tee-up names someone.
     Returns the resolved role id.
 
-    When ``after_human_turn`` is True, always hand off to host moderation (open floor + poll + FIFO)
-    except explicit [next:human] or [next:close].
+    When ``after_human_turn`` is True, always hand the floor back to the host, who moderates
+    while the Think & Action floor picks the next speaker; only an explicit [next:human] or
+    [next:close] overrides this.
     """
     tag = (tagged_next or "").strip().lower()
     if tag == "human":
@@ -100,8 +101,4 @@ def consume_floor_next(data: TalkShowData) -> str:
 def peek_floor_next(data: TalkShowData) -> str:
     return (data.floor_next_speaker or "host").strip().lower()
 
-
-def is_direct_next(role: str, scenario: ScenarioConfig | None = None) -> bool:
-    sc = scenario or load_scenario()
-    return is_panel_speaker_role(role, sc)
 

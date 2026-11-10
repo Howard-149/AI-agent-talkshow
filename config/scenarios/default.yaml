@@ -1,11 +1,11 @@
 id: default
-description: Host-moderated panel — hand-raise queue, host grants floor
+description: Host-moderated panel — Think & Action floor control
 
 meet:
   default_room: talkshow-dev
 
 turn_control:
-  # host_moderated — panelists poll [raise:yes/no]; sole raiser gets floor; else host picks
+  # host_moderated — Think & Action: listeners think on each line; a controller picks who speaks
   # panel_round_robin — fixed order (see panel_fixed.yaml)
   mode: host_moderated
   order: [human, host, commentator, guest]
