@@ -94,6 +94,10 @@ _INTERACTION_RESET: dict[str, Any] = {
     "opening_invite_role": None,
     "last_line_interrupted": False,
     "interrupts_allowed": True,
+    "rule_clock_words": 0,
+    "rule_last_ai_cut_s": None,
+    "rule_chain_cuts": 0,
+    "rule_return_to": None,
 }
 
 

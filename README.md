@@ -162,6 +162,22 @@ With the Think & Action floor, the selected panelist speaks the `content` of the
 
 In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on. These results were measured on the hand-raise floor before Think & Action and have not been re-measured on it yet.
 
+---
+
+### 6. Floor rules for interrupts
+
+Deterministic rules run in front of the Think & Action floor controller. They are on by default; `TALKSHOW_FLOOR_RULES=0` turns them off, which gives exactly the prompts and floor decisions of Think & Action without the rules.
+
+| Rule | What it does |
+|---|---|
+| Quote | A listener asking to interrupt must quote the words it reacts to; the quote has to appear in the speech disclosed so far (case and punctuation ignored, no paraphrase). Ungrounded requests never reach the controller. |
+| Minimum speaking time | Nobody cuts in before the speaker has spoken 3 s (`TALKSHOW_FLOOR_MIN_SPEECH_S`). |
+| Host moderates | While someone holds the floor, the host only cuts in for a clear drift from the topic or a personal attack (never to take a side or correct a fact). A grounded host cut is granted without a controller call, outranks panelists, is not limited by the cooldown or chain cap, and the stopped speaker gets the floor back after the host's line if they choose to speak. The host's think call is also told it is the neutral host. On a free floor the host's options (invite, summarize, reframe, close) are unchanged. |
+| Chain cap | After a cut, the line that took over cannot be cut by a panelist (`TALKSHOW_FLOOR_MAX_CHAIN_CUTS=1`); the chain ends when a line finishes uncut or the human speaks. |
+| Cooldown | Panelist cuts are at least 15 s apart (`TALKSHOW_FLOOR_AI_COOLDOWN_S`). |
+
+Times are on the speech clock (disclosed words / `TALKSHOW_SPEECH_WORDS_PER_SEC`), because the script runs ahead of playback. Each interval with interrupt requests logs a `floor rules - interval N` event with every request's status and rule; when every request is blocked, the controller is not called.
+
 ## Teammate setup — laptop (one-time)
 
 ### 1. Clone and Python venv
