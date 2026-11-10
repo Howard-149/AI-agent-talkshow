@@ -9,7 +9,7 @@ from agent.show.talkshow_data import TalkShowData
 
 logger = logging.getLogger(__name__)
 
-PANEL_MODES = frozenset({"panel_round_robin", "host_moderated"})
+PANEL_MODES = frozenset({"host_moderated"})
 
 
 class TurnController:
@@ -90,7 +90,3 @@ class TurnController:
             for r in self._scenario.turn_control.order
             if r not in ("human", listen)
         ]
-
-    def panel_followup_roles(self) -> list[str]:
-        """Fixed-order panel speakers (panel_round_robin only)."""
-        return self.panel_speaker_roles()

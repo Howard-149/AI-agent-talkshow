@@ -6,7 +6,6 @@ meet:
 
 turn_control:
   # host_moderated — Think & Action: listeners think on each line; a controller picks who speaks
-  # panel_round_robin — fixed order (see panel_fixed.yaml)
   mode: host_moderated
   order: [human, host, commentator, guest]
   listen_role: host

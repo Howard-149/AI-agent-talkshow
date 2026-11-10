@@ -193,7 +193,7 @@ class DialogueConfig:
 
 @dataclass(frozen=True)
 class TurnControlConfig:
-    mode: str  # manual_only | rotate_after_user | panel_round_robin | host_moderated
+    mode: str  # manual_only | rotate_after_user | host_moderated
     order: tuple[str, ...]
     listen_role: str  # who hears the human (Gemma audio-in) in panel mode
 
