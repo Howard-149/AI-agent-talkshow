@@ -159,6 +159,15 @@ class ThinkActionInteraction(TextOnlyInteraction):
         # Human transcripts handed to the show but not yet reacted to.
         self._human_turns_waiting = 0
         self._release_handle: asyncio.TimerHandle | None = None
+        # Emotion hooks, set by the show actuators (unset: no mood in prompts or TTS
+        # snapshot, and listeners appraise a line only after it is disclosed).
+        # (data, role) → the role's mood for a prompt ("" for none).
+        self.mood_block: Callable[[Any, str], str] | None = None
+        # (data, role) → TTS label fixed on a line when it is queued.
+        self.cue_emotion: Callable[[Any, str], str | None] | None = None
+        # (data, speaker, text) → listeners appraise a line that finished uncut, before
+        # they think on its last interval (so the next line is written in the new mood).
+        self.on_line_complete: Callable[[Any, str, str], Awaitable[None]] | None = None
 
     @staticmethod
     def log_speech_start(data: Any, role: str, text: str) -> None:
@@ -692,6 +701,11 @@ class ThinkActionInteraction(TextOnlyInteraction):
             self._final_interval = index + 1 == len(boundaries)
             if self.human_floor_pending:
                 return  # the barge-in rollback discards this line past what was heard
+            if self._final_interval and self.on_line_complete is not None:
+                # Finished uncut (interrupts only land on earlier intervals).
+                await self.on_line_complete(data, role, text)
+                if self.human_floor_pending:
+                    return
             if self.host_fallback_close_spoken and role == data.scenario.turn_control.listen_role:
                 data.runtime.gemma_client.log_text_only_event(
                     "interval",
@@ -793,6 +807,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         )
         cue = Cue(
             role, text, step, texts=texts, whole=whole, canned=canned,
+            emotion=self.cue_emotion(data, role) if self.cue_emotion is not None else None,
             on_start=list(on_start or []),
         )
         cue.mark = _Mark(line=own, anchor=last, prev=self._last_cue, start=self._checkpoint(data))
@@ -989,7 +1004,10 @@ class ThinkActionInteraction(TextOnlyInteraction):
         strategy = self.host_fallback_strategy or "reframe"
         target = self.host_fallback_target
         target_context = f"Invite role {target} if appropriate.\n" if target else ""
+        mood = self.mood_block(data, role) if self.mood_block is not None else ""
+        mood = f"{mood}\n" if mood else ""
         prompt = (
+            f"{mood}"
             f"Host fallback strategy: {strategy}.\n"
             f"Controller instruction: {instruction}\n"
             f"{target_context}"
@@ -1334,8 +1352,11 @@ class ThinkActionInteraction(TextOnlyInteraction):
         from agent.panel.panel_prompts import panelist_personality_block
         from agent.panel.think_prompt import think_prompt_additions
 
+        mood = self.mood_block(data, role) if self.mood_block is not None else ""
+        mood = f"{mood}\n" if mood else ""
         prompt = (
             f"You are {load_persona_name(role)} ({role}).\n"
+            f"{mood}"
             f"Current floor state: {floor_state}.\n"
             f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"
             f"Latest public interval: {interval_text}\n"

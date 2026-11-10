@@ -1,0 +1,10 @@
+# Held-out emotion-neutral lines for the voice check: re-test an instruct wording that was
+# picked on eval/fixtures/voice_emotion_lines.yaml without reusing those lines.
+# Like the default set, the wording should not carry the emotion.
+lines:
+  - "The meeting was moved to Thursday afternoon at the main office."
+  - "She said the report would be ready by the end of the month."
+  - "We counted the results twice before the announcement went out."
+  - "Most of the staff heard about the change on Monday morning."
+  - "He walked us through the new schedule one step at a time."
+  - "That decision came from the board, not from the managers."

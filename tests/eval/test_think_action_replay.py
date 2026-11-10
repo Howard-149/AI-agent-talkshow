@@ -190,6 +190,7 @@ class GhostTurnThinkActionTests(unittest.IsolatedAsyncioTestCase):
             data.show_history.append("human", heard)
 
         act = LiveActuators(None, data, SimpleNamespace(listen_role=lambda: "host"))
+        act.listeners = lambda speaker: []  # no appraisal of the human line here
         with (
             mock.patch("agent.session.human_turn.record_human_line", record),
             mock.patch("agent.floor.floor_control.apply_floor_next", lambda data, role: None),

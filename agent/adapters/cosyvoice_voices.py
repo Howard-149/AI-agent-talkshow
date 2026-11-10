@@ -72,3 +72,53 @@ def resolve_spk_id(
 
     table = DEFAULT_SPK_BY_ROLE_ZH if loc.startswith("zh") else DEFAULT_SPK_BY_ROLE
     return table.get(role_key, table["host"])
+
+
+# Same-speaker emotional refs (config/msp_emotion_refs.yaml, baked by
+# deploy/bake_msp_emotion_refs.py): cosyvoice-prompts/msp/<role>/<Emotion>.wav.
+# The audio is not in git (MSP-Podcast licence); COSYVOICE_EMOTION_REFS_DIR points at a
+# shared baked copy instead (on Babel: /data/user_data/hsuanhal/msp_emotion_refs).
+EMOTION_REFS_DIR = Path(__file__).resolve().parent.parent.parent / "cosyvoice-prompts" / "msp"
+
+
+def emotion_refs_dir() -> Path:
+    raw = os.environ.get("COSYVOICE_EMOTION_REFS_DIR", "").strip()
+    return Path(raw) if raw else EMOTION_REFS_DIR
+
+
+def emotion_refs_enabled() -> bool:
+    return os.environ.get("COSYVOICE_EMOTION_REFS", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def emotion_prompt_wav(default: str, *, role: str, emotion: str | None) -> str:
+    """Reference wav for one line: the role's clip for this emotion when emotion refs are on.
+
+    A label with no clip falls back to the same speaker's Neutral, never to ``default``
+    (the Piper-made ref), so a role keeps one voice across emotions. With the flag off,
+    or no baked clips for the role, ``default`` is returned unchanged.
+    """
+    if not emotion_refs_enabled():
+        return default
+    from agent.emotion.state import normalize_emotion
+
+    role_dir = emotion_refs_dir() / (role or "host").strip().lower()
+    label = normalize_emotion(emotion) or "Neutral"
+    for name in (label[:1].upper() + label[1:], "Neutral"):
+        path = role_dir / f"{name}.wav"
+        if path.is_file():
+            return str(path)
+    return default
+
+
+def zero_shot_prompt_text(prompt_wav: str) -> str:
+    """CosyVoice3 zero_shot prompt text for a reference with a transcript next to it.
+
+    In zero_shot the LLM continues from the reference's transcript and speech tokens, so the
+    reference's delivery (not only its timbre, as in instruct2) carries into the line. The
+    transcript must match the audio; ``<Emotion>.txt`` is written by bake_msp_emotion_refs.py.
+    """
+    txt = Path(prompt_wav).with_suffix(".txt")
+    if not txt.is_file():
+        return ""
+    text = txt.read_text(encoding="utf-8").strip()
+    return f"You are a helpful assistant.<|endofprompt|>{text}" if text else ""

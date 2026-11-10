@@ -1,0 +1,37 @@
+# Same-speaker emotional reference clips for CosyVoice instruct2 (one MSP-Podcast 2.0
+# speaker per role, one clip per emotion, picked by listening on 2026-11-08).
+# The clone copies the reference's timbre, so every emotion of a role comes from the same
+# speaker; labels without a clip (Fear, Disgust, Contempt, …) use that speaker's Neutral.
+#
+# Audio is not committed (MSP-Podcast licence: academic use). Bake on Babel:
+#   python deploy/bake_msp_emotion_refs.py      → cosyvoice-prompts/msp/<role>/<Emotion>.wav
+# Turn on with COSYVOICE_EMOTION_REFS=1 (COSYVOICE_MODE=instruct2).
+msp_root: /data/user_data/hsuanhal/MSP-PODCAST-Publish-2.0
+roles:
+  host:
+    speaker: 210
+    gender: Female
+    refs:
+      Neutral: MSP-PODCAST_2420_0861.wav
+      Happiness: MSP-PODCAST_2421_1136.wav
+      Anger: MSP-PODCAST_2420_0181.wav
+      Sadness: MSP-PODCAST_2421_1347.wav
+      Surprise: MSP-PODCAST_2420_1096.wav
+  guest:
+    speaker: 130
+    gender: Female
+    refs:
+      Neutral: MSP-PODCAST_0589_0780.wav
+      Happiness: MSP-PODCAST_0573_0387.wav
+      Anger: MSP-PODCAST_0588_0188.wav
+      Sadness: MSP-PODCAST_0573_0295.wav
+      Surprise: MSP-PODCAST_0581_0097.wav
+  commentator:
+    speaker: 94
+    gender: Male
+    refs:
+      Neutral: MSP-PODCAST_2053_0530.wav
+      Happiness: MSP-PODCAST_0851_0369_0003.wav
+      Anger: MSP-PODCAST_3714_0472_0001.wav
+      Sadness: MSP-PODCAST_0370_0550.wav
+      Surprise: MSP-PODCAST_0886_0126_0017.wav

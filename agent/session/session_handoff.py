@@ -732,6 +732,7 @@ async def speak_panel_line(
     canned: bool = False,
     on_segment_played: Callable[[int, float], None] | None = None,
     on_segment_started: SegmentStarted | None = None,
+    emotion: str | None = None,
 ) -> None:
     """Speak any show line via Piper (+ DyStream when avatar sync is on).
 
@@ -741,6 +742,7 @@ async def speak_panel_line(
     Optional ``texts`` skips Gemma translate (canned lines such as session welcome).
     ``canned`` marks a fixed host line: with TALKSHOW_PRERENDER_CANNED=1 it plays
     from the pre-rendered cache when one viewer locale is needed and it is cached.
+    ``emotion`` is the TTS label to use; None reads the speaker's mood now.
     """
     from agent.adapters.locale_audio import get_locale_audio_publisher
     from agent.floor.floor_parser import strip_speech_control_tags
@@ -821,12 +823,11 @@ async def speak_panel_line(
         primary_text,
     )
 
-    from agent.emotion import emotion_source, get_role_emotion
-    from agent.emotion.pad_pipeline import materialize_emotion_from_pad
+    from agent.emotion import speaking_emotion
 
-    if emotion_source() != "llm":
-        materialize_emotion_from_pad(data, speak_role)
-    role_emotion = get_role_emotion(data, speak_role)
+    # ``emotion``: the label fixed when the line was queued (Think & Action runs ahead
+    # of playback, so the speaker's mood may have moved on since).
+    role_emotion = emotion or speaking_emotion(data, speak_role)
 
     data.speak_line_busy = True
     try:

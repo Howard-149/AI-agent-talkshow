@@ -52,6 +52,8 @@ class Cue:
     texts: dict[str, str] | None = None
     whole: bool = False  # canned line, not disclosed interval by interval
     canned: bool = False  # fixed host line: may play from the pre-rendered cache
+    # TTS label fixed when the line was queued; None reads the mood at playback.
+    emotion: str | None = None
     end: int | None = None
     on_start: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
     mark: Any = None  # generator checkpoint for rollback
@@ -118,7 +120,8 @@ class ConsoleSpeechConsumer:
         await _run_on_start(cue)
         if cue.whole:
             await speak_panel_line(
-                None, data, speak_role=cue.role, text=cue.text, step=cue.step, texts=cue.texts
+                None, data, speak_role=cue.role, text=cue.text, step=cue.step, texts=cue.texts,
+                emotion=cue.emotion,
             )
             self._last = (cue, len(cue.text))
             return
@@ -446,6 +449,7 @@ class AVSpeechConsumer:
                 canned=cue.canned and text == cue.text,
                 on_segment_played=segment_played,
                 on_segment_started=segment_started,
+                emotion=cue.emotion,
             ),
             name=f"speech:{cue.role}:{cue.step}",
         )

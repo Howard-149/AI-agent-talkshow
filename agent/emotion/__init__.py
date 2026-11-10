@@ -31,6 +31,7 @@ from agent.emotion.pad_pipeline import (
     apply_mood_from_parsed,
     apply_pad_delta_from_parsed,
     materialize_emotion_from_pad,
+    speaking_emotion,
 )
 from agent.emotion.pad_state import PADState, apply_pad_delta, decay_pad, decay_then_update
 from agent.emotion.role_pad import get_role_pad, set_role_pad, update_role_pad
@@ -69,6 +70,7 @@ __all__ = [
     "parse_pad_delta",
     "set_role_emotion",
     "set_role_pad",
+    "speaking_emotion",
     "strip_emotion_tag",
     "strip_pad_tag",
     "update_role_pad",

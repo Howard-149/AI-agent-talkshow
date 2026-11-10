@@ -1,0 +1,10 @@
+# Emotion-neutral talk-show lines for the voice check (eval/voice_emotion.py).
+# The wording should not carry the emotion, so any measured difference comes from
+# the CosyVoice instruct (the voice), not from the text.
+lines:
+  - "So that's where the company landed after the review last week."
+  - "I think we should look at what actually happened in that meeting."
+  - "Let's hear what the rest of the panel makes of that."
+  - "That's the third time this year the policy has changed."
+  - "Well, the numbers came out on Friday, and here they are."
+  - "You told us the team found out about it from an email."

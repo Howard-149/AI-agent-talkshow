@@ -248,6 +248,13 @@ def materialize_emotion_from_pad(
     return label
 
 
+def speaking_emotion(data: TalkShowData, role: str) -> str:
+    """TTS label for a line ``role`` speaks next: PAD decayed to now, mapped to a label."""
+    if emotion_source() != "llm":
+        materialize_emotion_from_pad(data, role)
+    return get_role_emotion(data, role)
+
+
 def apply_pad_delta_from_parsed(
     data: TalkShowData,
     role: str,
