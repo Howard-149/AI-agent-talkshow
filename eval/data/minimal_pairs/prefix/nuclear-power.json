@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "About Should we build more nuclear power plants?: the mic is yours whenever you're ready.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "Germany shut down its last nuclear plants in 2023 and burned more coal to cover it. I think that was one of the dumbest energy decisions in Europe this century.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a very strong take on Germany's energy transition, and it certainly sparks a lot of debate.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Calling Germany's pivot to coal a \"dumb decision\" is certainly dramatic, but it glosses over the immediate geopolitical reality they were trying to solve.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's point about the immediate geopolitical pressures, and I think that's a really important layer to consider when looking at energy choices. It feels like these decisions are rarely purely technical; they are always wrapped up in so much uncertainty.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's right that it's never purely technical, but I think framing it as \"uncertainty\" lets people off the hook for the actual policy failure.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan suggesting that focusing too much on \"uncertainty\" can feel like an excuse, and I can see why that perspective is strong. But I wonder if we can also acknowledge that when people are making these massive, high-stakes choices, they are often reacting to immediate crises rather than having a perfect, long-term blueprint",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're hedging on the point, which is fine for a panel, but we need to stop treating massive energy shifts like they're just inevitable reactions to a bad mood.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's frustration with what feels like hedging, and I understand the need to move past what seems like excuses. I'm not trying to excuse poor decisions, but I think we also need to remember that people making those choices are dealing with very real human needs for stability right now",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Stability is a nice word, Amy, but when that stability is bought with increased carbon emissions, it's just kicking the can down the road with a bigger environmental debt.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's concern about the environmental debt, and I agree that we can't ignore the carbon impact. But I'd also consider that for the people living through that transition, the immediate need for reliable power to keep their lights on and their jobs secure is a very real, human concern",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Should we build more nuclear power plants? — go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.03664969201998078,
+   0.15868203687942808,
+   0.025676719019152444
+  ],
+  "guest": [
+   -0.3843724604738589,
+   0.09603484060241124,
+   -0.3598402276185898
+  ],
+  "commentator": [
+   -0.20922854799176765,
+   0.15110611925405346,
+   -0.05269074559255306
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

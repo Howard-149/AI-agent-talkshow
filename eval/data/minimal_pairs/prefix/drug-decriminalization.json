@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should hard drugs be decriminalized? — over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "Portugal decriminalized all drugs in 2001 and overdose deaths dropped. I think arresting addicts just makes everything worse.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a really compelling data point regarding Portugal's approach. It certainly raises the debate around punitive versus public health models.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The Portugal example is compelling, sure, but we have to be careful not to treat decriminalization as a magic bullet for addiction; it shifts the problem, it doesn't erase it.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's point about not viewing it as a magic bullet, and I think that's a really important nuance. But I wonder if the shift in focus—from punishment to health—is itself a powerful first step toward addressing the root causes of addiction.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy’s right that the shift is a powerful first step, but we can't let the public health framing obscure the massive logistical and cultural hurdles of actually implementing that change.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan, and I understand that the practical side of change is huge, but I worry that by focusing only on the hurdles, we might miss the real human impact of the current punitive system. For many people, the fear of arrest is what keeps them from seeking help in the first place",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Ryan — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy is hitting on the core human element, but we need to acknowledge that decriminalization alone doesn't build the infrastructure for people to actually *access* that help",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I agree with Ryan that infrastructure is vital, but I think we have to look at that infrastructure through the lens of compassion. If we keep criminalizing people, we are actively preventing them from ever being in a position to access that help.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy keeps framing this as a moral imperative, but we need to ground this in policy: compassion is great, but it doesn't pay for the needle exchanges or the mental health professionals needed.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's focus on the policy and the funding needs, and I agree that those resources are absolutely necessary. But I think we might be viewing this as an either/or choice between compassion and policy, when perhaps the decriminalization model is actually a way to *force* the policy shift by changing the conversation itself",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted to talk about Should hard drugs be decriminalized? — the floor is yours, go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.2191678738126256,
+   0.20709376451388886,
+   0.21936828537503375
+  ],
+  "guest": [
+   -0.15012156901001986,
+   -0.014154095108389607,
+   -0.17701454193909785
+  ],
+  "commentator": [
+   0.20525880254382295,
+   0.245204849034778,
+   0.11785152898266071
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

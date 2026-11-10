@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,8 @@ from typing import Any
 
 class TurnJsonlLogger:
     def __init__(self, log_dir: Path) -> None:
-        self._path = log_dir / f"session-{int(time.time())}.jsonl"
+        # pid suffix: concurrent rooms (one job process each) can start in the same second.
+        self._path = log_dir / f"session-{int(time.time())}-{os.getpid()}.jsonl"
         log_dir.mkdir(parents=True, exist_ok=True)
 
     @property

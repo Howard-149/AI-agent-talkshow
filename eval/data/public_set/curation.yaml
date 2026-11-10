@@ -1,0 +1,82 @@
+# Manual curation of the seeded topic walk (build.py select → order.json; build.py review → build/review.md).
+# Curator: an LLM agent, 2026-10-06. Criteria (the test-set spec + edit review rules):
+# self-contained (no dangling referent the listener cannot recover; a leading discourse marker like "So"/"And"/"Second"
+# is allowed), on-topic for the motion, no reference to other speakers / the debate / the room, 60–180 words after the
+# trim, ≥ 1 figure, ≥ 1 PERSON/ORG/GPE, and a question or a concrete example. pick = candidate index (rank order),
+# trim = 0-based inclusive sentence range [first, last] of that candidate (spaCy en_core_web_sm sentences).
+# reject = topic skipped; the walk continues with the next topic of the same domain.
+topics:
+  # ---- economy
+  iq2-24929: {reject: "no self-contained span: candidates open with dangling referents ('This index', 'Here') or are garbled ('sir. know, I'm')"}
+  iq2-5488: {pick: 1, utt: '5507', start: 5119, note: "lobbying-dollars question (Glass-Steagall)"}
+  iq2-25160: {pick: 0, utt: '25183', start: 350}
+  iq2-356: {pick: 2, utt: '401', start: 1644, trim: {first: 1}, note: "drop 'Let's clap for that.'"}
+  iq2-9437: {pick: 0, utt: '9453', start: 2004, trim: {first: 0, last: 8}, note: "drop trailing 'that was a response, another issue'"}
+  iq2-7457: {pick: 1, utt: '7490', start: 1653, note: "keeps 'people like this audience' (no named speaker)"}
+  iq2-23707: {pick: 1, utt: '23758', start: 4813}
+  # ---- foreign_security
+  iq2-21535: {pick: 0, utt: '21574', start: 240}
+  iq2-5180: {pick: 0, utt: '5253', start: 315, trim: {first: 2}, note: "drop self-description + 'the comment you made' (addresses the debater)"}
+  iq2-11620: {pick: 0, utt: '11657', start: 647}
+  iq2-2627: {pick: 0, utt: '2637', start: 4189}
+  iq2-17262: {pick: 0, utt: '17299', start: 2582, trim: {first: 0, last: 4}}
+  iq2-20418: {pick: 1, utt: '20421', start: 2253, trim: {first: 0, last: 9}, note: "drop the dangling 'I am reminded of the words…'"}
+  iq2-23312: {pick: 0, utt: '23327', start: 2445, trim: {first: 1}, note: "drop dangling 'We can bribe them'"}
+  # ---- politics_law
+  iq2-24565: {reject: "the 'audience' turn is a moderator announcing the next debate; opening span says 'as you've heard'"}
+  iq2-5347: {pick: 1, utt: '5352', start: 1674}
+  iq2-15726: {pick: 0, utt: '15760', start: 4575}
+  iq2-26330: {pick: 0, utt: '26339', start: 3731, note: "only candidate with a question"}
+  iq2-17634: {pick: 1, utt: '17665', start: 713}
+  iq2-4395: {reject: "every span references the debate ('we've heard…, Fannie') or is a dangling fragment"}
+  iq2-19135: {pick: 0, utt: '19170', start: 4901, trim: {first: 1}, note: "drop 'his statistics' (refers to a debater)"}
+  # ---- religion_ethics
+  iq2-20897: {pick: 1, utt: '20914', start: 3218, trim: {first: 1, last: 8}, note: "medical-tourism question; audience candidate dropped ('the pro side')"}
+  iq2-13608: {pick: 1, utt: '13615', start: 2838}
+  iq2-6860: {pick: 0, utt: '6889', start: 4308}
+  iq2-11368: {pick: 0, utt: '11389', start: 3325, trim: {first: 0, last: 5}, note: "drop the sentence that ends mid-quote"}
+  iq2-20148: {pick: 0, utt: '20181', start: 5320}
+  iq2-20577: {pick: 0, utt: '20620', start: 723}
+  iq2-19607: {pick: 0, utt: '19671', start: 3564, trim: {first: 0, last: 4}, note: "drop 'this resolution'"}
+  # ---- science_health
+  iq2-19373: {pick: 2, utt: '19394', start: 4668, trim: {first: 0, last: 9}, note: "audience candidate too muddled to edit; drop 'vote against the proposition'"}
+  iq2-16966: {pick: 0, utt: '17225', start: 0}
+  iq2-18864: {pick: 2, utt: '18881', start: 4285}
+  iq2-14990: {pick: 0, utt: '15004', start: 2848, trim: {first: 0, last: 8}}
+  iq2-26062: {pick: 0, utt: '26073', start: 6032, trim: {first: 2}, note: "drop dangling 'they're different for each person'"}
+  iq2-23135: {pick: 2, utt: '23156', start: 3939, trim: {first: 1}, note: "drop dangling 'several other pesticides'"}
+  iq2-3416: {pick: 0, utt: '3428', start: 3589, trim: {first: 2, last: 7}, note: "concrete example (state studies), no question — judged manually; the regex proxy misses it"}
+  # ---- society_education
+  iq2-22390: {pick: 0, utt: '22574', start: 0}
+  iq2-12797: {pick: 0, utt: '13169', start: 273}
+  iq2-23602: {pick: 0, utt: '23615', start: 348}
+  iq2-10331: {reject: "under 60 words once the dangling 'this statistic' sentence is dropped"}
+  iq2-2457: {pick: 0, utt: '2494', start: 4013, trim: {first: 0, last: 5}}
+  iq2-4626: {reject: "references the opponents ('these really smart lawyers over here', 'we've talked about')"}
+  iq2-16500: {reject: "starts mid-anecdote ('What did the union do?', 'the $200 million for those kids')"}
+  # ---- second pass (walk continued after the rejects above)
+  iq2-15258: {reject: "transcript artifact: the motion title is spliced mid-sentence in every candidate"}
+  iq2-14427: {pick: 0, utt: '14458', start: 3745, trim: {first: 1}, note: "concrete example (approval ratings, vote margins by group), no question — judged manually; drop dangling 'No, which is why'"}
+  iq2-8115: {pick: 0, utt: '8128', start: 2150, trim: {first: 1}, note: "drop dangling 'We need to do that for several reasons'"}
+  iq2-9739: {pick: 0, utt: '9764', start: 689, trim: {first: 0, last: 9}, note: "drop dangling 'Back to Louisa Moats'"}
+  iq2-0: {pick: 2, utt: '15', start: 571}
+  iq2-21166: {pick: 1, utt: '21187', start: 3607, trim: {first: 3, last: 10}, note: "women legislators / Pew study; drop dangling 'They took a count'"}
+  # ---- third pass (stable per-topic hash order; build.py select, not --legacy)
+  iq2-1595: {pick: 0, utt: '1620', start: 1118, trim: {first: 1, last: 7}, note: "Nixon 1971 → public-debt figures; question 'what has this … dollar wrought?'"}
+  iq2-5703: {pick: 1, utt: '5708', start: 79, trim: {first: 1, last: 9}, note: "concrete example (Bouguereau vs the Impressionists), no question — judged manually; drop 'my argument is a little different'"}
+  iq2-6389: {pick: 0, utt: '6432', start: 7367}
+  iq2-8797: {pick: 1, utt: '8801', start: 5659, trim: {first: 1, last: 3}, note: "drop dangling 'The same argument'"}
+  iq2-7859: {pick: 0, utt: '7892', start: 5178}
+  iq2-2960: {pick: 0, utt: '2980', start: 7168, trim: {first: 1}, note: "drop dangling 'The country was in the worst depression'"}
+  iq2-13452: {pick: 0, utt: '13456', start: 5126}
+  iq2-12524: {pick: 0, utt: '12533', start: 3678, trim: {first: 2}, note: "drop dangling 'In 1975, it outed …'"}
+  iq2-6098: {pick: 2, utt: '6119', start: 4339, trim: {first: 4, last: 8}, note: "79 cents per dollar; concrete example, no question — judged manually"}
+  iq2-7204: {pick: 0, utt: '7237', start: 2176}
+  iq2-4134: {pick: 0, utt: '4159', start: 4582, trim: {first: 1, last: 7}, note: "drop dangling 'Now, that is unbelievable'"}
+  iq2-6660: {pick: 0, utt: '6685', start: 2674, note: "New Zealand example, no question — judged manually"}
+  iq2-8444: {pick: 0, utt: '8471', start: 108, trim: {first: 0, last: 11}, note: "drop 'Hold that thought'"}
+  iq2-11767: {pick: 0, utt: '11777', start: 2402, trim: {first: 1}, note: "drop dangling 'When they came back'"}
+  iq2-1177: {reject: "only 'figure' is 'two forms of memory' — nothing concrete for a number edit"}
+  iq2-11978: {pick: 0, utt: '12001', start: 1706, trim: {first: 0, last: 5}, note: "drug-review figures; concrete example, no question — judged manually"}
+  iq2-897: {pick: 0, utt: '916', start: 3102}
+  iq2-11136: {pick: 0, utt: '11151', start: 4973, note: "data brokers' 200–2,000 parameters; 'For example' political targeting"}

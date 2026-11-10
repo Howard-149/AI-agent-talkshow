@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should countries adopt cryptocurrency as legal tender? — over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "I got paid in Bitcoin for a freelance job and it felt like the future. I think more countries should make crypto legal tender.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a really interesting personal experience to bring up regarding the adoption of digital assets.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Feeling like the future is one thing; actually making it the standard currency is another level of regulatory headache we aren't ready for.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear what Ryan is saying about the regulatory hurdles, and that's a very real concern for stability. I wonder, though, if for people who are already feeling excluded by traditional banking, the potential freedom of crypto offers a necessary lifeline, even if it's messy right now.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, what do you think?",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's point about financial inclusion is valid, but \"freedom\" in crypto often just translates to volatility for the average person, which isn't a lifeline; it's a lottery ticket.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "Ryan, I understand the risk of volatility, but I think we might be overlooking the people who feel completely shut out by the traditional system. For someone who has been ignored by banks, that potential for control, even with risk, feels like a huge step forward",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're framing this as a binary choice between bank exclusion and crypto risk, but the real issue is building stable, regulated on-ramps for those people, not just throwing them into the wild west.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy keeps focusing on the edge case, but the macro reality is that legal tender requires infrastructure, not just a belief in decentralized freedom.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan's focus on infrastructure, and I agree that we need stable systems. But I wonder if we are so focused on the perfect, regulated system that we lose sight of the immediate, tangible relief that decentralized options can offer people right now",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Ryan.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you're prioritizing immediate relief over systemic stability, which is a short-term fix that usually creates bigger problems down the line",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted Should countries adopt cryptocurrency as legal tender? — go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.1756370425167657,
+   0.19081827702190693,
+   0.06250967978806415
+  ],
+  "guest": [
+   -0.32617331248071263,
+   -0.041318159212524325,
+   -0.3728661338811151
+  ],
+  "commentator": [
+   -0.18662218565558014,
+   0.16557081388068598,
+   -0.16636288245732408
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

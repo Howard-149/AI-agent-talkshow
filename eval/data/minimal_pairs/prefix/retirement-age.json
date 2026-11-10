@@ -1,0 +1,201 @@
+{
+ "lines": [
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Welcome — I'm Lessac, your host. Raise your hand if you'd like to speak or bring a topic — I'll call on you.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You flagged Should the retirement age be raised? — over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "human",
+   "speaker": "Human guest",
+   "text": "My dad is 66 and still lays bricks because he can't afford to stop. I think raising the retirement age punishes people with physical jobs.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "That's a very powerful example, and it brings up the real human cost of these policy debates.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "The human example is potent, but we can't let a single anecdote paralyze a structural discussion about workforce longevity.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, the floor is yours.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan saying we need to look at the bigger picture, and I think that's important, but I also wonder if we risk losing sight of the people whose daily lives are being shaped by these policies right now.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right, open floor — who'd like to speak?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, over to you.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy's right that we can't ignore the immediate pain, but the structural issue is that the economic reality for low-wage workers is already forcing them into this impossible choice.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Floor's open — anyone want to jump in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Amy, go ahead.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear Ryan pointing out that the economic pressures are already forcing these choices, and that's a heavy truth. I just wonder if, in trying to fix the system, we don't accidentally make the immediate burden on people like your dad feel even heavier",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Who wants to take this next?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, you're up.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you’re framing it as a choice between system fix and immediate pain, but the system *is* the immediate pain for people like your dad.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Anyone care to weigh in? Floor's open.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "All right Amy — you're on.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I hear you, Ryan, that the system itself is the pain, and I really do believe that's true. But I worry that when we talk about fixing the structure, we sometimes forget that for the person laying bricks, the immediate reality is just making it to the next paycheck",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's open the floor — who wants to weigh in?",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Ryan, take it away.",
+   "procedural": true
+  },
+  {
+   "role_id": "commentator",
+   "speaker": "Ryan",
+   "text": "Amy, you keep circling back to the paycheck, but the policy debate isn't about the next paycheck; it's about whether we're designing a system that lets people retire with dignity or forces them to work until they break.",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "I'm opening the floor — raise a hand if you've got something.",
+   "procedural": true
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "Let's hear from Amy.",
+   "procedural": true
+  },
+  {
+   "role_id": "guest",
+   "speaker": "Amy",
+   "text": "I understand the desire to design a dignified system, Ryan, but I do feel that when we focus solely on the grand design, we risk overlooking the very real, immediate dignity that is being lost right now for people who are physically unable to keep up",
+   "procedural": false
+  },
+  {
+   "role_id": "host",
+   "speaker": "Lessac",
+   "text": "You wanted to talk about Should the retirement age be raised? — the floor is yours, go ahead.",
+   "procedural": true
+  }
+ ],
+ "role_pad": {
+  "host": [
+   0.16252591332546762,
+   0.19632404722240904,
+   0.13540064599354892
+  ],
+  "guest": [
+   -0.30178773605402437,
+   0.03953686829041,
+   -0.20233596303062676
+  ],
+  "commentator": [
+   -0.32313711721609006,
+   0.20916117143660845,
+   -0.2750086554532265
+  ]
+ },
+ "role_emotion": {
+  "host": "neutral",
+  "guest": "neutral",
+  "commentator": "neutral"
+ },
+ "dialogue_example_index": 0
+}

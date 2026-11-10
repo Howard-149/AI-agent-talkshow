@@ -1,11 +1,13 @@
-"""Join a LiveKit room as a human and speak scripted turns into the show.
+"""Join a LiveKit room as the human guest and speak scripted turns into the show.
 
-Think & Action floor: the human never waits for a floor grant. Each scripted turn
-says when to cut in (after how many agent lines, at a line's end or partway into it),
-and is spoken as microphone audio — CosyVoice from a recorded reference (see voice.py)
-— so the agent hears it through VAD, barge-in and STT like a real guest, and a
-recording has the guest's voice. ``--text-turns`` sends the text instead (no audio,
-no STT): faster and the same every run.
+Think & Action floor: the human never waits for a floor grant. A scripted turn can say
+when to cut in (after how many agent lines, at a line's end or partway into it); a turn
+that doesn't waits for the panel to finish a beat (``--beat-panel`` / ``--quiet-sec``).
+
+Turns are spoken as microphone audio — CosyVoice from a recorded reference (voice.py) —
+so the agent hears them through VAD, barge-in and STT like a real guest, and a recording
+has the guest's voice. Replay scripts (a ``prefix``) and ``--text-turns`` send the text
+instead: no audio, no STT, the exact same words every run.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 WHEN = ("line_end", "mid_line")
 # Silence after an agent playout that counts as the end of its line. Sentences of one
-# line follow each other closely; a new speaker waits TALKSHOW_TURN_GAP_S (≥ 1 s).
+# line follow each other closely; a new speaker waits TALKSHOW_TURN_GAP_S (>= 1 s).
 LINE_END_QUIET_S = 0.8
 MIC_RATE = 48000
 FRAME_MS = 10
@@ -44,9 +46,9 @@ FRAME_MS = 10
 class ScriptedTurn:
     text: str
     topic: str = ""
-    # Speak once this many agent lines have started since the guest last spoke
-    # (since the session started, for the first turn).
-    after_lines: int = 1
+    # Cut in once this many agent lines have started since the guest last spoke (since
+    # the session started, for the first turn). None: wait for the beat to end instead.
+    after_lines: int | None = None
     # line_end: wait for that line to finish. mid_line: cut in after_sec into it.
     when: str = "line_end"
     after_sec: float = 0.0
@@ -60,6 +62,9 @@ class GhostScript:
     locale: str = "en"
     identity: str = "ghost-guest"
     turns: list[ScriptedTurn] = field(default_factory=list)
+    # Replay mode (worker needs TALKSHOW_GHOST_REPLAY=1): sent with the first turn;
+    # the worker swaps in this history / mood state before handling the turn.
+    prefix: dict[str, Any] | None = None
 
 
 def _turn(item: Any) -> ScriptedTurn | None:
@@ -73,10 +78,11 @@ def _turn(item: Any) -> ScriptedTurn | None:
     when = str(item.get("when") or "line_end").strip()
     if when not in WHEN:
         raise ValueError(f"ghost turn: when must be one of {WHEN}, got {when!r}")
+    after_lines = item.get("after_lines")
     return ScriptedTurn(
         text=text,
         topic=str(item.get("topic") or "").strip(),
-        after_lines=max(0, int(item.get("after_lines", 1))),
+        after_lines=None if after_lines is None else max(0, int(after_lines)),
         when=when,
         after_sec=max(0.0, float(item.get("after_sec", 0.0))),
         emotion=str(item.get("emotion") or "").strip(),
@@ -92,10 +98,23 @@ def load_script(path: Path) -> GhostScript:
     if not isinstance(raw, dict):
         raise ValueError(f"ghost script must be a mapping: {path}")
     turns = [t for t in (_turn(item) for item in raw.get("turns") or []) if t is not None]
+    prefix: dict[str, Any] | None = None
+    if raw.get("prefix_file"):
+        prefix_path = Path(str(raw["prefix_file"]))
+        if not prefix_path.is_absolute():
+            prefix_path = _REPO_ROOT / prefix_path
+        prefix = json.loads(prefix_path.read_text(encoding="utf-8"))
+    if raw.get("persona_swap"):
+        prefix = dict(prefix or {})
+        prefix["persona_swap"] = True
+    if raw.get("flags"):
+        prefix = dict(prefix or {})
+        prefix["flags"] = dict(raw["flags"])
     return GhostScript(
         locale=str(raw.get("locale") or "en").strip() or "en",
         identity=str(raw.get("identity") or "ghost-guest").strip() or "ghost-guest",
         turns=turns,
+        prefix=prefix,
     )
 
 
@@ -181,6 +200,10 @@ class GhostRoomClient:
         # Agent lines that started playing (one transcript event per line).
         self.agent_lines = 0
         self._seen: set[tuple[str, str]] = set()
+        # Any transcript (the human's own line included) and when the last one came.
+        self.transcript_seen = asyncio.Event()
+        self.last_transcript_t = 0.0
+        self.panel_transcripts = 0  # guest/commentator transcript events seen
         self.speaking = False  # an agent playout (one sentence) is on air
         self.idle_since = time.monotonic()
         self._changed = asyncio.Event()
@@ -197,12 +220,17 @@ class GhostRoomClient:
     def on_ui_event(self, ev: dict[str, Any]) -> None:
         ev_type = str(ev.get("type") or "")
         role = str(ev.get("role") or "")
+        if ev_type == "transcript":
+            self.transcript_seen.set()
+            self.last_transcript_t = time.monotonic()
         if ev_type == "transcript" and role and role != "human":
             key = (role, str(ev.get("step") or ""))
             if key in self._seen:
                 return
             self._seen.add(key)
             self.agent_lines += 1
+            if role in ("guest", "commentator"):
+                self.panel_transcripts += 1
             self.first_line.set()
             logger.info(
                 "agent line %d %s step=%s %r",
@@ -233,7 +261,7 @@ class GhostRoomClient:
     async def wait_for_turn(self, turn: ScriptedTurn, *, lines_before: int) -> str:
         """Block until the script says the guest cuts in; returns why it did."""
         deadline = time.monotonic() + turn.max_wait_sec
-        target = lines_before + turn.after_lines
+        target = lines_before + (turn.after_lines or 0)
         if not await self._until(lambda: self.agent_lines >= target, deadline):
             return "timeout"
         if turn.when == "mid_line":
@@ -290,8 +318,11 @@ class GhostRoomClient:
             topic=CONTROL_TOPIC,
         )
 
-    async def inject_turn(self, text: str) -> None:
-        await self.publish_control({"type": "ghost_human_turn", "text": text})
+    async def inject_turn(self, text: str, *, prefix: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {"type": "ghost_human_turn", "text": text}
+        if prefix:
+            payload["prefix"] = prefix
+        await self.publish_control(payload)
         logger.info("injected ghost turn chars=%d %r", len(text), text[:80])
 
     # --- microphone ---------------------------------------------------------
@@ -352,6 +383,72 @@ class GhostRoomClient:
             logger.debug("ghost disconnect raised", exc_info=True)
 
 
+async def _inject_until_heard(
+    client: GhostRoomClient,
+    text: str,
+    *,
+    settle_sec: float = 2.0,
+    ack_timeout_sec: float = 30.0,
+    attempts: int = 8,
+    prefix: dict[str, Any] | None = None,
+) -> None:
+    """Inject, then re-inject until a new transcript shows up (Think & Action: the
+    human line itself; hand-raise floor: the host reply).
+
+    Hand-raise floor: the human ``floor_grant`` is emitted while the show beat is still
+    finishing; an inject that lands then is dropped by the worker ("panel chain running")
+    with no reply on the wire. Extra injects after acceptance are dropped the same way
+    (the worker also drops a repeat of its last ghost turn).
+    """
+    await asyncio.sleep(settle_sec)
+    for attempt in range(1, attempts + 1):
+        client.transcript_seen.clear()
+        await client.inject_turn(text, prefix=prefix)
+        try:
+            await asyncio.wait_for(client.transcript_seen.wait(), timeout=ack_timeout_sec)
+            return
+        except asyncio.TimeoutError:
+            logger.warning(
+                "no transcript %.0fs after inject (attempt %d/%d) — re-injecting",
+                ack_timeout_sec,
+                attempt,
+                attempts,
+            )
+    raise TimeoutError(f"ghost turn never acknowledged after {attempts} injects")
+
+
+async def _wait_quiet(
+    client: GhostRoomClient,
+    *,
+    quiet_sec: float,
+    max_sec: float,
+    stop_after_panel: int = 0,
+    panel_base: int = 0,
+) -> None:
+    """Return once the panel beat is over: ``stop_after_panel`` panelist lines since
+    ``panel_base`` (0 = off), or no transcript for ``quiet_sec``, or ``max_sec``.
+
+    Silence alone is a poor end signal: one line can take ~60 s to synthesise and play
+    under load, while 60 s after a beat the worker's idle loop starts the next one.
+    """
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < max_sec:
+        if stop_after_panel and client.panel_transcripts - panel_base >= stop_after_panel:
+            await asyncio.sleep(2.0)
+            return
+        last = max(client.last_transcript_t, t0)
+        if time.monotonic() - last >= quiet_sec:
+            return
+        await asyncio.sleep(1.0)
+    logger.warning("panel still talking after %.0fs — moving on", max_sec)
+
+
+def speaks_turns(script: GhostScript, *, text_turns: bool) -> bool:
+    """Voice unless asked for text. A replay (prefix) compares runs that differ in one
+    word, so it always sends the exact text: no TTS, no STT."""
+    return not text_turns and script.prefix is None
+
+
 async def run_ghost_session(
     *,
     room: str,
@@ -359,14 +456,20 @@ async def run_ghost_session(
     opening_only: bool = False,
     text_turns: bool = False,
     welcome_timeout_sec: float = 90.0,
-    tail_lines: int = 3,
+    floor_timeout_sec: float = 180.0,
     hold_sec: float = 8.0,
+    quiet_sec: float = 90.0,
+    stop_after_panel: int = 0,
+    beat_panel: int = 0,
     record: bool = False,
     frontend_url: str = "http://localhost:3000",
     start_frontend: bool = False,
     record_dir: Path | None = None,
     headed: bool = False,
 ) -> Path | None:
+    """Turns with ``after_lines`` cut in when the script says; the others wait for the
+    beat to end (``beat_panel`` panel lines before the first turn, then quiet or
+    ``beat_panel`` / ``stop_after_panel`` panel lines after each turn)."""
     from eval.ghost_session.record_frontend import (
         FrontendRecorder,
         RoomAudioTap,
@@ -376,8 +479,9 @@ async def run_ghost_session(
     )
 
     turns = [] if opening_only else script.turns
+    voice = speaks_turns(script, text_turns=text_turns)
     speeches: list[tuple[Any, Path] | None] = [None] * len(turns)
-    if not text_turns:
+    if voice:
         from eval.ghost_session.voice import speech_for_turn
 
         # Synthesize before joining, so a turn is never late because of TTS.
@@ -391,12 +495,13 @@ async def run_ghost_session(
         identity=script.identity,
         locale=script.locale,
     )
+    stamp = int(time.time())
+    out_dir = record_dir or default_record_dir()
     recorder: FrontendRecorder | None = None
     audio_tap: RoomAudioTap | None = None
     recorded: Path | None = None
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    out_dir = record_dir or default_record_dir()
     if record:
+        out_dir.mkdir(parents=True, exist_ok=True)
         audio_tap = RoomAudioTap(out_dir / f"ghost-{room}-{stamp}.wav")
         recorder = FrontendRecorder(
             frontend_url=frontend_url,
@@ -422,7 +527,7 @@ async def run_ghost_session(
     client = GhostRoomClient(audio_tap=audio_tap)
     await client.connect(url, token)
     try:
-        if not text_turns and turns:
+        if voice and turns:
             await client.open_mic()
         if recorder is not None:
             await recorder.start(page_url)
@@ -433,20 +538,43 @@ async def run_ghost_session(
 
         lines_before = 0
         for idx, (turn, speech) in enumerate(zip(turns, speeches), start=1):
-            why = await client.wait_for_turn(turn, lines_before=lines_before)
-            logger.info(
-                "turn %d: cutting in (%s, %d agent lines since the last turn)",
-                idx, why, client.agent_lines - lines_before,
-            )
-            if speech is None:
-                await client.inject_turn(turn.text)
-            else:
+            if turn.after_lines is not None:
+                why = await client.wait_for_turn(turn, lines_before=lines_before)
+                logger.info(
+                    "turn %d: cutting in (%s, %d agent lines since the last turn)",
+                    idx, why, client.agent_lines - lines_before,
+                )
+            elif idx == 1 and beat_panel and not script.prefix:
+                # Let the opening run to a few panel lines before the first turn
+                # (a replay prefix replaces the opening anyway).
+                await _wait_quiet(
+                    client,
+                    quiet_sec=quiet_sec,
+                    max_sec=floor_timeout_sec,
+                    stop_after_panel=beat_panel,
+                    panel_base=0,
+                )
+            panel_base = client.panel_transcripts
+            if speech is not None:
                 await client.say(*speech)
+            else:
+                await _inject_until_heard(
+                    client,
+                    turn.text,
+                    prefix=script.prefix if idx == 1 else None,
+                )
             lines_before = client.agent_lines
-        if turns and tail_lines > 0:
-            # Let the panel answer the last turn before leaving.
-            tail = ScriptedTurn(text="-", after_lines=tail_lines, max_wait_sec=180.0)
-            await client.wait_for_turn(tail, lines_before=lines_before)
+            last = idx == len(turns)
+            if last or turns[idx].after_lines is None:
+                await _wait_quiet(
+                    client,
+                    quiet_sec=quiet_sec,
+                    max_sec=floor_timeout_sec * 3,
+                    # Last turn: leave after N panel lines. Earlier turns: let the beat run
+                    # to N panel lines (its full length) before the next turn.
+                    stop_after_panel=stop_after_panel if last else beat_panel,
+                    panel_base=panel_base,
+                )
         await asyncio.sleep(max(0.0, hold_sec))
     finally:
         wav: Path | None = None
@@ -497,7 +625,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--text-turns",
         action="store_true",
-        help="Send the turns as text (no audio / STT): faster, same every run",
+        help="Send the turns as text (no audio / STT): the exact words every run. "
+        "Replay scripts (prefix_file) always do",
     )
     parser.add_argument("--locale", default="", help="Override script locale")
     parser.add_argument(
@@ -507,16 +636,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for the first agent line",
     )
     parser.add_argument(
-        "--tail-lines",
-        type=int,
-        default=3,
-        help="After the last turn, wait for this many agent lines before leaving",
+        "--floor-timeout",
+        type=float,
+        default=180.0,
+        help="Longest wait for a beat to end (a turn without after_lines)",
     )
     parser.add_argument(
         "--hold-sec",
         type=float,
         default=8.0,
         help="Stay connected after the last beat so TTS can finish",
+    )
+    parser.add_argument(
+        "--quiet-sec",
+        type=float,
+        default=90.0,
+        help="A beat counts as over after this long without a transcript (the room "
+        "closes when the ghost leaves — keep it above the slowest line under load)",
+    )
+    parser.add_argument(
+        "--stop-after-panel",
+        type=int,
+        default=0,
+        help="After the LAST scripted turn, leave once this many panelist lines were heard (0 = off)",
+    )
+    parser.add_argument(
+        "--beat-panel",
+        type=int,
+        default=0,
+        help="Before a NON-final scripted turn, wait for this many panelist lines (a full beat) — "
+        "with --quiet-sec as fallback for beats that end early (0 = silence only)",
     )
     parser.add_argument(
         "--log-dir",
@@ -594,8 +743,11 @@ def main(argv: list[str] | None = None) -> int:
             opening_only=args.opening_only,
             text_turns=args.text_turns,
             welcome_timeout_sec=args.welcome_timeout,
-            tail_lines=args.tail_lines,
+            floor_timeout_sec=args.floor_timeout,
             hold_sec=args.hold_sec,
+            quiet_sec=args.quiet_sec,
+            stop_after_panel=args.stop_after_panel,
+            beat_panel=args.beat_panel,
             record=args.record,
             frontend_url=args.frontend_url,
             start_frontend=args.start_frontend,
