@@ -98,9 +98,3 @@ npm install -g pnpm
 # or: brew install pnpm
 ```
 
-**Build: background image "not a valid image file"** — JPEGs are Git LFS in upstream Meet. If you only got 130-byte pointer files:
-
-```bash
-bash scripts/fetch-background-images.sh
-pnpm build
-```
