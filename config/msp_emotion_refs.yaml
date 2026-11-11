@@ -1,7 +1,11 @@
 # Same-speaker emotional reference clips for CosyVoice instruct2 (one MSP-Podcast 2.0
-# speaker per role, one clip per emotion, picked by listening on 2026-11-08).
-# The clone copies the reference's timbre, so every emotion of a role comes from the same
-# speaker; labels without a clip (Fear, Disgust, Contempt, …) use that speaker's Neutral.
+# speaker per role, one clip per emotion). The clone copies the reference's timbre, so every
+# emotion of a role comes from the same speaker; labels without a clip (Fear, Disgust,
+# Contempt, …) use that speaker's Neutral. Clips of one MSP speaker can still sound like
+# different people (other episodes, rooms, mics): on 2026-11-11 each emotion clip was
+# re-picked among the speaker's clips of that label (3–12 s) for speaker similarity to the
+# role's Neutral (CosyVoice's campplus embedding; eval/msp_ref_similarity.py), e.g. Amy
+# Sadness 0.54 → 0.88, then for the clearest label (arousal / valence).
 #
 # Audio is not committed (MSP-Podcast licence: academic use). Bake on Babel:
 #   python deploy/bake_msp_emotion_refs.py      → cosyvoice-prompts/msp/<role>/<Emotion>.wav
@@ -13,25 +17,25 @@ roles:
     gender: Female
     refs:
       Neutral: MSP-PODCAST_2420_0861.wav
-      Happiness: MSP-PODCAST_2421_1136.wav
-      Anger: MSP-PODCAST_2420_0181.wav
-      Sadness: MSP-PODCAST_2421_1347.wav
-      Surprise: MSP-PODCAST_2420_1096.wav
+      Happiness: MSP-PODCAST_2420_0793.wav
+      Anger: MSP-PODCAST_2420_0243.wav
+      Sadness: MSP-PODCAST_2347_2359.wav
+      Surprise: MSP-PODCAST_2421_1127.wav
   guest:
     speaker: 130
     gender: Female
     refs:
       Neutral: MSP-PODCAST_0589_0780.wav
-      Happiness: MSP-PODCAST_0573_0387.wav
-      Anger: MSP-PODCAST_0588_0188.wav
-      Sadness: MSP-PODCAST_0573_0295.wav
-      Surprise: MSP-PODCAST_0581_0097.wav
+      Happiness: MSP-PODCAST_0569_0426.wav
+      Anger: MSP-PODCAST_0566_0385.wav
+      Sadness: MSP-PODCAST_0579_0281.wav
+      Surprise: MSP-PODCAST_0588_0080.wav
   commentator:
     speaker: 94
     gender: Male
     refs:
       Neutral: MSP-PODCAST_2053_0530.wav
-      Happiness: MSP-PODCAST_0851_0369_0003.wav
-      Anger: MSP-PODCAST_3714_0472_0001.wav
-      Sadness: MSP-PODCAST_0370_0550.wav
-      Surprise: MSP-PODCAST_0886_0126_0017.wav
+      Happiness: MSP-PODCAST_2343_1789.wav
+      Anger: MSP-PODCAST_2329_1753.wav
+      Sadness: MSP-PODCAST_2053_1738.wav
+      Surprise: MSP-PODCAST_2053_0198.wav

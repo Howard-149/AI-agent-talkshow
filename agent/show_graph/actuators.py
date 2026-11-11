@@ -43,7 +43,7 @@ class Actuators(Protocol):
 
     # --- lines
     def record_line(self, line: LineSpec) -> Utterance | None: ...
-    def relax(self, role: str) -> None: ...
+    def relax(self, role: str, text: str | None = None) -> None: ...
     def listeners(self, speaker: str) -> list[str]: ...
     async def speak(self, line: LineSpec) -> None: ...
     async def appraise(self, utt: Utterance, listener: str) -> dict[str, Any]: ...
@@ -183,10 +183,10 @@ class LiveActuators:
             self._deferred_utterance = utterance
         return utterance
 
-    def relax(self, role: str) -> None:
+    def relax(self, role: str, text: str | None = None) -> None:
         from agent.emotion.appraisal import relax_after_expression
 
-        relax_after_expression(self.data, role)
+        relax_after_expression(self.data, role, text)
 
     def _mood_block(self, data: TalkShowData, role: str) -> str:
         from agent.emotion import emotion_source, pad_prompt_block
@@ -369,6 +369,11 @@ class LiveActuators:
             self.interaction.host_fallback_strategy = None
             self.interaction.host_fallback_target = None
             return FloorPick(invited, "opening_invite")
+        if outcome.decision == "host_fallback" and self.interaction.should_await_human(self.data):
+            # The beat ends without another host line; the human answers (or the idle
+            # loop re-opens the floor).
+            self.log("await_human", reason="opening_invite")
+            return FloorPick(None, "await_human")
         if outcome.decision == "host_fallback":
             return FloorPick(self.controller.listen_role(), "host_fallback")
         if invited and outcome.selected_role == invited:

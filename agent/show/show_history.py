@@ -54,6 +54,15 @@ def human_name_note() -> str:
     return f"The human guest is {_human_name}; address them as {_human_name}, never as 'Guest'.\n"
 
 
+def asks_human(text: str) -> bool:
+    """A line that asks the named human guest a question ("Howard, what drew you…?")."""
+    import re
+
+    if not _human_name or not text.rstrip().endswith("?"):
+        return False
+    return re.search(rf"\b{re.escape(_human_name)}\b", text) is not None
+
+
 def human_label() -> str:
     """The human in transcripts and prompts: "Howard (human guest)", else "Human guest"."""
     return f"{_human_name} (human guest)" if _human_name else HUMAN_LABEL
