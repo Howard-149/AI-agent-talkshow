@@ -278,6 +278,7 @@ class SidecarHandler(BaseHTTPRequestHandler):
             return
 
         headers_sent = False
+        frame_count = 0
         try:
             if not _models_warmed:
                 warm_models()
@@ -370,6 +371,9 @@ class SidecarHandler(BaseHTTPRequestHandler):
                 frame_count,
                 stats,
             )
+        except (BrokenPipeError, ConnectionResetError):
+            # The agent hung up: its line was cut, so the rest of the clip isn't needed.
+            logger.info("synthesize/stream client hung up after %d frames", frame_count)
         except Exception as exc:
             logger.exception("synthesize/stream failed")
             if not headers_sent:
