@@ -67,6 +67,7 @@ export function TalkshowOverlay() {
     onRoleActive,
     onRoleIdle,
     pushLine,
+    onLineEnd,
     onInterrupt,
     onBackchannel,
   } = usePlayoutSyncedUi(agentParticipant);
@@ -87,6 +88,8 @@ export function TalkshowOverlay() {
   handleUiEventRef.current = handleUiEvent;
   const pushLineRef = useRef(pushLine);
   pushLineRef.current = pushLine;
+  const onLineEndRef = useRef(onLineEnd);
+  onLineEndRef.current = onLineEnd;
   const onInterruptRef = useRef(onInterrupt);
   onInterruptRef.current = onInterrupt;
   const onBackchannelRef = useRef(onBackchannel);
@@ -111,7 +114,10 @@ export function TalkshowOverlay() {
       const display = pickLocalizedText(ev.text, ev.texts, viewerLocaleRef.current);
       pushLineRef.current(ev.role, ev.speaker, display, {
         stream: !!ev.stream && display === ev.text,
+        step: ev.step,
       });
+    } else if (ev.type === 'line_end') {
+      onLineEndRef.current(ev);
     } else if (ev.type === 'interrupt') {
       onInterruptRef.current(ev);
     } else if (ev.type === 'backchannel') {
