@@ -3,8 +3,13 @@
 /**
  * Human guest seat card with local camera preview and speaking state.
  */
-import { VideoTrack, useIsSpeaking, useLocalParticipant } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import {
+  VideoTrack,
+  useIsSpeaking,
+  useLocalParticipant,
+  useRemoteParticipant,
+} from '@livekit/components-react';
+import { Track, type Participant } from 'livekit-client';
 import { useMemo } from 'react';
 
 import type { HumanSeat } from '@/lib/talkshow/VirtualPanel';
@@ -48,6 +53,38 @@ export function HumanSeatCard({ human, activeRole }: Props) {
       ) : (
         <div className={styles.avatarHuman}>{human.isLocal ? 'You' : (human.name[0] ?? '?')}</div>
       )}
+      <div className={styles.meta}>
+        <strong>{human.name}</strong>
+        <span>{human.label}</span>
+      </div>
+    </div>
+  );
+}
+
+/** A human in the room seen from another seat (or the recording page): lit while
+ * their microphone is speaking, or while the worker gives the floor to the human. */
+export function RemoteHumanSeatCard({ human, activeRole }: Props) {
+  const participant = useRemoteParticipant(human.key);
+  return participant ? (
+    <SpeakingRemoteCard human={human} activeRole={activeRole} participant={participant} />
+  ) : (
+    <RemoteCard human={human} speaking={activeRole === 'human'} />
+  );
+}
+
+function SpeakingRemoteCard({
+  human,
+  activeRole,
+  participant,
+}: Props & { participant: Participant }) {
+  const isSpeaking = useIsSpeaking(participant);
+  return <RemoteCard human={human} speaking={isSpeaking || activeRole === 'human'} />;
+}
+
+function RemoteCard({ human, speaking }: { human: HumanSeat; speaking: boolean }) {
+  return (
+    <div className={styles.card} data-human data-speaking={speaking ? 'true' : 'false'}>
+      <div className={styles.avatarHuman}>{human.name[0] ?? '?'}</div>
       <div className={styles.meta}>
         <strong>{human.name}</strong>
         <span>{human.label}</span>
