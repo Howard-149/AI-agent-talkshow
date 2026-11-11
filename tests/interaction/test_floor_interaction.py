@@ -1106,3 +1106,38 @@ class InterruptHandoffTests(FloorInteractionTestCase):
     async def test_normal_line_still_waits_for_appraisals(self) -> None:
         _, returned_early = await self.run_speak(None)
         self.assertFalse(returned_early)
+
+
+class ControllerSelectionTests(FloorInteractionTestCase):
+    """Gemma names the panelist ("Ryan") where the prompt asks for the role ID."""
+
+    INTERRUPT = Action(
+        "interrupt", CommunicativeIntent("challenge", "push back", "Amy"), "But the policy allowed it."
+    )
+
+    async def test_an_interrupt_approved_by_persona_name_is_granted(self) -> None:
+        interaction, _consumer, data = self.make()
+        interaction.actions = {"commentator": self.INTERRUPT}
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='```json\n{"decision": "interrupt", "selected_role": "Ryan", '
+            '"reason_code": "timely_intervention", "reason": "timely"}\n```'
+        )
+        with patch("agent.config.load_persona_name", lambda role: {"commentator": "Ryan"}.get(role, role)):
+            selected = await interaction.arbitrate_occupied(
+                data, speaker="guest", visible_text="When I think about it,",
+                candidates=["commentator"], interval=1, history=None,
+            )
+        self.assertEqual(selected, "commentator")
+
+    async def test_a_name_that_is_no_candidate_is_still_rejected(self) -> None:
+        interaction, _consumer, data = self.make()
+        interaction.actions = {"commentator": self.INTERRUPT}
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "interrupt", "selected_role": "Amy", "reason": "x"}'
+        )
+        with patch("agent.config.load_persona_name", lambda role: {"commentator": "Ryan"}.get(role, role)):
+            selected = await interaction.arbitrate_occupied(
+                data, speaker="guest", visible_text="When I think about it,",
+                candidates=["commentator"], interval=1, history=None,
+            )
+        self.assertIsNone(selected)
