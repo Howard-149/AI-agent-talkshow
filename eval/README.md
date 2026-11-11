@@ -1,5 +1,7 @@
 # Evaluation toolkit
 
+For the big picture (how the dialogue fixes, fact pack and benchmark fit into the show, with diagrams and current results), see [DIALOGUE_QUALITY.md](DIALOGUE_QUALITY.md).
+
 Two tools tell whether a change to the show helps:
 
 - the **listening test**: does the panel react to what the human actually said?
