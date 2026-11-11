@@ -1064,6 +1064,16 @@ class ThinkActionInteraction(TextOnlyInteraction):
         strategy = self.host_fallback_strategy or "reframe"
         target = self.host_fallback_target
         target_context = f"Invite role {target} if appropriate.\n" if target else ""
+        lines = getattr(getattr(data, "show_history", None), "lines", None) or []
+        if not any(line.role_id != role for line in lines):
+            # Only the host has spoken (the welcome): there is no discussion to refer
+            # back to, whatever the strategy says ("reframe" made up "we've touched on a
+            # lot today" right after the welcome). Not an instruction to invite anyone:
+            # that turned every queued fallback into the same question to the human.
+            target_context += (
+                "The show has just opened: nobody but you has spoken yet. Do not refer to "
+                "any earlier discussion.\n"
+            )
         mood = self.mood_block(data, role) if self.mood_block is not None else ""
         mood = f"{mood}\n" if mood else ""
         from agent.show.show_history import human_name_note
