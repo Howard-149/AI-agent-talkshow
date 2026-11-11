@@ -76,3 +76,32 @@ class HostFallbackNameTests(unittest.IsolatedAsyncioTestCase):
         with patch("agent.config.load_persona_instructions", lambda *a, **k: "host persona"):
             await interaction.host_fallback_line(data, "host")
         self.assertIn("Howard", complete.await_args.args[0])
+
+
+class FreshShowFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def fallback_prompt(self, history_roles: list[str]) -> str:
+        from unittest.mock import AsyncMock, patch
+
+        from agent.interaction import ThinkActionInteraction
+        from agent.show.show_history import ShowHistory
+
+        interaction = ThinkActionInteraction()
+        interaction.host_fallback_instruction = "Introduce a new concrete angle."
+        interaction.host_fallback_strategy = "reframe"
+        history = ShowHistory()
+        history.lines = [HistoryLine(role, role, "words") for role in history_roles]
+        complete = AsyncMock(return_value="Welcome, tell us.")
+        data = SimpleNamespace(
+            scenario=SimpleNamespace(turn_control=SimpleNamespace(listen_role="host", order=["host"])),
+            show_history=history,
+            runtime=SimpleNamespace(gemma_client=SimpleNamespace(complete_text=complete)),
+        )
+        with patch("agent.config.load_persona_instructions", lambda *a, **k: "host persona"):
+            await interaction.host_fallback_line(data, "host")
+        return complete.await_args.args[0]
+
+    async def test_right_after_the_welcome_the_host_refers_to_no_discussion(self) -> None:
+        self.assertIn("nobody but you has spoken", await self.fallback_prompt(["host"]))
+
+    async def test_once_others_spoke_the_note_is_gone(self) -> None:
+        self.assertNotIn("nobody but you", await self.fallback_prompt(["host", "human"]))
