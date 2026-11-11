@@ -324,15 +324,19 @@ async def _play_prepared_chunk(
             await first_frame.wait()
             await _play_audio()
 
-        await asyncio.gather(
-            video_pub.stream_frames_live(
-                chunk.live_stream.frame_queue,
-                chunk.live_stream.fps,
-                target_duration_sec=chunk.duration_sec,
-                on_first_frame=first_frame,
-            ),
-            _audio_with_frame0(),
-        )
+        try:
+            await asyncio.gather(
+                video_pub.stream_frames_live(
+                    chunk.live_stream.frame_queue,
+                    chunk.live_stream.fps,
+                    target_duration_sec=chunk.duration_sec,
+                    on_first_frame=first_frame,
+                ),
+                _audio_with_frame0(),
+            )
+        except asyncio.CancelledError:
+            chunk.live_stream.cancel()  # cut mid-sentence: stop rendering the rest
+            raise
         if chunk.live_stream._reader_task is not None:
             try:
                 await chunk.live_stream._reader_task
@@ -700,6 +704,12 @@ async def _speak_avatar_chunked(
                 await next_task
             except (asyncio.CancelledError, Exception):
                 pass
+        elif next_task is not None and not next_task.cancelled() and next_task.exception() is None:
+            # Prepared but never played (the line was cut): its stream may still be
+            # rendering on the sidecar, ahead of whoever speaks next.
+            unplayed = next_task.result().live_stream
+            if unplayed is not None:
+                unplayed.cancel()
         cleanup_speech_slots(slots)
 
     if turn_log is not None:
