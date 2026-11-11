@@ -999,6 +999,9 @@ async def speak_panel_line(
                 step=step,
                 room=data.room_name,
             )
+        from agent.ui.ui_events import emit_line_end
+
+        asyncio.create_task(emit_line_end(speak_role, step))
         _flush_deferred_panel_followup(data)
 
 

@@ -132,6 +132,11 @@ async def emit_role_idle() -> None:
     await publish_ui_event("role_idle")
 
 
+async def emit_line_end(role: str, step: str) -> None:
+    """A whole line is over (played, cut or dropped); role_idle fires between its sentences."""
+    await publish_ui_event("line_end", role=role, step=step)
+
+
 async def emit_role_active(role: str, *, emotion: str | None = None) -> None:
     fields: dict[str, object] = {
         "role": role,

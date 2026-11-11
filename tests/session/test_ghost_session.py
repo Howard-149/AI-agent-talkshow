@@ -251,6 +251,8 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertFalse(waiter.done())  # the second line is still playing
         client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
+        client.on_ui_event({"type": "line_end", "role": "guest", "step": "speech_guest_1"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
     async def test_line_end_waits_for_audio_announced_before_it_plays(self) -> None:
@@ -268,9 +270,10 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertFalse(waiter.done())
         client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
-    async def test_line_end_does_not_cut_into_the_next_line_of_the_beat(self) -> None:
+    async def test_line_end_waits_for_the_whole_line_and_the_next_line_of_the_beat(self) -> None:
         from eval.ghost_session.client import ScriptedTurn
 
         client = self.client()
@@ -279,12 +282,18 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         self.line(client, "host", "opening")
         client.on_ui_event({"type": "role_active", "role": "host"})
         client.on_ui_event({"type": "role_idle"})
+        await asyncio.sleep(1.2)
+        self.assertFalse(waiter.done())  # idle between the opening's sentences
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
         # The host's invite is announced right after the opening ends.
         self.line(client, "host", "speech_host_0")
         await asyncio.sleep(1.2)
         self.assertFalse(waiter.done())  # the invite is about to play
         client.on_ui_event({"type": "role_active", "role": "host"})
         client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "speech_host_0"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
     async def test_mid_line_cuts_in_while_the_line_plays(self) -> None:

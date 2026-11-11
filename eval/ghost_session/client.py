@@ -207,6 +207,7 @@ class GhostRoomClient:
         self.last_transcript_t = 0.0
         self.panel_transcripts = 0  # guest/commentator transcript events seen
         self.speaking = False  # an agent playout (one sentence) is on air
+        self.ended: set[tuple[str, str]] = set()  # lines the worker reported over
         self.idle_since = time.monotonic()
         self._changed = asyncio.Event()
         # Microphone: frames waiting to go out, and when each spoken segment started.
@@ -242,6 +243,8 @@ class GhostRoomClient:
                 self.agent_lines, ev.get("speaker") or role, ev.get("step"),
                 (ev.get("text") or "")[:80],
             )
+        elif ev_type == "line_end":
+            self.ended.add((role, str(ev.get("step") or "")))
         elif ev_type == "role_active":
             self.speaking = True
         elif ev_type == "role_idle":
@@ -274,9 +277,12 @@ class GhostRoomClient:
             return "mid_line"
 
         def line_over() -> bool:
-            # Quiet for a moment, not just a later line announced: the next line of the
-            # same beat (the host's opening, then its invite) starts right after this
-            # one, and a guest who waits for the end doesn't talk over it.
+            # The target line is over (not merely idle between its sentences), and the
+            # floor stays quiet for a moment: the next line of the same beat (the host's
+            # opening, then its invite) starts right after it, and a guest who waits for
+            # the end doesn't talk over that one either.
+            if len(self._seen & self.ended) < target:
+                return False
             return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 
         if not await self._until(line_over, deadline):
