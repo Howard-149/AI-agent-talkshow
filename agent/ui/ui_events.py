@@ -9,6 +9,7 @@ from collections import deque
 
 from agent.config import ScenarioConfig, load_persona_name, text_only_enabled
 from agent.panel.panel_roster import panel_roster_entries
+from agent.show.show_history import human_name
 from agent.ui.room_connect import wait_for_local_participant
 
 logger = logging.getLogger(__name__)
@@ -184,7 +185,7 @@ async def emit_transcript(
         return
     payload: dict = {
         "role": role,
-        "speaker": load_persona_name(role) if role != "human" else "Human guest",
+        "speaker": load_persona_name(role) if role != "human" else human_name(),
         "text": text or (texts or {}).get("en", ""),
         "final": final,
         "step": step,
@@ -230,7 +231,7 @@ async def emit_hand_raise(
     reason: str = "",
     topic: str = "",
 ) -> None:
-    speaker = "Human guest" if role == "human" else load_persona_name(role)
+    speaker = human_name() if role == "human" else load_persona_name(role)
     await publish_ui_event(
         "hand_raise",
         role=role,
@@ -252,7 +253,7 @@ async def emit_queue_state(data: object, *, phase: str = "") -> None:
         queue.append(
             {
                 "role": role,
-                "name": "Human guest" if role == "human" else load_persona_name(role),
+                "name": human_name() if role == "human" else load_persona_name(role),
                 "reason": entry.reason if entry else "",
                 "topic": entry.topic if entry else "",
             }
@@ -261,7 +262,7 @@ async def emit_queue_state(data: object, *, phase: str = "") -> None:
 
 
 async def emit_floor_grant(role: str, *, reason: str = "") -> None:
-    name = "Human guest" if role == "human" else load_persona_name(role)
+    name = human_name() if role == "human" else load_persona_name(role)
     await publish_ui_event(
         "floor_grant",
         role=role,

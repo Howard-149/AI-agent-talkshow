@@ -26,7 +26,9 @@ class ModelOutputLogger:
             if role in {"floor", "topic", "interval"}:
                 name = None
             elif role == "human":
-                name = "Human guest"
+                from agent.show.show_history import human_name
+
+                name = human_name()
             else:
                 try:
                     name = load_persona_name(role)
