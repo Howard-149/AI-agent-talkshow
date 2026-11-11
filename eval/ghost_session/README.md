@@ -62,9 +62,36 @@ a person's voice; the repo is public), or point `GHOST_VOICE_DIR` at another fol
 
 A turn with `emotion: Anger` uses `Anger.wav` as the reference when it exists, else `Neutral.wav`, plus the CosyVoice
 instruct for that emotion. Synthesis needs the CosyVoice sidecar (`COSYVOICE_SIDECAR_URL`), and the sidecar must be
-able to read the reference path, so on Babel keep the folder where compute nodes see it (e.g. `~/ghost_voice`, mode
-700). Turns are synthesized before joining and cached in `logs/ghost-voice-cache/`. A turn can name a recording
-instead with `audio: path/to.wav`.
+able to read the reference path, so on Babel keep the folder where compute nodes see it. Turns are synthesized before
+joining and cached in `logs/ghost-voice-cache/`. A turn can name a recording instead with `audio: path/to.wav`.
+
+### Shared voice on Babel
+
+Howard's references are on Babel at `/data/user_data/hsuanhal/ghost_voice` (readable by everyone, compute nodes
+only), so nobody has to record their own to run a ghost session:
+
+```bash
+GHOST_VOICE_DIR=/data/user_data/hsuanhal/ghost_voice
+```
+
+```
+ghost_voice/
+├── Neutral.wav, Anger.wav, Happiness.wav, Sadness.wav, Surprise.wav   # references
+└── demo/
+    ├── pad_swing_demo.yaml   # pad_swing with pre-synthesized turns (audio: → the two wavs)
+    └── b105bc….wav, ed37ed….wav
+```
+
+`demo/pad_swing_demo.yaml` is `scripts/pad_swing.yaml` with each turn's audio already synthesized: an angry guest
+cuts in after the host's opening (`line_end`), then a relieved one cuts into the 4th agent line 3 s in
+(`mid_line`). It needs no CosyVoice sidecar and plays the same audio every run, so it is the demo script:
+
+```bash
+python -m eval.ghost_session --record --stop-after-panel 6 \
+  --script /data/user_data/hsuanhal/ghost_voice/demo/pad_swing_demo.yaml
+```
+
+From a laptop, copy `demo/` over and point the two `audio:` paths at the copies.
 
 ## Run (Babel, recommended)
 
