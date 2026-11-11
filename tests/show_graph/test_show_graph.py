@@ -80,7 +80,7 @@ class FakeActuators:
             return None
         return Utterance(line["role"], line["text"])
 
-    def relax(self, role: str) -> None:
+    def relax(self, role: str, text: str | None = None) -> None:
         self._ev("relax", role)
 
     def listeners(self, speaker: str) -> list[str]:

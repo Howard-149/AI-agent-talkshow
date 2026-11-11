@@ -197,6 +197,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.host_fallback_close_spoken = False
         self.discussion_complete = False
         self.pending_invitation_target: str | None = None
+        # The opening waited once for the human after the host invited them.
+        self.awaited_human_at_opening = False
         # Panelist the host's opening invited; the first free-floor pick goes to them.
         self.opening_invite_role: str | None = None
         # The last routed line was cut by an approved interrupt (the interrupter is next).
@@ -572,7 +574,9 @@ class ThinkActionInteraction(TextOnlyInteraction):
             )
             self.host_fallback_streak += 1
             # Hard deadlock guard; normally the controller decides when to conclude.
-            if self.host_fallback_streak >= 4:
+            # Never before anyone but the host has spoken: the show has not started.
+            others_spoke = any(line.role_id != host_role for line in history.lines)
+            if self.host_fallback_streak >= 4 and others_spoke:
                 outcome = FloorOutcome(
                     "host_fallback",
                     selected_role=host_role,
@@ -1175,6 +1179,34 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.host_fallback_strategy = None
         self.host_fallback_target = None
         return text
+
+    def should_await_human(self, data: Any) -> bool:
+        """At the opening (the human has not spoken yet) the host's last line invited or
+        asked the human: stop writing host lines and wait for their answer, once. Without
+        this, a silent panel left the controller falling back to the host, who talked on
+        for five lines (all written ahead of playback) and closed the show."""
+        from agent.show.show_history import asks_human
+
+        if self.awaited_human_at_opening:
+            return False
+        lines = getattr(getattr(data, "show_history", None), "lines", None) or []
+        if not lines or any(line.role_id == "human" for line in lines):
+            return False
+        last = lines[-1]
+        host = data.scenario.turn_control.listen_role
+        if last.role_id != host:
+            return False
+        invited = any(
+            entry.get("strategy") == "invite" and entry.get("target") == "human"
+            for entry in self.fallback_history[-1:]
+        )
+        if not (invited or asks_human(last.text)):
+            return False
+        self.awaited_human_at_opening = True
+        self.host_fallback_instruction = None
+        self.host_fallback_strategy = None
+        self.host_fallback_target = None
+        return True
 
     def take_close_line_override(self) -> bool:
         """True when the host's closing speech already ended the show (skip canned close)."""

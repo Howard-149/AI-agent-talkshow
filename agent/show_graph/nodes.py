@@ -327,7 +327,7 @@ async def prepare_speak(state: ShowState, config: RunnableConfig) -> Command:
         return Command(goto="after_speak")
     utt = act.record_line(line)
     if not line.get("procedural"):
-        act.relax(line["role"])
+        act.relax(line["role"], line.get("text"))
     jobs: list[dict[str, Any]] = []
     for extra in state.get("extra_utterances") or []:
         jobs += [{"utt": extra, "listener": r} for r in act.listeners(extra.speaker)]

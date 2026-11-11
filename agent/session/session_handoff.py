@@ -788,6 +788,11 @@ async def speak_panel_line(
     played: dict[str, bool | None] = {"any": None}
 
     def on_audio_heard() -> None:
+        if not played["any"]:
+            # First sound of the line: show the mood changes it caused (held until now).
+            from agent.emotion.appraisal import release_pad_display
+
+            release_pad_display(data, speak_role, text)
         played["any"] = True
 
     # use stdout when session is None (text-only mode)
@@ -1038,6 +1043,11 @@ async def speak_panel_line(
                 played=played["any"],
                 room=data.room_name,
             )
+        if played["any"] is None:
+            # No audio events on this path: the line is over, so it was heard.
+            from agent.emotion.appraisal import release_pad_display
+
+            release_pad_display(data, speak_role, text)
         if played["any"] is False:
             drop = getattr(data, "drop_speech_ui", None)
             if drop is not None:

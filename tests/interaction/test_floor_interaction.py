@@ -1193,3 +1193,46 @@ class HostInviteTargetTests(FloorInteractionTestCase):
         line_prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
         self.assertIn("Invite the human guest, Howard, to speak.", line_prompt)
         self.assertIsNone(interaction.pending_invitation_target)  # Amy is not owed the floor
+
+
+class OpeningAwaitHumanTests(FloorInteractionTestCase):
+    """After the welcome the host invites the human once, then the show waits."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        self.addCleanup(set_human_name, None)
+
+    def opening(self, data, *lines):
+        for role, text in lines:
+            data.show_history.append(role, text)
+
+    def test_waits_once_after_inviting_the_human(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(data, ("host", "Welcome, I'm Lessac."), ("host", "Howard, what are your first thoughts?"))
+        self.assertTrue(interaction.should_await_human(data))
+        self.assertFalse(interaction.should_await_human(data))  # once: the idle loop may re-open
+
+    def test_no_wait_once_the_human_has_spoken(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(
+            data,
+            ("host", "Welcome, I'm Lessac."),
+            ("human", "They fired my mentor."),
+            ("host", "Howard, how did that feel?"),
+        )
+        self.assertFalse(interaction.should_await_human(data))
+
+    async def test_no_forced_close_before_anyone_but_the_host_spoke(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(data, ("host", "Welcome, I'm Lessac."))
+        interaction.host_fallback_streak = 5
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "host_fallback", "selected_role": "host", '
+            '"reason_code": "no_suitable_candidate", "reason": "quiet", '
+            '"host_fallback": {"strategy": "reframe", "target": null, "instruction": "Set up the topic."}}'
+        )
+        outcome = await interaction.arbitrate_free(data, candidates=[], history=data.show_history, interval=0)
+        self.assertEqual(outcome.host_strategy, "reframe")
