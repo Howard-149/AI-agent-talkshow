@@ -405,7 +405,10 @@ class ThinkActionInteraction(TextOnlyInteraction):
             role: self.actual_floor_counts.get(role, 0)
             for role in dict.fromkeys([host_role, *data.scenario.turn_control.order])
         }
+        from agent.show.show_history import human_name_note
+
         prompt = (
+            f"{human_name_note()}"
             "You are the centralized floor controller for a talk show. The current "
             "speech has ended and the floor is FREE. Choose a submitted speak candidate "
             "that will advance the discussion. Use host_fallback ONLY if nobody applied "
@@ -1063,8 +1066,11 @@ class ThinkActionInteraction(TextOnlyInteraction):
         target_context = f"Invite role {target} if appropriate.\n" if target else ""
         mood = self.mood_block(data, role) if self.mood_block is not None else ""
         mood = f"{mood}\n" if mood else ""
+        from agent.show.show_history import human_name_note
+
         prompt = (
             f"{mood}"
+            f"{human_name_note()}"
             f"Host fallback strategy: {strategy}.\n"
             f"Controller instruction: {instruction}\n"
             f"{target_context}"

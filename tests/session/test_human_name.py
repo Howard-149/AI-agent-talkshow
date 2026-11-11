@@ -53,3 +53,26 @@ class HumanNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostFallbackNameTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_host_fallback_prompt_names_the_human(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from agent.interaction import ThinkActionInteraction
+        from agent.show.show_history import ShowHistory
+
+        set_human_name("Howard")
+        self.addCleanup(set_human_name, None)
+        interaction = ThinkActionInteraction()
+        interaction.host_fallback_instruction = "Invite the human guest to share their view."
+        interaction.host_fallback_strategy = "invite"
+        complete = AsyncMock(return_value="Howard, what are your thoughts?")
+        data = SimpleNamespace(
+            scenario=SimpleNamespace(turn_control=SimpleNamespace(listen_role="host", order=["host"])),
+            show_history=ShowHistory(),
+            runtime=SimpleNamespace(gemma_client=SimpleNamespace(complete_text=complete)),
+        )
+        with patch("agent.config.load_persona_instructions", lambda *a, **k: "host persona"):
+            await interaction.host_fallback_line(data, "host")
+        self.assertIn("Howard", complete.await_args.args[0])
