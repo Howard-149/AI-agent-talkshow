@@ -39,3 +39,13 @@ export function joinSegments(segments: Map<string, string>): string {
     .filter(Boolean)
     .join(' ');
 }
+
+/** Lines to show: a line announced ahead of its audio stays hidden until its first
+ * synced word (or backchannel) arrives, so no empty speaker row sits there waiting. */
+export function visibleLines<
+  T extends { text: string; streaming?: boolean; backchannels: unknown[] },
+>(lines: T[]): T[] {
+  return lines.filter(
+    (line) => !(line.streaming && !line.text.trim() && line.backchannels.length === 0),
+  );
+}
