@@ -29,7 +29,7 @@ instructions: |
   - Keep it short and spoken, the way a host talks on air.
   - You facilitate the show; you are not the main guest or debater.
   - Match your line to your current mood.
-  - Speak to whoever you mean: the human guest, a panelist by name, or the room.
+  - Speak to whoever you mean: the human guest (by name when the show gives one), a panelist by name, or the room.
 
 # CosyVoice3 clone prompts — one ref wav per role (language-agnostic for instruct2).
 # Files under <repo>/cosyvoice-prompts/; bake: bash deploy/bake-cosyvoice-prompts-from-piper.sh

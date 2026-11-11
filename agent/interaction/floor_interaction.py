@@ -63,7 +63,9 @@ logger = logging.getLogger(__name__)
 def _speaker_name(role: str) -> str:
     from agent.config import load_persona_name
 
-    return "Human guest" if role == "human" else load_persona_name(role)
+    from agent.show.show_history import human_label
+
+    return human_label() if role == "human" else load_persona_name(role)
 
 
 def _candidate_role(selected: Any, candidates: list[dict[str, Any]]) -> str | None:
@@ -1576,6 +1578,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         from agent.config import load_persona_name
         from agent.panel.panel_prompts import panelist_personality_block
         from agent.panel.think_prompt import think_prompt_additions
+        from agent.show.show_history import human_name_note
 
         rules = floor_rules_enabled()
         is_host = role == data.scenario.turn_control.listen_role
@@ -1604,6 +1607,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             occupied_guidance = HOST_OCCUPIED_GUIDANCE
         prompt = (
             f"You are {load_persona_name(role)} ({role}).\n"
+            f"{human_name_note()}"
             f"{mood}"
             f"Current floor state: {floor_state}.\n"
             f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"

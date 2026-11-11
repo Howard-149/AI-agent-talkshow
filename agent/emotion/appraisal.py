@@ -130,10 +130,10 @@ def appraisal_listeners(data: TalkShowData, speaker: str) -> list[str]:
 
 
 def _speaker_label(role: str) -> str:
-    from agent.show.show_history import HUMAN_LABEL
+    from agent.show.show_history import human_label
 
     if role == "human":
-        return HUMAN_LABEL
+        return human_label()
     from agent.config import load_persona_name
     from agent.panel.panel_context import role_label
 

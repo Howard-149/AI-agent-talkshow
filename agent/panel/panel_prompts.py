@@ -18,7 +18,7 @@ from agent.panel.panel_context import (
     role_label,
     unspoken_panelist_names,
 )
-from agent.show.show_history import HUMAN_LABEL
+from agent.show.show_history import human_label
 from agent.show.show_context import (
     host_audio_user_hint,
     host_close_card,
@@ -112,10 +112,10 @@ def panelist_system_prompt(
         "Panel mechanics:\n"
         f"- {panel_room_roster(scenario)}\n"
         "- Each transcript line is tagged with its speaker — match your reply to that person or thread.\n"
-        f"- When the thread is the guest's opening take, engage {HUMAN_LABEL}'s claim (in the transcript).\n"
+        f"- When the thread is the guest's opening take, engage {human_label()}'s claim (in the transcript).\n"
         f"- When a panelist just spoke, you may name them and answer their point.\n"
         f"- When {host} last spoke, that line is moderation or summary — the underlying claim is under "
-        f"{HUMAN_LABEL} or another panelist.\n"
+        f"{human_label()} or another panelist.\n"
         "- Match tone to stance: build when you agree; push back clearly when you disagree.\n"
         f"- Speak in first person as {name} (I/me/my).\n"
         "- If the human's floor is FROZEN, do not ask them direct questions — they are listening.\n"
@@ -170,7 +170,7 @@ def panel_speech_prompt(
     topic_block = ""
     if latest_human.strip():
         topic_block = (
-            f'\n{HUMAN_LABEL} said: "{latest_human.strip()}"\n'
+            f'\n{human_label()} said: "{latest_human.strip()}"\n'
             f"Engage this guest line when it is still the thread on the table.\n"
         )
 
