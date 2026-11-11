@@ -61,6 +61,7 @@ class ScriptedTurn:
 class GhostScript:
     locale: str = "en"
     identity: str = "ghost-guest"
+    name: str = "Guest"  # shown on the guest's seat and transcript
     turns: list[ScriptedTurn] = field(default_factory=list)
     # Replay mode (worker needs TALKSHOW_GHOST_REPLAY=1): sent with the first turn;
     # the worker swaps in this history / mood state before handling the turn.
@@ -113,6 +114,7 @@ def load_script(path: Path) -> GhostScript:
     return GhostScript(
         locale=str(raw.get("locale") or "en").strip() or "en",
         identity=str(raw.get("identity") or "ghost-guest").strip() or "ghost-guest",
+        name=str(raw.get("name") or "Guest").strip() or "Guest",
         turns=turns,
         prefix=prefix,
     )
@@ -127,6 +129,7 @@ def mint_ghost_token(
     viewer: bool = False,
     can_publish: bool | None = None,
     await_viewer: bool = False,
+    name: str = "",
 ) -> tuple[str, str]:
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -149,7 +152,7 @@ def mint_ghost_token(
     token = (
         api.AccessToken(api_key, api_secret)
         .with_identity(identity)
-        .with_name(identity)
+        .with_name(name or identity)
         .with_metadata(json.dumps(meta, ensure_ascii=False))
         .with_grants(
             api.VideoGrants(
@@ -515,6 +518,7 @@ async def run_ghost_session(
     url, token = mint_ghost_token(
         room=room,
         identity=script.identity,
+        name=script.name,
         locale=script.locale,
         await_viewer=record,
     )
@@ -659,6 +663,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "Replay scripts (prefix_file) always do",
     )
     parser.add_argument("--locale", default="", help="Override script locale")
+    parser.add_argument("--name", default="", help="Override the guest's display name (script name:)")
     parser.add_argument(
         "--welcome-timeout",
         type=float,
@@ -756,6 +761,8 @@ def main(argv: list[str] | None = None) -> int:
     script = load_script(args.script)
     if args.locale:
         script.locale = args.locale
+    if args.name:
+        script.name = args.name
     logger.info(
         "ghost session room=%s locale=%s turns=%d opening_only=%s text_turns=%s record=%s",
         args.room,

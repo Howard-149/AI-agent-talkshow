@@ -136,6 +136,7 @@ See `eval/ghost_session/scripts/smoke.yaml`:
 ```yaml
 locale: en
 identity: ghost-guest
+name: Howard        # the guest's seat + transcript name (default Guest; --name overrides)
 turns:
   - text: >
       One guest paragraph the panel should answer.
