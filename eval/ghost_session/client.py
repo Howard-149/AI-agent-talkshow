@@ -126,6 +126,7 @@ def mint_ghost_token(
     ttl_sec: int = 3600,
     viewer: bool = False,
     can_publish: bool | None = None,
+    await_viewer: bool = False,
 ) -> tuple[str, str]:
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -140,6 +141,9 @@ def mint_ghost_token(
     meta: dict[str, Any] = {"locale": locale, "ghost": True}
     if viewer:
         meta["ghostViewer"] = True
+    if await_viewer:
+        # The worker holds the opening until the recording page is up.
+        meta["awaitViewer"] = True
     if can_publish is None:
         can_publish = not viewer
     token = (
@@ -506,6 +510,7 @@ async def run_ghost_session(
         room=room,
         identity=script.identity,
         locale=script.locale,
+        await_viewer=record,
     )
     stamp = int(time.time())
     out_dir = record_dir or default_record_dir()

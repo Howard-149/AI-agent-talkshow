@@ -337,3 +337,41 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.spoken[0][0], Path("turn.wav"))
         self.assertGreaterEqual(len(frames), 10)  # 0.1 s at 10 ms frames, resampled to 48 kHz
         self.assertTrue(all(n == 2 * samples for n in frames))
+
+
+class GhostViewerWaitTests(unittest.IsolatedAsyncioTestCase):
+    def participant(self, identity: str, **meta):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(identity=identity, metadata=json.dumps(meta) if meta else "")
+
+    async def test_opening_waits_for_the_recording_page_only_when_asked(self) -> None:
+        from types import SimpleNamespace
+
+        from agent.session.ghost_flags import wait_for_ghost_viewer
+
+        with unittest.mock.patch.dict(os.environ, {"TALKSHOW_GHOST_VIEWER_GRACE_S": "0"}):
+            plain = SimpleNamespace(remote_participants={"g": self.participant("ghost-guest", ghost=True)})
+            self.assertFalse(await wait_for_ghost_viewer(plain, timeout_sec=1))
+
+            room = SimpleNamespace(
+                remote_participants={"g": self.participant("ghost-guest", ghost=True, awaitViewer=True)}
+            )
+            waiter = asyncio.ensure_future(wait_for_ghost_viewer(room, timeout_sec=5))
+            await asyncio.sleep(0.3)
+            self.assertFalse(waiter.done())
+            room.remote_participants["v"] = self.participant("ghost-viewer", ghostViewer=True)
+            self.assertTrue(await asyncio.wait_for(waiter, 2))
+
+    def test_the_recording_ghost_asks_the_worker_to_wait(self) -> None:
+        import jwt as pyjwt  # ships with livekit-api
+
+        from eval.ghost_session.client import mint_ghost_token
+
+        env = {"LIVEKIT_URL": "wss://x", "LIVEKIT_API_KEY": "k", "LIVEKIT_API_SECRET": "s" * 32}
+        with unittest.mock.patch.dict(os.environ, env):
+            _, recording = mint_ghost_token(room="r", identity="guest", locale="en", await_viewer=True)
+            _, plain = mint_ghost_token(room="r", identity="guest", locale="en")
+        meta = lambda tok: json.loads(pyjwt.decode(tok, options={"verify_signature": False})["metadata"])
+        self.assertTrue(meta(recording)["awaitViewer"])
+        self.assertNotIn("awaitViewer", meta(plain))
