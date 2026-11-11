@@ -373,6 +373,10 @@ async def open_show_session(
         from agent.locale.viewer_locales import recompute_needed_locales, wait_for_remote_humans
 
         await wait_for_remote_humans(room)
+        from agent.session.ghost_flags import wait_for_ghost_viewer
+
+        if await wait_for_ghost_viewer(room):
+            logger.info("session opening: the ghost's recording page is up")
         needed = recompute_needed_locales(data, room)
         logger.info("session opening locales=%s", sorted(needed))
     from agent.floor.host_floor import host_opening_line, topic_announcement

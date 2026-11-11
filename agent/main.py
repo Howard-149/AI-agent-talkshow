@@ -19,7 +19,7 @@ ensure_cluster_runtime_env()
 from livekit.agents import AgentServer, JobContext, JobProcess, cli, room_io
 
 from agent.agents.factory import build_agent
-from agent.config import load_config, load_scenario
+from agent.config import load_config, load_scenario, show_seed
 from agent.data import TalkShowData
 from agent.telemetry.turn_jsonl_logger import TurnJsonlLogger
 from agent.panel.panel_speech import run_panel_round
@@ -58,6 +58,21 @@ def prewarm(proc: JobProcess) -> None:
     from agent.adapters.word_align import warm_word_aligner
 
     warm_word_aligner()
+    # Loaded lazily on the event loop otherwise: together 5-7 s of stall on the opening
+    # line (its second sentence's TTS and video waited behind them).
+    if os.environ.get("TALKSHOW_TEXT_TOKENIZER") != "word":
+        try:
+            from agent.session.text_only_interaction import load_text_tokenizer
+
+            load_text_tokenizer()
+        except Exception as exc:
+            logger.warning("tokenizer prewarm failed: %s", exc)
+    try:
+        from agent.emotion.pad_pipeline import get_pad_knn
+
+        get_pad_knn()
+    except Exception as exc:
+        logger.warning("PAD anchors prewarm failed: %s", exc)
 
 
 server.setup_fnc = prewarm
@@ -72,6 +87,11 @@ logger.info("agent dispatch: %s", f"explicit agent_name={_agent_name}" if _agent
 @server.rtc_session(agent_name=_agent_name)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
+    seed = show_seed()
+    if seed is not None:
+        from agent.floor.host_lines import reset_line_picks
+
+        reset_line_picks(seed)  # each session's random picks start from the seed
 
     app_cfg = load_config()
     scenario = load_scenario()

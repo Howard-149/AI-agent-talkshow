@@ -24,10 +24,16 @@ class TextOnlyInteractionTests(unittest.TestCase):
         transformers = SimpleNamespace(
             AutoTokenizer=SimpleNamespace(from_pretrained=loader)
         )
+        from agent.session.text_only_interaction import load_text_tokenizer
+
+        load_text_tokenizer.cache_clear()
+        self.addCleanup(load_text_tokenizer.cache_clear)
         with patch.dict("sys.modules", {"transformers": transformers}):
             interaction = TextOnlyInteraction()
             tokenizer = interaction._get_tokenizer()
             self.assertIs(interaction._get_tokenizer(), tokenizer)
+            # One per process: the worker prewarms it before the first show.
+            self.assertIs(TextOnlyInteraction()._get_tokenizer(), tokenizer)
 
         loader.assert_called_once()
         self.assertFalse(loader.call_args.kwargs.get("local_files_only", False))

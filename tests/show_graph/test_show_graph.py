@@ -128,9 +128,6 @@ class FakeActuators:
     async def grant_panelist(self, role: str, reason: str) -> None:
         self._ev("grant", (role, reason))
 
-    def start_panelist_draft(self, role: str, step: str) -> None:
-        self._ev("draft_ahead", (role, step))
-
     async def generate_panelist_line(self, role: str, step: str) -> PanelistLine:
         self._ev("generate", (role, step))
         tag = self.tags.get(role, ["host"]).pop(0) if self.tags.get(role) else "host"
@@ -290,14 +287,7 @@ class ModerationTests(unittest.TestCase):
         self.assertEqual([k for k, _ in act.kinds("speak")], ["grant_human"])
         self.assertEqual(final["outcome"], "human")
 
-    def test_draft_ahead_starts_with_the_intro_for_the_line_it_drafts(self) -> None:
-        act = FakeActuators(picks=[FloorPick("guest", "queue_fifo"), FloorPick("human", "x")])
-        run(act, entry="moderate", trigger="idle_wait")
-        order = [e.kind for e in act.events if e.kind in ("draft_ahead", "speak", "generate")]
-        self.assertEqual(order[:4], ["speak", "draft_ahead", "speak", "generate"])  # open floor, draft, intro, line
-        self.assertEqual(act.kinds("draft_ahead"), [g for g in act.kinds("generate")])
-
-    def test_no_draft_ahead_for_chained_or_direct_call_lines(self) -> None:
+    def test_direct_call_then_a_chained_line(self) -> None:
         act = FakeActuators(
             floor=["host"],
             picks=[
@@ -307,7 +297,6 @@ class ModerationTests(unittest.TestCase):
             tags={"guest": ["commentator"]},
         )
         run(act, entry="panel")
-        self.assertEqual(act.kinds("draft_ahead"), [])
         self.assertEqual(len(act.kinds("generate")), 2)
 
     def test_nobody_picked_ends_beat(self) -> None:

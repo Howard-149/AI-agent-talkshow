@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +55,13 @@ def avatar_synth_mode() -> str:
 def avatar_denoising_steps() -> int:
     """DyStream denoising steps per frame (default 5); fewer render faster at some quality cost."""
     return max(1, int(os.environ.get("TALKSHOW_AVATAR_STEPS", "5")))
+
+
+def avatar_skip_unused_wav2vec() -> bool:
+    """Ask the sidecar to skip the wav2vec pass DyStream runs per window and then
+    discards (avatar/dystream_skip.py). Same frames, less time per frame (opt-in)."""
+    raw = os.environ.get("TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 def avatar_preroll_frames() -> int:
@@ -174,8 +182,9 @@ class AvatarBridge:
             logger.warning("avatar portrait missing role=%s path=%s", role, portrait_path)
             return None
 
-        wav_path = speech_wav_path(slot)
-        wav_path.unlink(missing_ok=True)
+        # One wav per render, not per slot: an interrupting line reuses the slot names
+        # (c0, c1, …) while the cut line's render and cleanup still touch theirs.
+        wav_path = speech_wav_path(f"{slot}-{uuid.uuid4().hex[:8]}")
 
         t0 = time.monotonic()
         try:
@@ -262,6 +271,7 @@ class AvatarBridge:
                     audio_wav=wav_path,
                     denoising_steps=avatar_denoising_steps(),
                     cache_key=role,
+                    skip_unused_wav2vec=avatar_skip_unused_wav2vec(),
                 ):
                     if kind == "meta":
                         meta_box.update(payload)
@@ -447,6 +457,7 @@ class AvatarBridge:
                 pcm_duration_sec=round(pcm_duration_sec, 3),
                 synth="stream",
                 steps=avatar_denoising_steps(),
+                skip_unused_wav2vec=avatar_skip_unused_wav2vec(),
             )
         logger.info(
             "avatar stream preroll ready role=%s slot=%s ttff_ms=%d preroll_ms=%d "

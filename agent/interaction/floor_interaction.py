@@ -31,6 +31,18 @@ from agent.interaction.consumers import (
     SpeechConsumer,
     _char_end_after_words,
 )
+from agent.floor.floor_rules import (
+    HOST_OCCUPIED_GUIDANCE,
+    QUOTE_RULE,
+    QUOTE_SCHEMA_LINE,
+    GateResult,
+    InterruptRequest,
+    floor_rules_enabled,
+    gate_interrupts,
+    host_identity,
+    word_count,
+    words_per_sec,
+)
 from agent.interaction.backchannel_controller import (
     BackchannelCandidate,
     BackchannelController,
@@ -146,6 +158,12 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.actual_floor_counts: dict[str, int] = {}
         self.fallback_history: list[dict[str, str | None]] = []
         self.host_fallback_streak = 0
+        # Floor rules (TALKSHOW_FLOOR_RULES, agent/floor/floor_rules.py). Plain values, so a
+        # barge-in rollback restores them with the rest of the show state.
+        self.rule_clock_words = 0  # words of script disclosed so far (the speech clock)
+        self.rule_last_ai_cut_s: float | None = None  # speech clock at the last panelist cut
+        self.rule_chain_cuts = 0  # approved cuts since a line last finished uncut
+        self.rule_return_to: str | None = None  # speaker a host moderation cut stopped
         # Set when a human starts speaking; cleared once the transcript is handled.
         self.human_floor_pending = False
         self._barge_in_cut_beat = False
@@ -362,7 +380,11 @@ class ThinkActionInteraction(TextOnlyInteraction):
         candidate_roles = {item["role"] for item in candidate_payload}
         directed = self._addressee_pick(data, history, candidate_payload, interval)
         if directed is not None:
+            self.rule_return_to = None
             return directed
+        returned = self._return_after_moderation(data, history, candidate_payload, interval)
+        if returned is not None:
+            return returned
         invited_role = self.pending_invitation_target
         recent_fallbacks = self.fallback_history[-4:]
         participant_counts = {
@@ -573,12 +595,26 @@ class ThinkActionInteraction(TextOnlyInteraction):
         if not picked:
             logger.info("addressee floor: %s was named but did not choose speak", addressed)
             return None
-        outcome = FloorOutcome(
-            "speak",
-            selected_role=addressed,
-            reason="The human guest addressed this panelist by name.",
-            reason_code="directed_response",
+        return self._direct_free_pick(
+            data,
+            FloorOutcome(
+                "speak",
+                selected_role=addressed,
+                reason="The human guest addressed this panelist by name.",
+                reason_code="directed_response",
+            ),
+            candidate_payload,
+            interval,
         )
+
+    def _direct_free_pick(
+        self,
+        data: Any,
+        outcome: FloorOutcome,
+        candidate_payload: list[dict[str, Any]],
+        interval: int,
+    ) -> FloorOutcome:
+        """Grant the free floor to a speak candidate without a controller call."""
         self.host_fallback_streak = 0
         self.host_fallback_instruction = None
         self.host_fallback_strategy = None
@@ -670,6 +706,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         )
         await self.consumer.submit(data, cue)
         self.consumer.close(cue, len(text))
+        self.rule_clock_words += word_count(text)
+        self.rule_chain_cuts = 0  # a whole line is never cut: the cut chain ends
         self.checkpoint_line_end(data)
 
     async def disclose_panel_line(
@@ -744,10 +782,14 @@ class ThinkActionInteraction(TextOnlyInteraction):
                     and (action := self.actions.get(candidate)) is not None
                     and action.decision == "interrupt"
                 ]
+                moderator_cut = (
+                    self.last_floor_outcome is not None
+                    and self.last_floor_outcome.reason_code == "moderator_cut"
+                )
                 self.log_selection(
                     data,
                     selected_role=boundary_result,
-                    reason="llm_interrupt",
+                    reason="rule_moderator_cut" if moderator_cut else "llm_interrupt",
                     floor_state="occupied",
                     candidates=candidates,
                 )
@@ -841,6 +883,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
                 content=event.content,
                 after_word_index=event.after_word_index,
             )
+        self.rule_clock_words += word_count(chunk)
         self.consumer.disclose(cue, end, chunk, events)
 
     # --- rollback -----------------------------------------------------------
@@ -1146,6 +1189,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.interrupted_role = None
         self.host_fallback_streak = 0
         self.interrupts_allowed = True
+        self.rule_return_to = None
 
         outcome = await self._react_free(data, "human", heard)
         # The selection is consumed here; the first line after the human routes on it.
@@ -1162,6 +1206,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
 
         history = ShowHistory(lines=list(data.show_history.lines))
         listeners = [role for role in self._floor_roles(data) if role != speaker]
+        self.rule_chain_cuts = 0  # a human turn (or a resume after one) ends the cut chain
         data.runtime.gemma_client.log_text_only_event(
             "interval",
             "human transcript" if speaker == "human" else f"cut {speaker} line",
@@ -1305,6 +1350,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             else []
         )
         if self._final_interval:
+            self.rule_chain_cuts = 0  # the line finished uncut: the cut chain ends
             candidates = [
                 role
                 for role in listeners
@@ -1327,7 +1373,23 @@ class ThinkActionInteraction(TextOnlyInteraction):
         ]
         if not self.interrupts_allowed:
             return None
-        return await self.arbitrate_occupied(
+        rules = floor_rules_enabled()
+        if rules and interrupt_candidates:
+            # Hard limits first; the controller only judges the requests that pass.
+            gate = self._gate_interrupts(
+                data,
+                speaker=speaker,
+                interval_text=interval_text,
+                visible_text=visible_text,
+                candidates=interrupt_candidates,
+                interval=checkpoint,
+            )
+            if gate.granted is not None:
+                return self._grant_moderator_cut(
+                    data, host=gate.granted, speaker=speaker, interval=checkpoint
+                )
+            interrupt_candidates = gate.to_controller
+        selected = await self.arbitrate_occupied(
             data,
             speaker=speaker,
             visible_text=visible_text,
@@ -1335,6 +1397,157 @@ class ThinkActionInteraction(TextOnlyInteraction):
             interval=checkpoint,
             history=history,
         )
+        if rules and selected is not None:
+            self.rule_last_ai_cut_s = self._speech_clock_s(interval_text)
+            self.rule_chain_cuts += 1
+        return selected
+
+    # --- floor rules (TALKSHOW_FLOOR_RULES) -------------------------------
+
+    def _speech_clock_s(self, interval_text: str) -> float:
+        """Speech time at the end of the interval being decided (not yet disclosed)."""
+        return (self.rule_clock_words + word_count(interval_text)) / words_per_sec()
+
+    def _gate_interrupts(
+        self,
+        data: Any,
+        *,
+        speaker: str,
+        interval_text: str,
+        visible_text: str,
+        candidates: list[str],
+        interval: int,
+    ) -> GateResult:
+        requests = [
+            InterruptRequest(role, self.actions[role].quote)
+            for role in candidates
+            if role in self.actions
+        ]
+        gate = gate_interrupts(
+            requests,
+            host_role=data.scenario.turn_control.listen_role,
+            visible_text=visible_text,
+            now_s=self._speech_clock_s(interval_text),
+            last_ai_cut_s=self.rule_last_ai_cut_s,
+            chain_cuts=self.rule_chain_cuts,
+        )
+        data.runtime.gemma_client.log_text_only_event(
+            "floor",
+            f"floor rules - interval {interval}",
+            speaker=speaker,
+            decisions=[
+                {
+                    "role": decision.role,
+                    "status": decision.status,
+                    "rule": decision.rule,
+                    "priority": decision.priority,
+                    "quote": self.actions[decision.role].quote,
+                }
+                for decision in gate.decisions
+            ],
+        )
+        return gate
+
+    def _grant_moderator_cut(self, data: Any, *, host: str, speaker: str, interval: int) -> str:
+        """A grounded host moderation cut: granted without the controller, outranking panelists.
+        The floor goes back to ``speaker`` once the host's line ends (``arbitrate_free``)."""
+        from agent.config import load_persona_name
+
+        action = self.actions[host]
+        self.rule_chain_cuts += 1
+        self.rule_return_to = speaker
+        self.last_floor_outcome = FloorOutcome(
+            "interrupt",
+            selected_role=host,
+            reason="The host's grounded moderation cut outranks panelist requests.",
+            reason_code="moderator_cut",
+        )
+        data.runtime.gemma_client.log_text_only_event(
+            "floor",
+            f"floor control - interval {interval}",
+            floor_state="occupied",
+            decision="interrupt",
+            selected_role=host,
+            reason_code="moderator_cut",
+            reason="floor rules: host moderation cut (no controller call)",
+            candidates=[
+                {
+                    "role": host,
+                    "speaker": load_persona_name(host),
+                    "intent": self._action_intent(action),
+                    "content": action.content,
+                }
+            ],
+        )
+        return host
+
+    def _return_after_moderation(
+        self,
+        data: Any,
+        history: Any,
+        candidate_payload: list[dict[str, Any]],
+        interval: int,
+    ) -> FloorOutcome | None:
+        """After a host moderation cut, the speaker it stopped gets the floor back if they
+        chose speak (a speaker who chose silent is not forced; the controller decides).
+        If the host's cut handed the floor to another panelist by name, that panelist gets
+        it instead (or, if they chose silent, the controller decides, told of the invitation)."""
+        returned, self.rule_return_to = self.rule_return_to, None
+        if returned is None or not floor_rules_enabled():
+            return None
+        invitee = self._moderation_invitee(data, history)
+        if invitee is not None and invitee != returned:
+            picked = any(item["role"] == invitee for item in candidate_payload)
+            data.runtime.gemma_client.log_text_only_event(
+                "floor",
+                "return after moderation",
+                returned_role=returned,
+                invited_role=invitee,
+                picked=picked,
+            )
+            if not picked:
+                self.pending_invitation_target = invitee
+                return None
+            return self._direct_free_pick(
+                data,
+                FloorOutcome(
+                    "speak",
+                    selected_role=invitee,
+                    reason="The host's moderation cut handed the floor to this panelist by name.",
+                    reason_code="directed_response",
+                ),
+                candidate_payload,
+                interval,
+            )
+        picked = any(item["role"] == returned for item in candidate_payload)
+        data.runtime.gemma_client.log_text_only_event(
+            "floor", "return after moderation", returned_role=returned, picked=picked
+        )
+        if not picked:
+            return None
+        return self._direct_free_pick(
+            data,
+            FloorOutcome(
+                "speak",
+                selected_role=returned,
+                reason="The host's moderation cut returns the floor to the speaker it stopped.",
+                reason_code="return_after_moderation",
+            ),
+            candidate_payload,
+            interval,
+        )
+
+    def _moderation_invitee(self, data: Any, history: Any) -> str | None:
+        """Panelist the host's moderation line (the latest line) named, if any."""
+        from agent.config import load_persona_name
+        from agent.floor.addressee import host_invitee
+
+        lines = getattr(history, "lines", None) or []
+        host_role = data.scenario.turn_control.listen_role
+        if not lines or lines[-1].role_id != host_role:
+            return None
+        panel_roles = [r for r in self._floor_roles(data) if r not in {host_role, "human"}]
+        return host_invitee(lines[-1].text, {r: load_persona_name(r) for r in panel_roles})
 
     async def _think_and_act(
         self,
@@ -1352,20 +1565,14 @@ class ThinkActionInteraction(TextOnlyInteraction):
         from agent.panel.panel_prompts import panelist_personality_block
         from agent.panel.think_prompt import think_prompt_additions
 
+        rules = floor_rules_enabled()
+        is_host = role == data.scenario.turn_control.listen_role
+        # Interrupts exist only on an occupied floor: free-floor think calls (whose content
+        # is what a selected speaker says) get no quote instruction.
+        ask_quote = rules and floor_state == "occupied"
         mood = self.mood_block(data, role) if self.mood_block is not None else ""
         mood = f"{mood}\n" if mood else ""
-        prompt = (
-            f"You are {load_persona_name(role)} ({role}).\n"
-            f"{mood}"
-            f"Current floor state: {floor_state}.\n"
-            f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"
-            f"Latest public interval: {interval_text}\n"
-            f"Complete visible speech prefix so far: {visible_text}\n\n"
-            "Reflect privately on the actual point and possible next moves, then return "
-            "one JSON object matching the required schema. Think is open-ended private "
-            "understanding, not necessarily a speaking wish; do not reduce it to a rule "
-            "like 'the speaker has not finished, so I must wait.' "
-            "Decision controls only the main floor; a backchannel never requests the floor. "
+        occupied_guidance = (
             "When occupied, consider whether you have a specific, relevant contribution "
             "that would make the conversation more engaging, responsive, or substantive "
             "if expressed now rather than after the speaker finishes. "
@@ -1379,6 +1586,23 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "You do not need to wait for the speaker to finish their full turn, but prefer "
             "natural phrase boundaries when possible. The central floor controller decides "
             "whether and when the interruption is actually granted. "
+        )
+        if rules and is_host and floor_state == "occupied":
+            # Floor rules: the host moderates a speaker who holds the floor, never debates.
+            occupied_guidance = HOST_OCCUPIED_GUIDANCE
+        prompt = (
+            f"You are {load_persona_name(role)} ({role}).\n"
+            f"{mood}"
+            f"Current floor state: {floor_state}.\n"
+            f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"
+            f"Latest public interval: {interval_text}\n"
+            f"Complete visible speech prefix so far: {visible_text}\n\n"
+            "Reflect privately on the actual point and possible next moves, then return "
+            "one JSON object matching the required schema. Think is open-ended private "
+            "understanding, not necessarily a speaking wish; do not reduce it to a rule "
+            "like 'the speaker has not finished, so I must wait.' "
+            "Decision controls only the main floor; a backchannel never requests the floor. "
+            f"{occupied_guidance}"
             "When free, choose speak only if you can respond, add substance, or perform "
             "a useful conversational role (including host facilitation). "
             "Backchannels are OPTIONAL and independent of your main-floor decision: "
@@ -1394,7 +1618,9 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "interval. Backchannels never take the floor and must not be arguments, "
             "questions requiring an answer, or attempts to interrupt. Do not put agreement "
             "before the words it agrees with. Silence is preferable to artificial feedback. "
-            "Return no markdown or text outside the JSON object.\n\n"
+            "Return no markdown or text outside the JSON object."
+            f"{QUOTE_RULE if ask_quote else ''}"
+            "\n\n"
             "JSON schema:\n"
             "{\n"
             '  "think": "private reflection",\n'
@@ -1403,6 +1629,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             '    "intent": {"type": "acknowledge | support | challenge | clarify | correct | contribute | answer | facilitate", '
             '"goal": "specific outcome", "target": "specific target or null"} | null,\n'
             '    "content": "candidate utterance or null",\n'
+            f"{QUOTE_SCHEMA_LINE if ask_quote else ''}"
             '    "backchannels": [{"intent": {"type": "acknowledge | support | surprise | encourage", '
             '"goal": "specific listener feedback", "target": "specific target or null"}, '
             '"content": "1-3 words", "after_word_index": 1}]\n'
@@ -1418,9 +1645,14 @@ class ThinkActionInteraction(TextOnlyInteraction):
             data.runtime.gemma_client.log_text_only_event(
                 role, f"think additions - interval {checkpoint}", **extra_info
             )
+        system_prompt = (
+            host_identity(load_persona_name(role))
+            if rules and is_host
+            else panelist_personality_block(role)
+        )
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
-            system_prompt=panelist_personality_block(role),
+            system_prompt=system_prompt,
             history_messages=history.prior_messages(perspective=role),
             raw=True,
             max_tokens=768,

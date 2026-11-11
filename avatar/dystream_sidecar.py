@@ -169,6 +169,7 @@ def _parse_common(data: dict[str, Any]) -> dict[str, Any]:
         "steps": steps,
         "npz": npz,
         "cache_key": cache_key,
+        "skip_unused_wav2vec": bool(data.get("skip_unused_wav2vec", False)),
     }
 
 
@@ -301,6 +302,7 @@ class SidecarHandler(BaseHTTPRequestHandler):
                 if common["npz"] and common["npz"].is_file()
                 else None,
                 cache_key=common["cache_key"],
+                skip_unused_wav2vec=common["skip_unused_wav2vec"],
             ):
                 if isinstance(item, OnlineMeta):
                     meta = {

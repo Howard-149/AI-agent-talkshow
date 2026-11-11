@@ -126,6 +126,7 @@ def mint_ghost_token(
     ttl_sec: int = 3600,
     viewer: bool = False,
     can_publish: bool | None = None,
+    await_viewer: bool = False,
 ) -> tuple[str, str]:
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -140,6 +141,9 @@ def mint_ghost_token(
     meta: dict[str, Any] = {"locale": locale, "ghost": True}
     if viewer:
         meta["ghostViewer"] = True
+    if await_viewer:
+        # The worker holds the opening until the recording page is up.
+        meta["awaitViewer"] = True
     if can_publish is None:
         can_publish = not viewer
     token = (
@@ -196,15 +200,20 @@ class GhostRoomClient:
     def __init__(self, audio_tap: Any | None = None) -> None:
         self.room: Any = None
         self.first_line = asyncio.Event()
+        # The worker subscribed to the ghost's mic (it linked this participant).
+        self.mic_subscribed = asyncio.Event()
         self._audio_tap = audio_tap
         # Agent lines that started playing (one transcript event per line).
         self.agent_lines = 0
-        self._seen: set[tuple[str, str]] = set()
+        # Lines on air or queued, by (role, step). A step id is per beat, so the same
+        # one comes back in a later beat: a key is a new line again once its line ended.
+        self._open: set[tuple[str, str]] = set()
         # Any transcript (the human's own line included) and when the last one came.
         self.transcript_seen = asyncio.Event()
         self.last_transcript_t = 0.0
         self.panel_transcripts = 0  # guest/commentator transcript events seen
         self.speaking = False  # an agent playout (one sentence) is on air
+        self.lines_ended = 0  # agent lines the worker reported over (line_end)
         self.idle_since = time.monotonic()
         self._changed = asyncio.Event()
         # Microphone: frames waiting to go out, and when each spoken segment started.
@@ -225,10 +234,13 @@ class GhostRoomClient:
             self.last_transcript_t = time.monotonic()
         if ev_type == "transcript" and role and role != "human":
             key = (role, str(ev.get("step") or ""))
-            if key in self._seen:
+            if key in self._open:
                 return
-            self._seen.add(key)
+            self._open.add(key)
             self.agent_lines += 1
+            # The worker announces a line's transcript before its audio starts: the
+            # line is on air from now until its playout goes idle.
+            self.speaking = True
             if role in ("guest", "commentator"):
                 self.panel_transcripts += 1
             self.first_line.set()
@@ -237,6 +249,12 @@ class GhostRoomClient:
                 self.agent_lines, ev.get("speaker") or role, ev.get("step"),
                 (ev.get("text") or "")[:80],
             )
+        elif ev_type == "line_end":
+            key = (role, str(ev.get("step") or ""))
+            if key not in self._open:
+                return
+            self._open.discard(key)
+            self.lines_ended += 1
         elif ev_type == "role_active":
             self.speaking = True
         elif ev_type == "role_idle":
@@ -269,10 +287,13 @@ class GhostRoomClient:
             return "mid_line"
 
         def line_over() -> bool:
-            # A later line starting also means the target line is over.
-            return self.agent_lines > target or (
-                not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
-            )
+            # The target line is over (not merely idle between its sentences), and the
+            # floor stays quiet for a moment: the next line of the same beat (the host's
+            # opening, then its invite) starts right after it, and a guest who waits for
+            # the end doesn't talk over that one either.
+            if self.lines_ended < target:
+                return False
+            return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 
         if not await self._until(line_over, deadline):
             return "timeout"
@@ -299,6 +320,7 @@ class GhostRoomClient:
                 self.on_ui_event(ev)
 
         self.room.on("data_received", _on_data)
+        self.room.on("local_track_subscribed", lambda *_: self.mic_subscribed.set())
         if self._audio_tap is not None:
             self._audio_tap.attach(self.room)
         await self.room.connect(url, token)
@@ -494,6 +516,7 @@ async def run_ghost_session(
         room=room,
         identity=script.identity,
         locale=script.locale,
+        await_viewer=record,
     )
     stamp = int(time.time())
     out_dir = record_dir or default_record_dir()
@@ -530,6 +553,13 @@ async def run_ghost_session(
         if voice and turns:
             await client.open_mic()
         if recorder is not None:
+            if voice and turns:
+                # The worker listens to the first participant it finds; the viewer
+                # joining first would leave the guest's mic unheard all session.
+                try:
+                    await asyncio.wait_for(client.mic_subscribed.wait(), timeout=welcome_timeout_sec)
+                except asyncio.TimeoutError:
+                    logger.warning("worker never subscribed to the ghost mic — recording anyway")
             await recorder.start(page_url)
         try:
             await asyncio.wait_for(client.first_line.wait(), timeout=welcome_timeout_sec)

@@ -12,6 +12,12 @@ from collections.abc import Sequence
 _last_line: dict[str, str] = {}
 
 
+def reset_line_picks(seed: int) -> None:
+    """Start the line variants over from ``seed``, forgetting earlier sessions' picks."""
+    random.seed(seed)
+    _last_line.clear()
+
+
 def _pick(kind: str, options: Sequence[str]) -> str:
     choices = list(options)
     if not choices:

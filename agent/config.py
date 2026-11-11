@@ -19,6 +19,21 @@ def text_only_enabled() -> bool:
         "on",
     }
 
+
+def show_seed() -> int | None:
+    """``TALKSHOW_SEED`` as an int, or None when unset or not a number (opt-in).
+
+    With a seed, every LLM request is sampled with it and the show's own random picks
+    (host line variants, dialogue hints) start from it, so the same arm run twice
+    writes the same lines as long as the prompts match.
+    """
+    raw = os.environ.get("TALKSHOW_SEED", "").strip()
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
+
+
 def _expand_path(path: str) -> str:
     """Expand ``${USER}`` in absolute/cluster paths (Piper ONNX, etc.)."""
     return path.replace("${USER}", os.environ.get("USER", ""))

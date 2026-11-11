@@ -109,6 +109,16 @@ class TalkShowData:
             return True
         return False
 
+    def drop_speech_ui(self, role: str, step: str) -> None:
+        """Forget a line that never played: its queued UI (one entry per sentence,
+        ``step`` then ``step:c1``…) would otherwise go out on the next line's audio."""
+        self.pending_speech_ui = deque(
+            entry
+            for entry in self.pending_speech_ui
+            if not (entry[0] == role and (entry[2] == step or entry[2].startswith(f"{step}:")))
+        )
+        self.announced_transcripts.discard((role, step))
+
     def pop_pending_speech_ui(
         self,
     ) -> tuple[str, str, str, dict[str, str] | None] | None:
