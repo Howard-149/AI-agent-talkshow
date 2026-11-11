@@ -8,6 +8,7 @@ import { Fragment, useEffect, useRef } from 'react';
 
 import {
   splitAtBackchannels,
+  visibleLines,
   type TranscriptBackchannel,
 } from '@/lib/talkshow/transcriptParts';
 import type { InterruptNotice, SyncedTranscriptLine } from '@/lib/talkshow/usePlayoutSyncedUi';
@@ -47,12 +48,13 @@ export function TranscriptPanel({
   lines: SyncedTranscriptLine[];
   interruptNotice?: InterruptNotice | null;
 }) {
+  const shown = visibleLines(lines);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const last = lines[lines.length - 1];
+  const last = shown[shown.length - 1];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [lines.length, last?.text.length, last?.backchannels.length]);
+  }, [shown.length, last?.text.length, last?.backchannels.length]);
 
   return (
     <div className={styles.transcript}>
@@ -68,8 +70,8 @@ export function TranscriptPanel({
         )}
       </header>
       <div className={styles.scroll}>
-        {lines.length === 0 && <p className={styles.muted}>Waiting for speech…</p>}
-        {lines.map((line) => (
+        {shown.length === 0 && <p className={styles.muted}>Waiting for speech…</p>}
+        {shown.map((line) => (
           <article
             key={line.id}
             className={styles.line}

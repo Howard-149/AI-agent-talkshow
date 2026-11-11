@@ -1141,3 +1141,55 @@ class ControllerSelectionTests(FloorInteractionTestCase):
                 candidates=["commentator"], interval=1, history=None,
             )
         self.assertIsNone(selected)
+
+
+class HostInviteTargetTests(FloorInteractionTestCase):
+    """The panelist role "guest" is Amy; the human guest is "human"."""
+
+    def tearDown(self) -> None:
+        from agent.show.show_history import set_human_name
+
+        set_human_name(None)
+
+    def test_a_target_resolves_by_role_id_or_name(self) -> None:
+        from agent.interaction.floor_interaction import _roster, _target_role
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        roster = _roster(FLOOR_ROLES, "host")
+        self.assertIn("AI panelist", roster["guest"])
+        self.assertIn("Howard", roster["human"])
+        self.assertEqual(_target_role("guest", roster), "guest")
+        self.assertEqual(_target_role("Amy", roster), "guest")
+        self.assertEqual(_target_role("Howard", roster), "human")
+        self.assertEqual(_target_role("human", roster), "human")
+        self.assertIsNone(_target_role("Bob", roster))
+
+    async def test_the_controller_can_invite_the_human(self) -> None:
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        interaction, _consumer, data = self.make()
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "host_fallback", "selected_role": "host", '
+            '"reason_code": "no_suitable_candidate", "reason": "nobody applied", '
+            '"host_fallback": {"strategy": "invite", "target": "human", '
+            '"instruction": "Ask Howard for his story."}}'
+        )
+        outcome = await interaction.arbitrate_free(
+            data, candidates=[], history=data.show_history, interval=0
+        )
+        prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("guest = Amy, an AI panelist", prompt)
+        self.assertIn("human = the human guest, Howard", prompt)
+        self.assertEqual(
+            (outcome.decision, outcome.host_strategy, outcome.host_target),
+            ("host_fallback", "invite", "human"),
+        )
+
+        data.runtime.gemma_client.complete_text = AsyncMock(return_value="Howard, tell us.")
+        with patch("agent.config.load_persona_instructions", lambda *a, **k: "host persona"):
+            await interaction.host_fallback_line(data, "host")
+        line_prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("Invite the human guest, Howard, to speak.", line_prompt)
+        self.assertIsNone(interaction.pending_invitation_target)  # Amy is not owed the floor

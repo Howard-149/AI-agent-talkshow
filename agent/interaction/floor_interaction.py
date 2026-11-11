@@ -80,6 +80,40 @@ def _candidate_role(selected: Any, candidates: list[dict[str, Any]]) -> str | No
     return None
 
 
+def _roster(roles: list[str], host_role: str) -> dict[str, str]:
+    """Role ID → who that is, for controller prompts. The panelist role "guest" is Amy,
+    an AI: without this the controller took "guest" for the human guest."""
+    from agent.config import load_persona_name
+    from agent.panel.panel_context import role_label
+    from agent.show.show_history import HUMAN_LABEL, human_name
+
+    roster = {}
+    for role in roles:
+        if role == "human":
+            continue
+        kind = "the host" if role == host_role else f"an AI panelist ({role_label(role)})"
+        roster[role] = f"{load_persona_name(role)}, {kind}"
+    name = human_name()
+    roster["human"] = "the human guest" + ("" if name == HUMAN_LABEL else f", {name}")
+    return roster
+
+
+def _roster_line(roster: dict[str, str]) -> str:
+    return "Role IDs: " + "; ".join(f"{role} = {who}" for role, who in roster.items()) + ".\n"
+
+
+def _target_role(target: Any, roster: dict[str, str]) -> str | None:
+    """A fallback target given as a role ID or as a name ("Amy", "Howard")."""
+    if not isinstance(target, str) or not target.strip():
+        return None
+    picked = target.strip().casefold()
+    for role, who in roster.items():
+        names = [role] + [part.strip() for part in who.split(",")]
+        if picked in {n.casefold() for n in names if n}:
+            return role
+    return None
+
+
 def _index_of(lines: list[Any], line: Any) -> int | None:
     return next((i for i, candidate in enumerate(lines) if candidate is line), None)
 
@@ -392,6 +426,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             if role in self.actions and self.actions[role].decision == "speak"
         ]
         candidate_roles = {item["role"] for item in candidate_payload}
+        roster = _roster(self._floor_roles(data), host_role)
         directed = self._addressee_pick(data, history, candidate_payload, interval)
         if directed is not None:
             self.rule_return_to = None
@@ -430,6 +465,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "invitations and circular questioning. Choose close if the topic is exhausted "
             "but not merely because one round was quiet. Never force a noncandidate "
             "to speak. selected_role and target MUST be exact machine role IDs.\n"
+            f"{_roster_line(roster)}"
             f"Public transcript:\n{self._recent_public_text(history)}\n"
             f"Speak candidates: {json.dumps(candidate_payload, ensure_ascii=False)}\n"
             f"Pending host invitation target (role ID): {invited_role!r}\n"
@@ -445,7 +481,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
             '"reason":"short explanation", "host_fallback":'
             '{"strategy":"invite|summarize|contribute|reframe|close", '
             '"target":null, "instruction":"short instruction"}}. '
-            'When strategy=invite, target must be an actual panel role ID instead of null.'
+            'When strategy=invite, target must be a role ID from the list above: a panelist, '
+            'or "human" to invite the human guest.'
         )
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
@@ -518,7 +555,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
                 strategy = "reframe"
                 instruction = "Offer a concrete unresolved issue or example to move the conversation forward."
                 target = None
-            if target not in panel_roles:
+            target = _target_role(target, roster)
+            if target not in panel_roles | {"human"}:
                 target = None
             if strategy == "invite" and target is None:
                 strategy = "reframe"
@@ -1063,7 +1101,19 @@ class ThinkActionInteraction(TextOnlyInteraction):
         instruction = self.host_fallback_instruction
         strategy = self.host_fallback_strategy or "reframe"
         target = self.host_fallback_target
-        target_context = f"Invite role {target} if appropriate.\n" if target else ""
+        from agent.show.show_history import HUMAN_LABEL, human_name
+
+        target_context = ""
+        if target == "human":
+            name = human_name()
+            target_context = (
+                "Invite the human guest to speak.\n" if name == HUMAN_LABEL
+                else f"Invite the human guest, {name}, to speak.\n"
+            )
+        elif target:
+            target_context = (
+                f"Invite {load_persona_name(target)} (an AI panelist) if appropriate.\n"
+            )
         lines = getattr(getattr(data, "show_history", None), "lines", None) or []
         if not any(line.role_id != role for line in lines):
             # Only the host has spoken (the welcome): there is no discussion to refer
@@ -1105,7 +1155,13 @@ class ThinkActionInteraction(TextOnlyInteraction):
             flags=re.IGNORECASE,
         ).strip()
         if not text:
-            if strategy == "invite" and target:
+            if strategy == "invite" and target == "human":
+                name = human_name()
+                text = (
+                    "What do you think?" if name == HUMAN_LABEL
+                    else f"{name}, what do you think?"
+                )
+            elif strategy == "invite" and target:
                 text = f"{load_persona_name(target)}, would you like to share your perspective?"
             elif strategy == "close":
                 text = "We've covered some important tensions today. Thanks to everyone for joining the discussion."
