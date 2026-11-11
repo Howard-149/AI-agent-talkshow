@@ -9,7 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from livekit.agents import AgentSession
 
@@ -437,6 +437,21 @@ async def _speak_canned(
     return True
 
 
+def _audio_start_hook(
+    *hooks: Callable[[], None] | None,
+) -> Callable[[], None] | None:
+    """One callback for a chunk's first audio frame, calling each given hook."""
+    live = [h for h in hooks if h is not None]
+    if not live:
+        return None
+
+    def fire() -> None:
+        for hook in live:
+            hook()
+
+    return fire
+
+
 async def _speak_avatar_chunked(
     session: AgentSession,
     data: TalkShowData,
@@ -460,6 +475,7 @@ async def _speak_avatar_chunked(
     canonical_text: str | None = None,
     on_segment_played: Callable[[int, float], None] | None = None,
     on_segment_started: SegmentStarted | None = None,
+    on_audio_heard: Callable[[], None] | None = None,
 ) -> None:
     sentences = split_speak_sentences(text)
     if not sentences:
@@ -646,20 +662,22 @@ async def _speak_avatar_chunked(
                 chunk.bake_ms,
                 sent,
             )
-            on_audio_start = None
+            segment_start = None
             if (
                 segment_events_available
                 and on_segment_started is not None
                 and chunk.duration_sec is not None
             ):
                 # Bind loop vars now; fires when this sentence's audio actually starts.
-                def on_audio_start(
+                def segment_start(
                     i: int = i,
                     start_s: float = audio_position_s,
                     dur: float = chunk.duration_sec,
                     word_ends: asyncio.Task[list[float] | None] | None = chunk.word_ends,
                 ) -> None:
                     on_segment_started(i, start_s, dur, word_ends)
+
+            on_audio_start = _audio_start_hook(segment_start, on_audio_heard)
 
             await _play_prepared_chunk(
                 session,
@@ -754,17 +772,13 @@ async def speak_panel_line(
     if not text:
         return
 
-    # Did any of the line reach the audience? Known only where sentence starts are
-    # reported (the consumer's avatar path); None = unknown. A line cut before its
-    # first sound has its announced transcript withdrawn (line_end UI event).
+    # Did any of the line reach the audience? Known on the avatar path, which reports
+    # each chunk's first audio frame; None = unknown. A line cut before its first
+    # sound has its announced transcript withdrawn (line_end UI event).
     played: dict[str, bool | None] = {"any": None}
-    if on_segment_started is not None:
-        played["any"] = False
-        caller_started = on_segment_started
 
-        def on_segment_started(*args: Any) -> None:  # type: ignore[no-redef]
-            played["any"] = True
-            caller_started(*args)
+    def on_audio_heard() -> None:
+        played["any"] = True
 
     # use stdout when session is None (text-only mode)
     if session is None:
@@ -929,6 +943,7 @@ async def speak_panel_line(
                         )
                     )
 
+                played["any"] = False  # until the first audio frame (on_audio_heard)
                 primary_coro = _speak_avatar_chunked(
                     session,
                     data,
@@ -949,6 +964,7 @@ async def speak_panel_line(
                     canonical_text=text,
                     on_segment_played=on_segment_played,
                     on_segment_started=on_segment_started,
+                    on_audio_heard=on_audio_heard,
                 )
                 if secondary_coros:
                     await asyncio.gather(primary_coro, *secondary_coros)
@@ -1009,8 +1025,13 @@ async def speak_panel_line(
                 "line_end",
                 role=speak_role,
                 step=step,
+                played=played["any"],
                 room=data.room_name,
             )
+        if played["any"] is False:
+            drop = getattr(data, "drop_speech_ui", None)
+            if drop is not None:
+                drop(speak_role, step)
         from agent.ui.ui_events import emit_line_end
 
         asyncio.create_task(emit_line_end(speak_role, step, played=played["any"]))

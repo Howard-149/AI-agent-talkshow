@@ -205,13 +205,15 @@ class GhostRoomClient:
         self._audio_tap = audio_tap
         # Agent lines that started playing (one transcript event per line).
         self.agent_lines = 0
-        self._seen: set[tuple[str, str]] = set()
+        # Lines on air or queued, by (role, step). A step id is per beat, so the same
+        # one comes back in a later beat: a key is a new line again once its line ended.
+        self._open: set[tuple[str, str]] = set()
         # Any transcript (the human's own line included) and when the last one came.
         self.transcript_seen = asyncio.Event()
         self.last_transcript_t = 0.0
         self.panel_transcripts = 0  # guest/commentator transcript events seen
         self.speaking = False  # an agent playout (one sentence) is on air
-        self.ended: set[tuple[str, str]] = set()  # lines the worker reported over
+        self.lines_ended = 0  # agent lines the worker reported over (line_end)
         self.idle_since = time.monotonic()
         self._changed = asyncio.Event()
         # Microphone: frames waiting to go out, and when each spoken segment started.
@@ -232,9 +234,9 @@ class GhostRoomClient:
             self.last_transcript_t = time.monotonic()
         if ev_type == "transcript" and role and role != "human":
             key = (role, str(ev.get("step") or ""))
-            if key in self._seen:
+            if key in self._open:
                 return
-            self._seen.add(key)
+            self._open.add(key)
             self.agent_lines += 1
             # The worker announces a line's transcript before its audio starts: the
             # line is on air from now until its playout goes idle.
@@ -248,7 +250,11 @@ class GhostRoomClient:
                 (ev.get("text") or "")[:80],
             )
         elif ev_type == "line_end":
-            self.ended.add((role, str(ev.get("step") or "")))
+            key = (role, str(ev.get("step") or ""))
+            if key not in self._open:
+                return
+            self._open.discard(key)
+            self.lines_ended += 1
         elif ev_type == "role_active":
             self.speaking = True
         elif ev_type == "role_idle":
@@ -285,7 +291,7 @@ class GhostRoomClient:
             # floor stays quiet for a moment: the next line of the same beat (the host's
             # opening, then its invite) starts right after it, and a guest who waits for
             # the end doesn't talk over that one either.
-            if len(self._seen & self.ended) < target:
+            if self.lines_ended < target:
                 return False
             return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 

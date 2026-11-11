@@ -296,6 +296,18 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         client.on_ui_event({"type": "line_end", "role": "host", "step": "speech_host_0"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
+    def test_a_step_id_used_again_in_a_later_beat_is_a_new_line(self) -> None:
+        client = self.client()
+        self.line(client, "guest", "speech_guest_1")
+        client.on_ui_event({"type": "line_end", "role": "guest", "step": "speech_guest_1", "played": False})
+        # The guest cut in; the next beat numbers its lines from 0 again.
+        self.line(client, "guest", "speech_guest_1")
+        self.assertEqual(client.agent_lines, 2)
+        self.assertEqual(client.lines_ended, 1)
+        client.on_ui_event({"type": "line_end", "role": "guest", "step": "speech_guest_1"})
+        client.on_ui_event({"type": "line_end", "role": "guest", "step": "speech_guest_1"})
+        self.assertEqual(client.lines_ended, 2)  # a repeated line_end counts once
+
     async def test_mid_line_cuts_in_while_the_line_plays(self) -> None:
         from eval.ghost_session.client import ScriptedTurn
 
