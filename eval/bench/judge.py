@@ -11,6 +11,10 @@ written (the existing judge prompts), rendered with the judge's chat template.
 Checkpointing: answers are appended per chunk to answers_<tag>.partial.jsonl; a restarted (requeued) job skips every id
 already answered. --rubric-reruns (default 0): rubric requests of these reruns only ("all" = every rerun);
 identification requests always use every rerun. --fake: no model, a deterministic stand-in (tests, plumbing).
+
+A requests dir without judge files is skipped (with a message); with 0 requests in all, the job ends with code 0
+before any model is loaded. Any error ends the process with a non-zero code and stops the vLLM engine processes
+(proc.main_exit), so a failed job releases its GPUs.
 """
 
 from __future__ import annotations
@@ -93,6 +97,8 @@ def run(dirs: list[Path], tag: str, generate: Callable[[list[dict]], list[Any]],
                     pass  # a line cut by the preemption
     todo = [(d, r) for d, r in reqs if r["id"] not in done[d]]
     print(f"{len(reqs)} requests, {len(reqs) - len(todo)} already answered", flush=True)
+    for d in dirs:
+        (d / "judge").mkdir(parents=True, exist_ok=True)
     files = {d: (d / "judge" / f"answers_{tag}.partial.jsonl").open("a") for d in dirs}
     try:
         for c in range(0, len(todo), chunk):
@@ -144,16 +150,28 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--chunk", type=int, default=CHUNK)
     ap.add_argument("--fake", action="store_true", help="no model: deterministic stand-in answers")
     args = ap.parse_args(argv)
-    dirs = [Path(x) for x in args.requests.split(",") if x]
+    dirs = []
+    for d in (Path(x) for x in args.requests.split(",") if x):
+        if any((d / "judge" / f"{n}.jsonl").is_file() for n in ("identification", "rubric")):
+            dirs.append(d)
+        else:
+            print(f"skip {d}: no judge requests there (write them with python -m eval.bench.score <run>)", flush=True)
+    reruns = parse_reruns(args.rubric_reruns)
+    n_req = len(load_requests(dirs, reruns))
+    if n_req == 0:  # nothing to answer: leave before loading a model
+        print(f"0 judge requests in {len(dirs)} dir(s); nothing to do", flush=True)
+        return
     if args.fake:
         gen = lambda reqs: [fake_output(r) for r in reqs]  # noqa: E731
     else:
         if not args.model:
             sys.exit("--model is required (or --fake)")
         gen = vllm_generate(args.model, args.tp)
-    for d, n in run(dirs, args.tag, gen, parse_reruns(args.rubric_reruns), args.chunk).items():
+    for d, n in run(dirs, args.tag, gen, reruns, args.chunk).items():
         print(f"{n} answers -> {d}/judge/answers_{args.tag}.jsonl")
 
 
 if __name__ == "__main__":
-    main()
+    from eval.bench.proc import main_exit
+
+    main_exit(main)

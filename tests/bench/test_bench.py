@@ -7,6 +7,9 @@ import io
 import json
 import os
 import re
+import subprocess
+import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,7 +18,7 @@ from unittest import mock
 import yaml
 
 import agent.agents  # noqa: F401  (import order the app uses; avoids a pre-existing circular import)
-from eval.bench import build, fact_edit, items, judge, run, score, systems
+from eval.bench import build, fact_edit, items, judge, proc, run, score, systems
 
 ROOT = Path(__file__).resolve().parents[2]
 FLAGS = ("TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF", "TALKSHOW_UPTAKE_PLANNER",
@@ -632,6 +635,74 @@ class JudgeTests(_Env):
         none = score.right_floor(rows(lambda i: None), its)  # the worker: no floor decision
         self.assertFalse(none["applicable"])
         self.assertNotIn("T2", score.task_scores({"T2": {"right_floor": none}}, {}))
+
+    def test_judge_exits_before_loading_a_model(self) -> None:
+        missing = self.tmp / "no-such-run" / "score"
+        empty = self.tmp / "empty" / "score"
+        (empty / "judge").mkdir(parents=True)
+        for n in ("identification", "rubric"):
+            (empty / "judge" / f"{n}.jsonl").write_text("")
+        with mock.patch.object(judge, "vllm_generate", side_effect=AssertionError("model loaded")):
+            for dirs in (str(missing), str(empty), f"{missing},{empty}"):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    judge.main(["--requests", dirs, "--tag", "q", "--model", "org/judge"])
+                self.assertIn("nothing to do", out.getvalue(), dirs)
+        self.assertFalse(missing.exists())  # a skipped dir is not created
+        self.assertEqual(list((empty / "judge").glob("answers_*")), [])
+
+    def test_judge_skips_a_missing_dir_and_answers_the_rest(self) -> None:
+        out = self.fake_run()
+        missing = self.tmp / "gone" / "score"
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            judge.main(["--requests", f"{missing},{out / 'score'}", "--tag", "fake", "--fake"])
+        self.assertIn(f"skip {missing}", buf.getvalue())
+        self.assertTrue((out / "score/judge/answers_fake.jsonl").is_file())
+
+    def test_run_judges_creates_the_judge_dir(self) -> None:
+        d = self.tmp / "made" / "score"
+        (d / "judge").mkdir(parents=True)
+        (d / "judge" / "rubric.jsonl").write_text(json.dumps(
+            {"id": "x#0|specific|S2", "task": "T1", "item_id": "x", "rerun": 0, "dim": "specific",
+             "rubric_item": "S2", "reverse": False, "messages": [{"role": "user", "content": "q"}]}) + "\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            judge.main(["--requests", str(d), "--tag", "fake", "--fake"])
+        self.assertEqual(len((d / "judge/answers_fake.jsonl").read_text().splitlines()), 1)
+
+    def test_exit_codes(self) -> None:
+        self.assertEqual(proc.exit_code(lambda: None), 0)
+        self.assertEqual(proc.exit_code(lambda: sys.exit(3)), 3)
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(proc.exit_code(lambda: sys.exit("bad model")), 1)
+            self.assertEqual(proc.exit_code(lambda: 1 / 0), 1)
+        self.assertIn("ZeroDivisionError", err.getvalue())
+
+    def entry(self, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+        t0 = time.time()
+        res = subprocess.run([sys.executable, "-m", *args], cwd=str(ROOT), capture_output=True, text=True,
+                             timeout=120, env={**os.environ, **(env or {})})
+        self.assertLess(time.time() - t0, 60, args)
+        return res
+
+    def test_entry_points_exit_promptly(self) -> None:
+        # judge: missing dir -> 0; a broken request file -> non-zero, never a hang
+        res = self.entry("eval.bench.judge", "--requests", str(self.tmp / "nope"), "--tag", "q", "--model", "org/j")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        bad = self.tmp / "bad" / "score" / "judge"
+        bad.mkdir(parents=True)
+        (bad / "identification.jsonl").write_text("{not json\n")
+        res = self.entry("eval.bench.judge", "--requests", str(bad.parent), "--tag", "q", "--model", "org/j")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("JSONDecodeError", res.stderr)
+        # run: a model with no local snapshot while offline -> a clear message and a non-zero code, before vLLM
+        path = self.tmp / "dev.jsonl"
+        items.write_items(path, self.dev_items())
+        res = self.entry("eval.bench.run", "--system", "plain", "--model", "org/not-cached", "--items", str(path),
+                         "--split", "dev", "--out", str(self.tmp / "r"),
+                         env={"HF_HUB_OFFLINE": "1", "HF_HUB_CACHE": str(self.tmp / "empty-cache")})
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("no local snapshot", res.stderr)
+        self.assertNotIn("vllm", res.stderr.lower())
 
     def test_task_score_formula(self) -> None:
         per_task = {"T1": {}, "T3a": {"follows_fact": {"edited": {"new": 0.4}},

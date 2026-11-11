@@ -118,12 +118,18 @@ def main(argv: list[str] | None = None) -> None:
     else:
         if not args.model:
             sys.exit("--model is required (or --dry-run / --fake)")
+        from eval.hf_local import hub_cache, local_snapshot, offline
+
+        model_path = local_snapshot(args.model)  # offline: the cached snapshot directory
+        if offline() and model_path == args.model and not Path(args.model).exists():
+            sys.exit(f"model {args.model!r}: no local snapshot with a config.json under {hub_cache()} and "
+                     "HF_HUB_OFFLINE=1; download it first or pass a local path")
         # The show splits panel lines with the generating model's tokenizer (as the live show).
         if not (os.environ.get("VLLM_MODEL_PATH") or os.environ.get("VLLM_MODEL")):
-            os.environ["VLLM_MODEL_PATH"] = args.model
+            os.environ["VLLM_MODEL_PATH"] = model_path
         from eval.bench.systems import VLLMBackend
 
-        backend = VLLMBackend(args.model, tp=args.tp, max_model_len=args.max_model_len, seed=args.seed)
+        backend = VLLMBackend(model_path, tp=args.tp, max_model_len=args.max_model_len, seed=args.seed)
         model = args.model
     kw = {"fallback": not args.no_fallback} if args.system == "think_action" else {}
     system = make_system(args.system, backend, args.arm, **kw)
@@ -158,4 +164,6 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from eval.bench.proc import main_exit
+
+    main_exit(main)
