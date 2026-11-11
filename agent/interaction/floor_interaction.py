@@ -66,6 +66,18 @@ def _speaker_name(role: str) -> str:
     return "Human guest" if role == "human" else load_persona_name(role)
 
 
+def _candidate_role(selected: Any, candidates: list[dict[str, Any]]) -> str | None:
+    """The candidate the controller picked: its role ID, or its persona name (Gemma
+    answers "Ryan" for "commentator" even when asked for the ID)."""
+    if not isinstance(selected, str):
+        return None
+    picked = selected.strip().casefold()
+    for candidate in candidates:
+        if picked in (candidate["role"].casefold(), str(candidate.get("speaker", "")).casefold()):
+            return candidate["role"]
+    return None
+
+
 def _index_of(lines: list[Any], line: Any) -> int | None:
     return next((i for i, candidate in enumerate(lines) if candidate is line), None)
 
@@ -325,8 +337,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         selected = result.get("selected_role") if result else None
         reason = result.get("reason") if result else ""
         reason_code = result.get("reason_code") if result else None
-        valid_candidate_roles = {candidate["role"] for candidate in candidate_payload}
-        if decision != "interrupt" or selected not in valid_candidate_roles:
+        selected = _candidate_role(selected, candidate_payload)
+        if decision != "interrupt" or selected is None:
             decision = "continue"
             selected = None
         # A rejected interrupt cannot be labeled as an approved intervention.
@@ -441,7 +453,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         )
         result = _json_object(raw) or {}
         decision = result.get("decision")
-        selected = result.get("selected_role")
+        selected = _candidate_role(result.get("selected_role"), candidate_payload)
         reason = result.get("reason")
         reason_code = result.get("reason_code")
         proposed_fallback = result.get("host_fallback")
