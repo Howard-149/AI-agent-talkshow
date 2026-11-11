@@ -382,7 +382,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         if directed is not None:
             self.rule_return_to = None
             return directed
-        returned = self._return_after_moderation(data, candidate_payload, interval)
+        returned = self._return_after_moderation(data, history, candidate_payload, interval)
         if returned is not None:
             return returned
         invited_role = self.pending_invitation_target
@@ -1482,13 +1482,43 @@ class ThinkActionInteraction(TextOnlyInteraction):
         return host
 
     def _return_after_moderation(
-        self, data: Any, candidate_payload: list[dict[str, Any]], interval: int
+        self,
+        data: Any,
+        history: Any,
+        candidate_payload: list[dict[str, Any]],
+        interval: int,
     ) -> FloorOutcome | None:
         """After a host moderation cut, the speaker it stopped gets the floor back if they
-        chose speak (a speaker who chose silent is not forced; the controller decides)."""
+        chose speak (a speaker who chose silent is not forced; the controller decides).
+        If the host's cut handed the floor to another panelist by name, that panelist gets
+        it instead (or, if they chose silent, the controller decides, told of the invitation)."""
         returned, self.rule_return_to = self.rule_return_to, None
         if returned is None or not floor_rules_enabled():
             return None
+        invitee = self._moderation_invitee(data, history)
+        if invitee is not None and invitee != returned:
+            picked = any(item["role"] == invitee for item in candidate_payload)
+            data.runtime.gemma_client.log_text_only_event(
+                "floor",
+                "return after moderation",
+                returned_role=returned,
+                invited_role=invitee,
+                picked=picked,
+            )
+            if not picked:
+                self.pending_invitation_target = invitee
+                return None
+            return self._direct_free_pick(
+                data,
+                FloorOutcome(
+                    "speak",
+                    selected_role=invitee,
+                    reason="The host's moderation cut handed the floor to this panelist by name.",
+                    reason_code="directed_response",
+                ),
+                candidate_payload,
+                interval,
+            )
         picked = any(item["role"] == returned for item in candidate_payload)
         data.runtime.gemma_client.log_text_only_event(
             "floor", "return after moderation", returned_role=returned, picked=picked
@@ -1506,6 +1536,18 @@ class ThinkActionInteraction(TextOnlyInteraction):
             candidate_payload,
             interval,
         )
+
+    def _moderation_invitee(self, data: Any, history: Any) -> str | None:
+        """Panelist the host's moderation line (the latest line) named, if any."""
+        from agent.config import load_persona_name
+        from agent.floor.addressee import host_invitee
+
+        lines = getattr(history, "lines", None) or []
+        host_role = data.scenario.turn_control.listen_role
+        if not lines or lines[-1].role_id != host_role:
+            return None
+        panel_roles = [r for r in self._floor_roles(data) if r not in {host_role, "human"}]
+        return host_invitee(lines[-1].text, {r: load_persona_name(r) for r in panel_roles})
 
     async def _think_and_act(
         self,

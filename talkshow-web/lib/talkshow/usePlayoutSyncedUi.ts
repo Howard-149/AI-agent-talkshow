@@ -43,6 +43,8 @@ export type InterruptNotice = { id: number; name: string; byName: string };
 type LineOptions = {
   /** Reveal the words from the synced transcription stream (agent lines). */
   stream?: boolean;
+  /** The worker's step id, matched by its `line_end` event. */
+  step?: string;
 };
 
 /** Remote talkshow agent participant (single RTC bot). */
@@ -58,7 +60,8 @@ const SPEAKING_HOLD_MS = 450;
 const IDLE_DEBOUNCE_MS = 280;
 /** Agent synced transcription topic (livekit-agents room output). */
 const TRANSCRIPTION_TOPIC = 'lk.transcription';
-/** No synced words this long after a line opened: show its full text instead. */
+/** No synced words this long after a line opened: show its full text instead (only for
+ * workers that send no `line_end`; with it, the line settles when it ends). */
 const STREAM_FALLBACK_MS = 4000;
 /** How long the "X interrupts Y" notice stays up. */
 const INTERRUPT_NOTICE_MS = 6000;
@@ -124,6 +127,10 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
 
   // Agent line the next synced stream belongs to, and segments per streaming line.
   const openLineRef = useRef<{ id: string; fullText: string } | null>(null);
+  // Streamed lines by `${role}|${step}`, until their line_end; and whether this worker
+  // sends line_end at all.
+  const lineByStepRef = useRef<Map<string, { id: string; fullText: string }>>(new Map());
+  const lineEndSeenRef = useRef(false);
   const segmentsRef = useRef<Map<string, Map<string, string>>>(new Map());
   const pendingTookFloorRef = useRef<{ role: string; at: number } | null>(null);
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -242,8 +249,10 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
         const previous = openLineRef.current;
         if (previous) settleLine(previous.id, previous.fullText);
         openLineRef.current = { id, fullText: trimmed };
+        if (opts.step) lineByStepRef.current.set(`${role}|${opts.step}`, { id, fullText: trimmed });
         segmentsRef.current.set(id, new Map());
         later(() => {
+          if (lineEndSeenRef.current) return; // the line settles at its line_end
           const segments = segmentsRef.current.get(id);
           if (segments && !joinSegments(segments)) settleLine(id, trimmed);
         }, STREAM_FALLBACK_MS);
@@ -261,6 +270,26 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
       setLines((prev) => [...prev, line]);
     },
     [later, settleLine],
+  );
+
+  /** The worker's line is over. Never heard (cut before its first sound): drop its
+   * transcript, which was announced ahead of the audio. Otherwise settle it. */
+  const onLineEnd = useCallback(
+    (ev: { role: string; step: string; played?: boolean }) => {
+      lineEndSeenRef.current = true;
+      const key = `${ev.role}|${ev.step}`;
+      const target = lineByStepRef.current.get(key);
+      if (!target) return;
+      lineByStepRef.current.delete(key);
+      if (ev.played === false) {
+        if (openLineRef.current?.id === target.id) openLineRef.current = null;
+        segmentsRef.current.delete(target.id);
+        setLines((prev) => prev.filter((line) => line.id !== target.id));
+        return;
+      }
+      if (segmentsRef.current.has(target.id)) settleLine(target.id, target.fullText);
+    },
+    [settleLine],
   );
 
   const onInterrupt = useCallback(
@@ -330,6 +359,7 @@ export function usePlayoutSyncedUi(agentParticipant: Participant | undefined) {
     onRoleActive,
     onRoleIdle,
     pushLine,
+    onLineEnd,
     onInterrupt,
     onBackchannel,
   };

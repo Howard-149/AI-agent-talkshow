@@ -62,6 +62,14 @@ export type UiEvent =
       stream?: boolean;
     }
   | {
+      /** A whole line is over. `played: false`: none of it was heard (cut before its
+       * first sound), so its announced transcript is withdrawn. */
+      type: 'line_end';
+      role: string;
+      step: string;
+      played?: boolean;
+    }
+  | {
       /** An approved interrupt cut `role`'s line; `by_role` takes the floor. */
       type: 'interrupt';
       role: PanelRole;

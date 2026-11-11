@@ -9,7 +9,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from livekit.agents import AgentSession
 
@@ -753,7 +753,19 @@ async def speak_panel_line(
     text = strip_speech_control_tags(text.strip())
     if not text:
         return
-    
+
+    # Did any of the line reach the audience? Known only where sentence starts are
+    # reported (the consumer's avatar path); None = unknown. A line cut before its
+    # first sound has its announced transcript withdrawn (line_end UI event).
+    played: dict[str, bool | None] = {"any": None}
+    if on_segment_started is not None:
+        played["any"] = False
+        caller_started = on_segment_started
+
+        def on_segment_started(*args: Any) -> None:  # type: ignore[no-redef]
+            played["any"] = True
+            caller_started(*args)
+
     # use stdout when session is None (text-only mode)
     if session is None:
         if speak_role != data.active_role:
@@ -999,6 +1011,9 @@ async def speak_panel_line(
                 step=step,
                 room=data.room_name,
             )
+        from agent.ui.ui_events import emit_line_end
+
+        asyncio.create_task(emit_line_end(speak_role, step, played=played["any"]))
         _flush_deferred_panel_followup(data)
 
 

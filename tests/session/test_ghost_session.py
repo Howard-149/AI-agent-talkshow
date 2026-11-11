@@ -251,6 +251,8 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertFalse(waiter.done())  # the second line is still playing
         client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
+        client.on_ui_event({"type": "line_end", "role": "guest", "step": "speech_guest_1"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
     async def test_line_end_waits_for_audio_announced_before_it_plays(self) -> None:
@@ -268,6 +270,30 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertFalse(waiter.done())
         client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
+        self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
+
+    async def test_line_end_waits_for_the_whole_line_and_the_next_line_of_the_beat(self) -> None:
+        from eval.ghost_session.client import ScriptedTurn
+
+        client = self.client()
+        turn = ScriptedTurn(text="hi", after_lines=1, when="line_end", max_wait_sec=5)
+        waiter = asyncio.ensure_future(client.wait_for_turn(turn, lines_before=0))
+        self.line(client, "host", "opening")
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        client.on_ui_event({"type": "role_idle"})
+        await asyncio.sleep(1.2)
+        self.assertFalse(waiter.done())  # idle between the opening's sentences
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "opening"})
+        # The host's invite is announced right after the opening ends.
+        self.line(client, "host", "speech_host_0")
+        await asyncio.sleep(1.2)
+        self.assertFalse(waiter.done())  # the invite is about to play
+        client.on_ui_event({"type": "role_active", "role": "host"})
+        client.on_ui_event({"type": "role_idle"})
+        client.on_ui_event({"type": "line_end", "role": "host", "step": "speech_host_0"})
         self.assertEqual(await asyncio.wait_for(waiter, 3), "line_end")
 
     async def test_mid_line_cuts_in_while_the_line_plays(self) -> None:
@@ -311,3 +337,41 @@ class CutInTimingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.spoken[0][0], Path("turn.wav"))
         self.assertGreaterEqual(len(frames), 10)  # 0.1 s at 10 ms frames, resampled to 48 kHz
         self.assertTrue(all(n == 2 * samples for n in frames))
+
+
+class GhostViewerWaitTests(unittest.IsolatedAsyncioTestCase):
+    def participant(self, identity: str, **meta):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(identity=identity, metadata=json.dumps(meta) if meta else "")
+
+    async def test_opening_waits_for_the_recording_page_only_when_asked(self) -> None:
+        from types import SimpleNamespace
+
+        from agent.session.ghost_flags import wait_for_ghost_viewer
+
+        with unittest.mock.patch.dict(os.environ, {"TALKSHOW_GHOST_VIEWER_GRACE_S": "0"}):
+            plain = SimpleNamespace(remote_participants={"g": self.participant("ghost-guest", ghost=True)})
+            self.assertFalse(await wait_for_ghost_viewer(plain, timeout_sec=1))
+
+            room = SimpleNamespace(
+                remote_participants={"g": self.participant("ghost-guest", ghost=True, awaitViewer=True)}
+            )
+            waiter = asyncio.ensure_future(wait_for_ghost_viewer(room, timeout_sec=5))
+            await asyncio.sleep(0.3)
+            self.assertFalse(waiter.done())
+            room.remote_participants["v"] = self.participant("ghost-viewer", ghostViewer=True)
+            self.assertTrue(await asyncio.wait_for(waiter, 2))
+
+    def test_the_recording_ghost_asks_the_worker_to_wait(self) -> None:
+        import jwt as pyjwt  # ships with livekit-api
+
+        from eval.ghost_session.client import mint_ghost_token
+
+        env = {"LIVEKIT_URL": "wss://x", "LIVEKIT_API_KEY": "k", "LIVEKIT_API_SECRET": "s" * 32}
+        with unittest.mock.patch.dict(os.environ, env):
+            _, recording = mint_ghost_token(room="r", identity="guest", locale="en", await_viewer=True)
+            _, plain = mint_ghost_token(room="r", identity="guest", locale="en")
+        meta = lambda tok: json.loads(pyjwt.decode(tok, options={"verify_signature": False})["metadata"])
+        self.assertTrue(meta(recording)["awaitViewer"])
+        self.assertNotIn("awaitViewer", meta(plain))

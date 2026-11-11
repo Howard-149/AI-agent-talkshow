@@ -132,6 +132,15 @@ async def emit_role_idle() -> None:
     await publish_ui_event("role_idle")
 
 
+async def emit_line_end(role: str, step: str, *, played: bool | None = None) -> None:
+    """A whole line is over (played, cut or dropped); role_idle fires between its sentences.
+    ``played=False``: none of it was heard, so the UI drops its announced transcript."""
+    fields: dict[str, object] = {"role": role, "step": step}
+    if played is not None:
+        fields["played"] = played
+    await publish_ui_event("line_end", **fields)
+
+
 async def emit_role_active(role: str, *, emotion: str | None = None) -> None:
     fields: dict[str, object] = {
         "role": role,

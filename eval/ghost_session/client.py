@@ -126,6 +126,7 @@ def mint_ghost_token(
     ttl_sec: int = 3600,
     viewer: bool = False,
     can_publish: bool | None = None,
+    await_viewer: bool = False,
 ) -> tuple[str, str]:
     url = os.environ["LIVEKIT_URL"]
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -140,6 +141,9 @@ def mint_ghost_token(
     meta: dict[str, Any] = {"locale": locale, "ghost": True}
     if viewer:
         meta["ghostViewer"] = True
+    if await_viewer:
+        # The worker holds the opening until the recording page is up.
+        meta["awaitViewer"] = True
     if can_publish is None:
         can_publish = not viewer
     token = (
@@ -207,6 +211,7 @@ class GhostRoomClient:
         self.last_transcript_t = 0.0
         self.panel_transcripts = 0  # guest/commentator transcript events seen
         self.speaking = False  # an agent playout (one sentence) is on air
+        self.ended: set[tuple[str, str]] = set()  # lines the worker reported over
         self.idle_since = time.monotonic()
         self._changed = asyncio.Event()
         # Microphone: frames waiting to go out, and when each spoken segment started.
@@ -242,6 +247,8 @@ class GhostRoomClient:
                 self.agent_lines, ev.get("speaker") or role, ev.get("step"),
                 (ev.get("text") or "")[:80],
             )
+        elif ev_type == "line_end":
+            self.ended.add((role, str(ev.get("step") or "")))
         elif ev_type == "role_active":
             self.speaking = True
         elif ev_type == "role_idle":
@@ -274,10 +281,13 @@ class GhostRoomClient:
             return "mid_line"
 
         def line_over() -> bool:
-            # A later line starting also means the target line is over.
-            return self.agent_lines > target or (
-                not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
-            )
+            # The target line is over (not merely idle between its sentences), and the
+            # floor stays quiet for a moment: the next line of the same beat (the host's
+            # opening, then its invite) starts right after it, and a guest who waits for
+            # the end doesn't talk over that one either.
+            if len(self._seen & self.ended) < target:
+                return False
+            return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 
         if not await self._until(line_over, deadline):
             return "timeout"
@@ -500,6 +510,7 @@ async def run_ghost_session(
         room=room,
         identity=script.identity,
         locale=script.locale,
+        await_viewer=record,
     )
     stamp = int(time.time())
     out_dir = record_dir or default_record_dir()
