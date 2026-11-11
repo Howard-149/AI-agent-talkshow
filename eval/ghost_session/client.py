@@ -274,10 +274,10 @@ class GhostRoomClient:
             return "mid_line"
 
         def line_over() -> bool:
-            # A later line starting also means the target line is over.
-            return self.agent_lines > target or (
-                not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
-            )
+            # Quiet for a moment, not just a later line announced: the next line of the
+            # same beat (the host's opening, then its invite) starts right after this
+            # one, and a guest who waits for the end doesn't talk over it.
+            return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 
         if not await self._until(line_over, deadline):
             return "timeout"

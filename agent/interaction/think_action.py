@@ -154,6 +154,10 @@ def parse_think_action(
         return ThinkAction(think.strip(), Action("silent", None, None, tuple(valid_backchannels)))
     if decision not in {"interrupt", "speak"} or intent is None or content is None:
         return ThinkAction(think.strip(), Action("silent", None, None))
+    if decision == "interrupt" and floor_state == "free":
+        # Asking to interrupt a floor that just went free is asking to speak: a panelist
+        # who argued to cut in all line long must not drop out when the line ends.
+        decision = "speak"
     if (decision == "interrupt") != (floor_state == "occupied"):
         return ThinkAction(think.strip(), Action("silent", None, None))
 

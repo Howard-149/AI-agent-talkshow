@@ -42,6 +42,18 @@ class BackchannelParserTests(unittest.TestCase):
         result = parse_think_action(raw, floor_state="occupied", interval_text="Well.")
         self.assertEqual(result.action.backchannels, ())
 
+    def test_interrupt_on_a_free_floor_is_a_request_to_speak(self) -> None:
+        raw = '''{"think":"x","action":{"decision":"interrupt",
+          "intent":{"type":"challenge","goal":"push back","target":null},
+          "content":"But that is a cop-out.","backchannels":[]}}'''
+        free = parse_think_action(raw, floor_state="free", interval_text="The line ended.")
+        self.assertEqual(free.action.decision, "speak")
+        self.assertEqual(free.action.content, "But that is a cop-out.")
+        self.assertIsNone(free.action.quote)
+        speak = raw.replace('"interrupt"', '"speak"')
+        held = parse_think_action(speak, floor_state="occupied", interval_text="Still going.")
+        self.assertEqual(held.action.decision, "silent")  # speak needs a free floor
+
 
 class BackchannelControllerTests(unittest.TestCase):
     def test_audio_publishers_are_separate_per_role_and_locale(self) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -85,6 +86,20 @@ def speaking_recency_context(history: Any, role: str, current_speaker: str) -> s
     )
 
 
+@functools.lru_cache(maxsize=1)
+def load_text_tokenizer() -> Any:
+    """The Gemma tokenizer that cuts lines into disclosure intervals (one per process).
+
+    Loading it parses a large tokenizer.json on the event loop; the worker prewarms it
+    (agent.main.prewarm) so a show's first line doesn't stall for seconds."""
+    from transformers import AutoTokenizer
+
+    model_path = os.environ.get("VLLM_MODEL_PATH") or os.environ.get(
+        "VLLM_MODEL", "google/gemma-4-E4B-it"
+    )
+    return AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, use_fast=True)
+
+
 class TextOnlyInteraction:
     def __init__(self) -> None:
         self.intents: dict[str, SpeakingIntent] = {}
@@ -112,16 +127,7 @@ class TextOnlyInteraction:
 
     def _get_tokenizer(self) -> Any:
         if self._tokenizer is None:
-            from transformers import AutoTokenizer
-
-            model_path = os.environ.get("VLLM_MODEL_PATH") or os.environ.get(
-                "VLLM_MODEL", "google/gemma-4-E4B-it"
-            )
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-                use_fast=True,
-            )
+            self._tokenizer = load_text_tokenizer()
         return self._tokenizer
 
     def _chunk_ends(self, text: str) -> list[int]:

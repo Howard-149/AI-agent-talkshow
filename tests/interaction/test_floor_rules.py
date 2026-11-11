@@ -220,6 +220,43 @@ class InteractionRuleTests(FloorInteractionTestCase):
         data.runtime.gemma_client.complete_text.assert_not_awaited()
         self.assertIsNone(interaction.rule_return_to)
 
+    async def test_a_cut_that_names_another_panelist_hands_them_the_floor(self) -> None:
+        from agent.config import load_persona_name
+
+        interaction, _, data = self.make()
+        interaction.rule_return_to = "guest"
+        interaction.actions = {"guest": SPEAK, "commentator": SPEAK}
+        guest, commentator = load_persona_name("guest"), load_persona_name("commentator")
+        data.show_history.append("guest", SPOKEN)
+        data.show_history.append("host", f"{guest}, good point. {commentator}, what do you think?")
+
+        outcome = await interaction.arbitrate_free(
+            data, candidates=["guest", "commentator"], history=data.show_history, interval=1
+        )
+
+        self.assertEqual(outcome.selected_role, "commentator")
+        self.assertEqual(outcome.reason_code, "directed_response")
+        data.runtime.gemma_client.complete_text.assert_not_awaited()
+
+    async def test_a_named_panelist_who_chose_silent_goes_to_the_controller(self) -> None:
+        from agent.config import load_persona_name
+
+        interaction, _, data = self.make()
+        interaction.rule_return_to = "guest"
+        interaction.actions = {"guest": SPEAK}
+        data.show_history.append("host", f"{load_persona_name('commentator')}, your view?")
+        data.runtime.gemma_client.complete_text.return_value = json.dumps(
+            {"decision": "speak", "selected_role": "guest", "reason_code": "high_contribution", "reason": "r"}
+        )
+
+        await interaction.arbitrate_free(
+            data, candidates=["guest"], history=data.show_history, interval=1
+        )
+
+        data.runtime.gemma_client.complete_text.assert_awaited_once()
+        prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("Pending host invitation target (role ID): 'commentator'", prompt)
+
     async def test_returned_speaker_who_chose_silent_is_not_forced(self) -> None:
         interaction, _, data = self.make()
         interaction.rule_return_to = "guest"

@@ -58,3 +58,19 @@ def addressed_after_human(
             names = {r: load_persona_name(r) for r in panel_roles}
         return addressed_role(line.text, names)
     return None
+
+
+def host_invitee(text: str, names: dict[str, str]) -> str | None:
+    """Panelist the host hands the floor to: the only one named in the line's last sentence
+    that names anyone ("Amy, good point. Ryan, what do you think?" → Ryan). None if that
+    sentence names two panelists or the line names nobody."""
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s]
+    for sentence in reversed(sentences):
+        hits = {
+            role
+            for role, name in names.items()
+            if re.search(rf"\b{re.escape(name)}\b", sentence, re.IGNORECASE)
+        }
+        if hits:
+            return next(iter(hits)) if len(hits) == 1 else None
+    return None

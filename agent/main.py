@@ -58,6 +58,21 @@ def prewarm(proc: JobProcess) -> None:
     from agent.adapters.word_align import warm_word_aligner
 
     warm_word_aligner()
+    # Loaded lazily on the event loop otherwise: together 5-7 s of stall on the opening
+    # line (its second sentence's TTS and video waited behind them).
+    if os.environ.get("TALKSHOW_TEXT_TOKENIZER") != "word":
+        try:
+            from agent.session.text_only_interaction import load_text_tokenizer
+
+            load_text_tokenizer()
+        except Exception as exc:
+            logger.warning("tokenizer prewarm failed: %s", exc)
+    try:
+        from agent.emotion.pad_pipeline import get_pad_knn
+
+        get_pad_knn()
+    except Exception as exc:
+        logger.warning("PAD anchors prewarm failed: %s", exc)
 
 
 server.setup_fnc = prewarm

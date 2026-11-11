@@ -219,10 +219,12 @@ class GemmaAudioSTT(stt.STT):
                 panel_turn=panel_turn,
             )
 
-        hist = data.show_history.prior_messages(perspective=ctrl.listen_role())
+        # No show history: it is a transcription, and the history can hold lines that were
+        # announced but never played (cut by this very turn), which Gemma then "hears"
+        # as the start of the guest's speech.
         t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
-            wav, user_text=user_hint, history_messages=hist, output_role="host"
+            wav, user_text=user_hint, history_messages=[], output_role="host"
         )
         model_latency_s = time.monotonic() - t0
 
