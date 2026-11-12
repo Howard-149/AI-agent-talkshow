@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--model", default="", help="HF model id or path (not needed with --dry-run / --fake)")
     ap.add_argument("--arm", default="production", help="show systems: production | fast | concrete_fact_pack | fast_lean | fast_persona | "
                     "fast_focus | fast_context_all")
-    ap.add_argument("--tasks", default="T1,T2,T3a,T3b,T4", help="comma list; T3 = T3a and T3b")
+    ap.add_argument("--tasks", default="T1,T2,T2f,T3a,T3b,T4", help="comma list; T3 = T3a and T3b")
     ap.add_argument("--split", choices=("dev", "test"), default="dev")
     ap.add_argument("--items", default="", help="items jsonl (default: eval/data/bench/dev.jsonl or build/test.jsonl)")
     ap.add_argument("--topics", default="", help="comma list of topic ids (default all)")

@@ -143,7 +143,8 @@ class BuilderTests(_Env):
         self.assertEqual(len(t2), 2 * 2 * 2)  # 2 addressees x 2 panelists
         self.assertEqual(len(t4), 2 * 2 * 2)
         self.assertEqual({i.version for i in t1}, {"orig", "paraphrase", "number", "stance", "entity"})
-        self.assertEqual([i.version for i in its if i.is_control], ["paraphrase", "paraphrase"])
+        self.assertEqual([i.version for i in its if i.is_control],
+                         ["paraphrase", "paraphrase", "addr_none", "addr_none"])
         self.assertEqual(len({i.pair_group for i in t1}), 2)
         self.assertEqual(len({i.pair_group for i in t2}), 4)
         self.assertEqual({i.role_under_test for i in t1}, {"commentator"})
@@ -478,6 +479,114 @@ class AdapterTests(_Env):
 
 # ------------------------------------------------------------------------------------------------ run + score
 
+class FloorTests(_Env):
+    """T2f: both panelists bid; the show's free-floor selection (or a plain system's floor question) picks."""
+
+    SPEAK = json.dumps({"think": "", "action": {"decision": "speak", "intent": {"type": "answer", "goal": "g",
+                                                                                "target": None},
+                                                "content": "A line.", "backchannels": []}})
+    SILENT = json.dumps({"think": "", "action": {"decision": "silent", "intent": None, "content": None,
+                                                 "backchannels": []}})
+
+    def floor_items(self):
+        return {i.version: i for i in self.dev_items() if i.task == "T2f" and i.topic_id == "nuclear-power"}
+
+    @staticmethod
+    def controller(role):
+        return json.dumps({"decision": "speak", "selected_role": role, "reason_code": "high_contribution",
+                           "reason": "r"})
+
+    def respond(self, arm, version, think=None, pick="guest"):
+        think = think or {}
+
+        def responder(req):
+            if req.kind.startswith("think:"):
+                return think.get(req.kind.split(":")[1], self.SPEAK)
+            if req.kind == "controller":
+                return self.controller(pick)
+            return "- plan"
+
+        backend = systems.FakeBackend(responder)
+        res = systems.TalkshowThinkAction(backend, arm=arm).respond(items.observation(self.floor_items()[version]),
+                                                                     seed=3)
+        return res
+
+    def test_items(self) -> None:
+        t2f = [i for i in self.dev_items() if i.task == "T2f"]
+        self.assertEqual(len(t2f), 2 * 3)
+        by = self.floor_items()
+        self.assertEqual(set(by), {"addr_commentator", "addr_guest", "addr_none"})
+        self.assertTrue(by["addr_none"].is_control)
+        self.assertIsNone(by["addr_none"].expected["addressee"])
+        self.assertEqual({i.role_under_test for i in t2f}, {"panel"})
+        self.assertTrue(by["addr_none"].audience_turn[0].isupper())
+        self.assertEqual(by["addr_guest"].audience_turn, next(i for i in self.dev_items() if i.task == "T2"
+                         and i.version == "addr_guest" and i.topic_id == "nuclear-power").audience_turn)
+
+    def test_show_floor(self) -> None:
+        # fast: addressee priority picks the named panelist who chose speak, no controller call
+        res = self.respond("fast", "addr_guest", pick="commentator")
+        self.assertEqual((res["selected_role"], res["controller_called"], res["floor_mode"]), ("guest", False, "show"))
+        self.assertEqual(res["decisions"], {"commentator": "speak", "guest": "speak"})
+        self.assertEqual(res["text"], "A line.")
+        self.assertEqual([c["kind"] for c in res["calls"]], ["planner", "think:commentator", "think:guest"])
+        # without addressee priority the controller decides
+        res = self.respond("fast_v2_noaddr", "addr_guest", pick="commentator")
+        self.assertEqual((res["selected_role"], res["controller_called"]), ("commentator", True))
+        self.assertEqual(res["calls"][-1]["kind"], "controller")
+        # the named panelist stays silent: the controller decides even with the priority on
+        res = self.respond("fast", "addr_guest", think={"guest": self.SILENT}, pick="commentator")
+        self.assertEqual((res["selected_role"], res["controller_called"], res["candidates"]),
+                         ("commentator", True, ["commentator"]))
+        res = self.respond("production", "addr_none", pick="guest")
+        self.assertEqual((res["selected_role"], res["controller_called"]), ("guest", True))
+
+    def test_dry_run_shows_the_controller_prompt(self) -> None:
+        backend = systems.DryRunBackend()
+        systems.TalkshowThinkAction(backend, arm="production").respond(
+            items.observation(self.floor_items()["addr_guest"]))
+        ctrl = [r for r in backend.records if r.kind == "controller"]
+        self.assertEqual(len(ctrl), 1)
+        self.assertIn("You are the centralized floor controller", ctrl[0].messages[-1]["content"])
+        self.assertIn('"role": "guest"', ctrl[0].messages[-1]["content"])
+
+    def test_plain_and_worker(self) -> None:
+        obs = items.observation(self.floor_items()["addr_guest"])
+        plain = systems.PlainLLM(systems.FakeBackend(lambda r: "Amy."))
+        res = plain.respond(obs)
+        self.assertEqual((res["selected_role"], res["floor_mode"], res["text"]), ("guest", "question", ""))
+        backend = systems.DryRunBackend()
+        systems.PlainLLM(backend).respond(obs)
+        self.assertTrue(backend.records[0].messages[-1]["content"].endswith(
+            "Who should speak next: Ryan or Amy? Answer with one name."))
+        from eval.bench.floor import parse_name
+
+        names = {"commentator": "Ryan", "guest": "Amy"}
+        self.assertEqual(parse_name("I think Ryan should, not Amy", names), "commentator")
+        self.assertIsNone(parse_name("The host.", names))
+        res = systems.TalkshowWorker(systems.FakeBackend()).respond(obs)
+        self.assertEqual((res["floor_mode"], res["selected_role"], res["calls"]), ("not_applicable", None, []))
+
+    def test_floor_score(self) -> None:
+        its = {i.item_id: i for i in self.dev_items()}
+        t2f = [i for i in its.values() if i.task == "T2f"]
+
+        def rows(pick, mode="show"):
+            return [{"item_id": i.item_id, "task": "T2f", "rerun": k, "text": "", "floor_mode": mode,
+                     "selected_role": pick(i), "controller_called": True} for i in t2f for k in range(2)]
+
+        perfect = score.floor_score(rows(lambda i: i.expected["addressee"] or "host"), its)
+        self.assertEqual((perfect["balanced"], perfect["distribution"]["addr_none"]["host"]), (1.0, 1.0))
+        always = score.floor_score(rows(lambda i: "commentator"), its)
+        self.assertEqual((always["balanced"], always["acc_by_addressee"]), (0.5, {"commentator": 1.0, "guest": 0.0}))
+        self.assertEqual(score.task_scores({"T2f": {"floor": always}}, {})["T2f"]["score"], 0.0)
+        sc = score.task_scores({"T2f": {"floor": perfect}}, {})
+        self.assertEqual(sc["T2f"]["score"], 100.0)
+        self.assertNotIn("overall", sc)  # T2f is reported, not part of the overall yet
+        na = score.floor_score(rows(lambda i: None, mode="not_applicable"), its)
+        self.assertFalse(na["applicable"])
+
+
 class RunScoreTests(_Env):
     def items_file(self) -> Path:
         path = self.tmp / "dev.jsonl"
@@ -486,14 +595,18 @@ class RunScoreTests(_Env):
 
     def test_dry_run_end_to_end(self) -> None:
         path = self.items_file()
-        n = len(items.read_items(path))
+        its = items.read_items(path)
+        n = len(its)
+        n_floor = sum(i.task == "T2f" for i in its)
+        # per T2f item: plain asks 1 floor question, the worker none, Think & Action 2 think calls + the controller
+        want = {"plain": n, "worker": n - n_floor, "think_action": n - n_floor + 3 * n_floor}
         for system in ("plain", "worker", "think_action"):
             out = self.tmp / f"dry_{system}"
             with contextlib.redirect_stdout(io.StringIO()):
                 run.main(["--system", system, "--items", str(path), "--split", "dev", "--dry-run", "--out",
                           str(out)])
             rows = [json.loads(l) for l in (out / "prompts.jsonl").read_text().splitlines()]
-            self.assertEqual(len(rows), n, system)
+            self.assertEqual(len(rows), want[system], system)
             self.assertEqual(len(list((out / "prompts").glob("*.txt"))), n)
             self.assertFalse((out / "outputs.jsonl").exists())
 
@@ -512,7 +625,7 @@ class RunScoreTests(_Env):
         self.assertEqual(len({r["seed"] for r in t1}), 2)
         with contextlib.redirect_stdout(io.StringIO()):
             rep = score.score(out, str(path))
-        self.assertEqual(set(rep["tasks"]), {"T1", "T2", "T3a", "T3b", "T4"})
+        self.assertEqual(set(rep["tasks"]), {"T1", "T2", "T2f", "T3a", "T3b", "T4"})
         rf = rep["tasks"]["T2"]["right_floor"]  # the fake speaks every time
         self.assertEqual((rf["acc_addressed"], rf["acc_not_addressed"], rf["balanced"]), (1.0, 0.0, 0.5))
         self.assertTrue((out / "score" / "R" / "T1" / "lines.jsonl").is_file())
@@ -610,7 +723,7 @@ class JudgeTests(_Env):
         self.assertLessEqual(lo, t1["all"]["J"]["J"])
         self.assertLessEqual(t1["all"]["J"]["J"], hi)
         self.assertEqual(judged["tasks"]["T4"]["oracle"]["rubric_pass"]["fidelity"], 1.0)
-        self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T3a", "T3b", "T4", "overall"})
+        self.assertEqual(set(rep["task_scores"]), {"T1", "T2", "T2f", "T3a", "T3b", "T4", "overall"})
         self.assertIn("right_floor", rep["task_scores"]["T2"]["components"])
         self.assertIn("# think_action (production)", (d / "report.md").read_text())
 

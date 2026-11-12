@@ -123,6 +123,8 @@ ARMS: dict[str, dict] = {
                                         **CONTEXT_FLAGS["focus"]}, "best_of": 1},
     # The recommended set after the context variants (FAST2 in deploy/arms/dialogue-quality.arms).
     "fast_v2": {"live_flags": FAST_V2_FLAGS, "best_of": 1},
+    # fast_v2 without addressee priority, for T2f (who gets the floor when both panelists bid).
+    "fast_v2_noaddr": {"live_flags": {**FAST_V2_FLAGS, "TALKSHOW_ADDRESSEE_FLOOR": "0"}, "best_of": 1},
 }
 
 

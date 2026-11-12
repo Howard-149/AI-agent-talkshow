@@ -17,6 +17,7 @@ item must be rebuildable from committed data plus the public corpus.
 Tasks (README.md):
   T1 listening   the audience line, edited one element at a time; the addressed panelist answers
   T2 addressing  the same question put to each panelist by name (template below); both panelists are tested
+  T2f floor      the same lines plus a control naming nobody; both panelists bid, the floor selection picks
   T3a grounding  the audience asks about one fact's subject; that fact (original or with one number edited by the
                  rule in fact_edit.py) is offered among 6 facts
   T3b            the T3a items plus one instruction to use the facts (meta.fact_instruction)
@@ -73,7 +74,7 @@ T3_QUESTIONS = (
     "Before we go further, what are the hard facts about {subject}?",
 )
 DROPPED: list[dict] = []  # implausible T3 edits seen by the last build (written to build/t3_dropped_<split>.jsonl)
-REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T3a": "fact_orig_1", "T3b": "fact_orig_1",
+REFERENCE = {"T1": "orig", "T2": "addr_commentator", "T2f": "addr_commentator", "T3a": "fact_orig_1", "T3b": "fact_orig_1",
              "T4": "persona_orig"}  # T3a/T3b: set per pair
 
 # The host's opening lines in the show (the first two lines of every recorded show state).
@@ -207,6 +208,25 @@ def build_t2(topics: list[dict], split: str, log: Counter) -> list[Item]:
                                    audience=texts[a], personas=cards,
                                    expected={"addressee": a, "should_answer": role == a},
                                    meta={"source": "turn2.orig", "template": T2_TEMPLATE}))
+    return items
+
+
+def build_t2f(topics: list[dict], split: str, log: Counter) -> list[Item]:
+    """T2f: the T2 audience lines (the question put to each panelist by name) plus a control with nobody named; one
+    item per version, answered by the floor selection over both panelists (role "panel")."""
+    items, cards = [], persona_cards(False)
+    for t in topics:
+        texts = {a: t2_turn(t["turn2"]["orig"], a) for a in PANEL}
+        q = VOCATIVE.sub("", t["turn2"]["orig"], count=1)
+        texts[None] = q[:1].upper() + q[1:]
+        if any(addressed(texts[a]) != a for a in (*PANEL, None)):
+            log["T2f skipped topic: addressee not detected as intended"] += 1
+            continue
+        for a in (*PANEL, None):
+            items.append(_item("T2f", split, t, f"addr_{a or 'none'}", "panel", f"T2f:{split}:{t['slug']}",
+                               audience=texts[a], personas=cards, is_control=a is None,
+                               expected={"addressee": a},
+                               meta={"source": "turn2.orig", "template": T2_TEMPLATE if a else "{question}"}))
     return items
 
 
@@ -370,10 +390,11 @@ def build_t4(topics: list[dict], split: str, log: Counter) -> list[Item]:
     return items
 
 
-BUILDERS = {"T1": build_t1, "T2": build_t2, "T4": build_t4}
+BUILDERS = {"T1": build_t1, "T2": build_t2, "T2f": build_t2f, "T4": build_t4}
 
 
-def build(split: str, tasks: tuple[str, ...] = ("T1", "T2", "T3a", "T3b", "T4"), pack: str = "", history: str = "",
+def build(split: str, tasks: tuple[str, ...] = ("T1", "T2", "T2f", "T3a", "T3b", "T4"), pack: str = "",
+          history: str = "",
           pairs: Path | None = None, prefix_dir: Path | None = None, log: Counter | None = None) -> list[Item]:
     log = log if log is not None else Counter()
     history = history or ("prefix" if split == "dev" else "opening")
@@ -436,7 +457,7 @@ def counts(items: list[Item]) -> dict[str, Any]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--split", choices=("dev", "test"), required=True)
-    ap.add_argument("--tasks", default="T1,T2,T3a,T3b,T4", help="T3 = T3a and T3b")
+    ap.add_argument("--tasks", default="T1,T2,T2f,T3a,T3b,T4", help="T3 = T3a and T3b")
     ap.add_argument("--pack", default=os.environ.get("TALKSHOW_FACT_PACK", ""),
                     help="fact pack json for T3 (default TALKSHOW_FACT_PACK; none = T3 skipped)")
     ap.add_argument("--history", choices=("prefix", "opening"), default="",

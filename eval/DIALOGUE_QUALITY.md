@@ -84,6 +84,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | T1 Listening | A number, the stance, a named entity or a cause in the audience turn; a paraphrase as control | The reply changes with each edit; the paraphrase moves it no more than a rerun does | 150 / 243 |
 | T2 Addressing | The audience names panelist A or B | Speak when named, yield when not | 120 / 168 |
+| T2f Floor | Same lines plus a control naming nobody; both panelists bid and the floor picks | The named panelist gets the floor | 90 / 126 |
 | T3a Grounding, unprompted | The number in one fact of the pack; the audience asks about that fact | The reply uses the new value and adds no unsupported specifics | 92 / 116 |
 | T3b Grounding, instructed | Same as T3a, plus "Use these facts when they are relevant to your reply." | Same | 92 / 116 |
 | T4 Persona | The two persona cards are swapped | The style follows the card | 120 / 168 |
@@ -129,7 +130,7 @@ What these show:
 - **Our fixes help listening on Think & Action.** The fast arm raises T1 from 20 to 36 (J 0.60 to 0.68); the paraphrase control stays at 0.52 for every arm.
 - **Think & Action is weaker on persona** than a plain prompt (66 to 69 vs 81), with or without our flags. The line is drafted inside a long think-and-JSON prompt, which may dilute the persona.
 - **The fact pack arm does not stand out here.** In T3 every arm is given the same facts by design, and it scores a little lower than fast on T1.
-- **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not yet exercise it; a two-panelist floor item is planned.
+- **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not exercise it. T2f now does: both panelists bid and the show's own floor selection picks (results pending).
 
 **Think prompt context variants** (Think & Action, fast arm plus one variant each; dev split, both judges):
 
@@ -159,7 +160,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 ## Next steps
 
-- [ ] Add a two-panelist floor item to T2 so addressee priority is measured.
+- [x] Add a two-panelist floor item (T2f) so addressee priority is measured; run fast_v2 with and without it.
 - [ ] Look into the persona drop under Think & Action.
 - [ ] Run the full leaderboard on the test split: 11 open models plus the show.
 - [ ] Open the fact pack and benchmark PRs, with results attached.
