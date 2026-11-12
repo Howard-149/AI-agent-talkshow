@@ -24,7 +24,8 @@ Context variants of the panelist's think prompt (each default OFF; agent/interac
   (LEAN_SAME_LINE), the occupied-floor and backchannel guidance is left out (backchannels fixed to []), and the
   canned procedural host lines (recorded as such in the show history) are dropped from the transcript messages.
 - TALKSHOW_THINK_PERSONA_NEAR: a persona reminder for writing the content (persona_reminder), right before the
-  "About content" section (or before the JSON schema when there is none).
+  "About content" section (or before the JSON schema when there is none). With TALKSHOW_PERSONA_LIBRARY the library
+  persona's block (style, moves, avoid) takes that place instead (near_block).
 - TALKSHOW_THINK_FOCUS: on a free floor, a "Respond to now" block (focus_block): who spoke last, whom they
   addressed by name, the uptake planner's points if it ran, and the rule FOCUS_RULE.
 """
@@ -81,6 +82,19 @@ def persona_reminder(role: str) -> str:
     from agent.config import load_persona_name
 
     return f"Write the content as {load_persona_name(role)}: {style_rules(role)}"
+
+
+def near_block(role: str) -> str:
+    """The persona text right before the line is written: the library persona's block (TALKSHOW_PERSONA_LIBRARY,
+    agent/persona_library.render_near; supersedes the reminder), else persona_reminder (TALKSHOW_THINK_PERSONA_NEAR),
+    else ""."""
+    from agent.persona_library import LIBRARY_SEATS, library_enabled, persona_for_seat, render_near
+
+    if library_enabled() and role in LIBRARY_SEATS:
+        from agent.config import content_seat, load_persona_name
+
+        return render_near(persona_for_seat(content_seat(role)), load_persona_name(role))
+    return persona_reminder(role) if persona_near_enabled() else ""
 
 
 def lean_history(history: Any) -> Any:

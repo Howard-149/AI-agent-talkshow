@@ -45,6 +45,7 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Lean think prompt | On a free floor: no repeat of the line the transcript ends with, no interrupt or backchannel guidance, no canned host lines in the transcript | Panelist think prompt, `agent/panel/think_prompt.py` | `TALKSHOW_THINK_LEAN=1` |
 | Persona near the line | "Write the content as Ryan: ..." from the persona card, right before the line is written | Panelist think prompt | `TALKSHOW_THINK_PERSONA_NEAR=1` |
 | Respond to now | Who spoke last, whom they named, the planner's points, and a rule to stay silent when someone else was named | Panelist think prompt | `TALKSHOW_THINK_FOCUS=1` |
+| Persona library | Structured personas (role, background, leaning, style, moves, avoid) any panel seat can take; a short card in the system message and a style block next to the line | `config/persona_library/`, `agent/persona_library.py`; system message and panelist think prompt | `TALKSHOW_PERSONA_LIBRARY=1`, `TALKSHOW_PERSONA_<SEAT>=<id>` |
 | Listening test | Edit one element of the audience turn, replay, and check whether the reply changes | `eval/responsiveness.py`, `eval/judge_context.py`, replay hooks | `TALKSHOW_GHOST_REPLAY=1` |
 | Quality ruler | Yes/no checklist scored by two judges plus counted metrics; every judge measure is validated before use | `eval/quality_ruler/` | none |
 | Unsupported specifics | Counts numbers and names that have no source in the fact pack or the show so far | `eval/quality_ruler/specifics.py` | none |
@@ -172,6 +173,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-12 | T2f floor items (both panelists bid, the show's floor picks); persona library behind a flag with five personas (Ryan, Amy, Lessac, Dana, Theo) |
 | 2026-11-12 | Think prompt context variants measured on dev; fast_v2 (FAST2) = fast + lean prompt + persona near the line becomes the recommended Think & Action set |
 | 2026-11-12 | Three Think & Action arms on the leaderboard (dev); fact pack and benchmark merged into `main`; scoring counts the show's fact pack as a source |
 | 2026-11-11 | Merged `main` into the benchmark branch with no conflicts; the judge now exits cleanly when there is nothing to score; models resolve from the local cache or fail fast |

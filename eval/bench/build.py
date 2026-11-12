@@ -90,7 +90,13 @@ SHOW_STATE_KEYS = ("role_pad", "role_emotion", "role_pad_neighbors", "dialogue_e
 def names() -> dict[str, str]:
     from agent.config import load_persona_name
 
-    return {r: load_persona_name(r) for r in ("host", *PANEL)}
+    with _env(**NO_LIBRARY):
+        return {r: load_persona_name(r) for r in ("host", *PANEL)}
+
+
+# Items carry the seats' own prose cards and names: a persona library selected for a system run
+# (TALKSHOW_PERSONA_LIBRARY) is a property of that system, not of the items.
+NO_LIBRARY = {"TALKSHOW_PERSONA_LIBRARY": None, "TALKSHOW_PERSONA_LIBRARY_NAMES": None}
 
 
 def persona_cards(swap: bool) -> dict[str, str]:
@@ -99,7 +105,8 @@ def persona_cards(swap: bool) -> dict[str, str]:
 
     set_persona_swap(swap)
     try:
-        return {r: load_persona_personality(r) for r in PANEL}
+        with _env(**NO_LIBRARY):
+            return {r: load_persona_personality(r) for r in PANEL}
     finally:
         set_persona_swap(False)
 

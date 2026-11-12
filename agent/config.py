@@ -121,7 +121,14 @@ def load_persona_yaml(persona_id: str) -> dict:
 
 
 def load_persona_name(persona_id: str) -> str:
-    """Display / in-character name (aligned with Piper voice per role)."""
+    """Display / in-character name (aligned with Piper voice per role).
+
+    With TALKSHOW_PERSONA_LIBRARY and TALKSHOW_PERSONA_LIBRARY_NAMES on, a panel seat takes its library persona's name
+    (agent/persona_library.py); by default the seat keeps its own name."""
+    from agent.persona_library import LIBRARY_SEATS, library_enabled, library_names_enabled, persona_for_seat
+
+    if persona_id in LIBRARY_SEATS and library_enabled() and library_names_enabled():
+        return persona_for_seat(persona_id).name
     return str(load_persona_yaml(persona_id).get("name", persona_id.title()))
 
 
@@ -190,9 +197,23 @@ def _raw_personality(persona_id: str) -> str:
     return str(raw).strip() if raw else ""
 
 
+def content_seat(persona_id: str) -> str:
+    """The seat whose persona ``persona_id`` plays: itself, or the other panel seat under the persona swap."""
+    return (_SWAP_PAIR.get(persona_id) if _PERSONA_SWAP else None) or persona_id
+
+
 def load_persona_personality(persona_id: str) -> str:
-    """In-character personality for panel turns (speaking + Think & Action decisions)."""
+    """In-character personality for panel turns (speaking + Think & Action decisions).
+
+    With TALKSHOW_PERSONA_LIBRARY on, a panel seat gets the short card of its library persona (the other seat's under
+    the persona swap), with the seat's spoken name (agent/persona_library.py)."""
+    from agent.persona_library import LIBRARY_SEATS, library_enabled, persona_for_seat, render_card
+
     other = _SWAP_PAIR.get(persona_id) if _PERSONA_SWAP else None
+    if persona_id in LIBRARY_SEATS and library_enabled():
+        names = {seat: load_persona_name(_SWAP_PAIR.get(seat, seat) if other else seat)
+                 for seat in ("host", "commentator", "guest")}
+        return render_card(persona_for_seat(content_seat(persona_id)), load_persona_name(persona_id), names)
     if other is None:
         return _raw_personality(persona_id)
     text = _raw_personality(other)

@@ -1753,7 +1753,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             focus = await tp.focus_block(data, role, history, speaker, visible_text) + "\n\n"
         # Dialogue quality fixes for panelists (flags default off: nothing is added).
         extra, extra_info = await think_prompt_additions(data, role, history)
-        near = tp.persona_reminder(role) if panelist and tp.persona_near_enabled() else ""
+        near = tp.near_block(role) if panelist else ""
         if near and extra:  # right before the "About content" section
             extra = f"\n\n{near}{extra}"
         prompt = (
