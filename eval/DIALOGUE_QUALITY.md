@@ -150,15 +150,15 @@ What these show:
 - **Prompting does not make the model yield.** With the "respond to now" block and its rule to stay silent when someone else was named, Gemma still chose to speak on 100% of those items. Yielding has to come from the floor (addressee priority), not from the prompt.
 - So the recommended set for Think & Action is fast_v2 = fast + lean + persona near (FAST2), without the focus block.
 
-**v2 arms** (Think & Action on Gemma-4 E4B, dev split, both judges; a dash means the number was not part of this run's summary):
+**v2 arms** (Think & Action on Gemma-4 E4B, dev split, both judges; the plain model ran T2f only):
 
 | System | T1 | T2 | T2f | T4 |
 | --- | --- | --- | --- | --- |
-| Show, fast | 37 | — | — | 68 |
-| Show, fast_v2 | 49 | — | 100 | 75 |
-| Show, fast_v2 without addressee priority | — | — | 9 | — |
-| Show, fast_v2 + persona library | 56 (J 0.78) | — | 84 | 79 |
-| Plain Gemma-4 E4B, floor question | — | — | about 0 (picks Ryan 90% of the time) | — |
+| Show, fast | 37 | 2 | 100 | 68 |
+| Show, fast_v2 | 49 | 2 | 100 | 75 |
+| Show, fast_v2 without addressee priority | 49 | 2 | 9 | 73 |
+| Show, fast_v2 + persona library | 56 (J 0.78) | 0 | 84 | 79 |
+| Plain Gemma-4 E4B, floor question | | | 0 (picks Ryan 90% in every version) | |
 
 - **Addressee priority does the floor work.** With it, the named panelist gets the floor on every T2f item (100); without it, 9. The Think & Action floor controller ignores who was named.
 - **A plain model asked "who should speak next" mostly says Ryan** (90%), whoever was named.
