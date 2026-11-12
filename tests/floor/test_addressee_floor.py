@@ -39,6 +39,15 @@ class FlagTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TALKSHOW_ADDRESSEE_FLOOR": "1"}):
             self.assertTrue(addressee_floor_enabled())
 
+    def test_modes(self) -> None:
+        from agent.floor.addressee import addressee_floor_mode
+
+        for value, mode in (("0", "off"), ("", "off"), ("1", "on"), ("on", "on"), ("force", "force"),
+                            ("FORCE", "force")):
+            with mock.patch.dict(os.environ, {"TALKSHOW_ADDRESSEE_FLOOR": value}):
+                self.assertEqual(addressee_floor_mode(), mode, value)
+                self.assertEqual(addressee_floor_enabled(), mode != "off", value)
+
 
 
 if __name__ == "__main__":

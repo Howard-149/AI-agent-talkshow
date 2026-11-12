@@ -538,6 +538,13 @@ class FloorTests(_Env):
         res = self.respond("fast", "addr_guest", think={"guest": self.SILENT}, pick="commentator")
         self.assertEqual((res["selected_role"], res["controller_called"], res["candidates"]),
                          ("commentator", True, ["commentator"]))
+        # =force: the named panelist who chose silent gets the floor; the line is the worker draft
+        res = self.respond("fast_v2_lib_force", "addr_guest", think={"guest": self.SILENT}, pick="commentator")
+        self.assertEqual((res["selected_role"], res["controller_called"], res["floor_reason_code"],
+                          res["text_source"]), ("guest", False, "directed_response_forced", "worker_fallback"))
+        self.assertEqual(res["calls"][-1]["kind"], "fallback")
+        res = self.respond("fast", "addr_guest", think={"guest": self.SILENT}, pick="commentator")
+        self.assertEqual(res["text_source"], "think")  # "1": unchanged
         res = self.respond("production", "addr_none", pick="guest")
         self.assertEqual((res["selected_role"], res["controller_called"]), ("guest", True))
 

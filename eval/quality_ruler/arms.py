@@ -132,6 +132,11 @@ ARMS: dict[str, dict] = {
                                    "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
                                    "TALKSHOW_PERSONA_GUEST": "amy_warm"},
                     "best_of": 1},
+    # fast_v2_lib, and a named panelist who chose silent still gets the floor (ADDRESSEE_FLOOR=force).
+    "fast_v2_lib_force": {"live_flags": {**FAST_V2_FLAGS, "TALKSHOW_PERSONA_LIBRARY": "1",
+                                         "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
+                                         "TALKSHOW_PERSONA_GUEST": "amy_warm", "TALKSHOW_ADDRESSEE_FLOOR": "force"},
+                          "best_of": 1},
 }
 
 

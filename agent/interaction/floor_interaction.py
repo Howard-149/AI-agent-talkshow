@@ -633,7 +633,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         """TALKSHOW_ADDRESSEE_FLOOR (default off): the panelist the human just named takes the
         free floor without a controller call, if their own decision was "speak". A named
         panelist who chose silent is not forced to speak: the controller decides as usual."""
-        from agent.floor.addressee import addressed_after_human, addressee_floor_enabled
+        from agent.floor.addressee import addressed_after_human, addressee_floor_enabled, addressee_floor_mode
 
         if not addressee_floor_enabled() or history is None:
             return None
@@ -644,13 +644,34 @@ class ThinkActionInteraction(TextOnlyInteraction):
             return None
         action = self.actions.get(addressed)
         picked = any(item["role"] == addressed for item in candidate_payload)
+        # =force: a named panelist who thought and chose silent takes the floor anyway; with no proposed
+        # reply, the show drafts their line with the worker (actuators.generate_panelist_line).
+        forced = (
+            not picked
+            and action is not None
+            and action.decision == "silent"
+            and addressee_floor_mode() == "force"
+        )
         data.runtime.gemma_client.log_text_only_event(
             "floor",
             "addressee",
             addressed_role=addressed,
             decision=action.decision if action is not None else None,
             picked=picked,
+            **({"forced": True} if forced else {}),
         )
+        if forced:
+            return self._direct_free_pick(
+                data,
+                FloorOutcome(
+                    "speak",
+                    selected_role=addressed,
+                    reason="The human guest addressed this panelist by name; they chose silent and speak anyway.",
+                    reason_code="directed_response_forced",
+                ),
+                candidate_payload,
+                interval,
+            )
         if not picked:
             logger.info("addressee floor: %s was named but did not choose speak", addressed)
             return None

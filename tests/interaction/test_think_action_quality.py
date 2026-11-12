@@ -281,6 +281,35 @@ class AddresseeFloorTests(_Base):
             "floor", "addressee", addressed_role="guest", decision="silent", picked=False
         )
 
+    async def test_force_gives_the_named_silent_panelist_the_floor(self) -> None:
+        os.environ["TALKSHOW_ADDRESSEE_FLOOR"] = "force"
+        interaction, data, controller = self.make(
+            [("human", "Amy, do you buy that?")], {"commentator": SPEAK, "guest": SILENT}
+        )
+        outcome = await self.arbitrate(interaction, data)
+        self.assertEqual((outcome.decision, outcome.selected_role, outcome.reason_code),
+                         ("speak", "guest", "directed_response_forced"))
+        controller.assert_not_awaited()
+        data.runtime.gemma_client.log_text_only_event.assert_any_call(
+            "floor", "addressee", addressed_role="guest", decision="silent", picked=False, forced=True
+        )
+        # no proposed reply of her own: the actuator drafts her line with the worker
+        self.assertEqual(interaction.consume_proposed_reply("guest"), "")
+
+    async def test_force_keeps_the_rest(self) -> None:
+        os.environ["TALKSHOW_ADDRESSEE_FLOOR"] = "force"
+        interaction, data, controller = self.make(
+            [("human", "Amy, do you buy that?")], {"commentator": SPEAK, "guest": SPEAK}
+        )
+        outcome = await self.arbitrate(interaction, data)
+        self.assertEqual((outcome.selected_role, outcome.reason_code), ("guest", "directed_response"))
+        interaction, data, controller = self.make(
+            [("human", "Do you buy that?")], {"commentator": SPEAK, "guest": SILENT}
+        )
+        outcome = await self.arbitrate(interaction, data)  # nobody named: the controller decides
+        self.assertEqual(outcome.selected_role, "commentator")
+        controller.assert_awaited_once()
+
     async def test_host_line_in_between_keeps_the_addressee(self) -> None:
         os.environ["TALKSHOW_ADDRESSEE_FLOOR"] = "1"
         interaction, data, _ = self.make(

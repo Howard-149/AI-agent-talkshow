@@ -391,15 +391,17 @@ class _Show(System):
 class TalkshowWorker(_Show):
     name = "worker"
 
-    def worker_request(self, p: Pending, kind: str = "reply") -> tuple[Request, dict]:
+    def worker_request(self, p: Pending, kind: str = "reply", role: str | None = None) -> tuple[Request, dict]:
+        """The worker prompt for ``role`` (default the role under test)."""
         from eval.model_only import TEMPERATURE, build_request
 
         obs = p.obs
+        role = role or obs["role"]
         env, tid = self.pack_env(obs)
         swap = show_persona_swap(obs)
         human = obs.get("audience_turn")
         with _env(**env):
-            req = build_request(self.prefix(obs), human or "", obs["role"], swap, include_human=human is not None,
+            req = build_request(self.prefix(obs), human or "", role, swap, include_human=human is not None,
                                 live_fixes=self.live or bool(env["TALKSHOW_FACT_PACK"]),
                                 plan=self.plan(p), topic_id=tid)
         req["messages"], p.state["fact_instruction"] = show_fact_instruction(req["messages"], obs)
@@ -475,10 +477,27 @@ class TalkshowThinkAction(TalkshowWorker):
             p.state["actions"] = self.floor_actions(p)
             got = arbitrate(self.prefix(obs), obs.get("audience_turn") or "", p.state["actions"])
             p.state["floor"] = got
-            if got["controller"] is None:  # a rule picked (addressee priority): no controller call
-                return []
-            c = got["controller"]
-            return [Request("controller", c["messages"], c["temperature"], c["max_tokens"], p.seed, obs["item_id"])]
+            if got["controller"] is not None:
+                c = got["controller"]
+                return [Request("controller", c["messages"], c["temperature"], c["max_tokens"], p.seed,
+                                obs["item_id"])]
+            return self.floor_settle(p, got)  # a rule picked (addressee priority): no controller call
+        if stage == first + 2 and "controller" in p.state.get("outputs", {}) and "outcome" not in p.state:
+            got = arbitrate(self.prefix(obs), obs.get("audience_turn") or "", p.state["actions"],
+                            p.state["outputs"]["controller"])
+            return self.floor_settle(p, got)
+        return []
+
+    def floor_settle(self, p: Pending, got: dict) -> list[Request]:
+        """The final selection; a selected panelist with no proposed line (e.g. forced by ADDRESSEE_FLOOR=force)
+        gets the worker draft, as in the live show (actuators.generate_panelist_line)."""
+        p.state["outcome"] = got
+        out = got["outcome"]
+        action = p.state["actions"].get(out.selected_role)
+        if out.decision == "speak" and action is not None and not (action.decision == "speak" and action.content):
+            r, req = self.worker_request(p, "fallback", role=out.selected_role)
+            p.state["req"] = req
+            return [r]
         return []
 
     def floor_actions(self, p: Pending) -> dict:
@@ -491,26 +510,29 @@ class TalkshowThinkAction(TalkshowWorker):
                                          allow_backchannels=True).action for role in PANEL}
 
     def floor_finish(self, p: Pending) -> dict | None:
-        from eval.bench.floor import PANEL, arbitrate
+        from eval.bench.floor import PANEL
+        from eval.model_only import postprocess
 
         outs = p.state.get("outputs", {})
-        if "floor" not in p.state:
+        if "outcome" not in p.state:
             return None
-        got = p.state["floor"]
-        controller_raw = None
-        if got["controller"] is not None:
-            if "controller" not in outs:
-                return None
-            controller_raw = outs["controller"]
-            got = arbitrate(self.prefix(p.obs), p.obs.get("audience_turn") or "", p.state["actions"], controller_raw)
+        got = p.state["outcome"]
         out = got["outcome"]
         actions = p.state["actions"]
         selected = out.selected_role
-        text = (actions[selected].content or "") if selected in actions and out.decision == "speak" else ""
+        text, source = "", "none"
+        if "req" in p.state:  # the selected panelist had no line of their own: worker draft
+            if "fallback" not in outs:
+                return None
+            req = p.state["req"]
+            text = postprocess(outs["fallback"], selected, req["panel_roles"], req["data"].show_history)
+            source = "worker_fallback"
+        elif selected in actions and out.decision == "speak":
+            text, source = actions[selected].content or "", "think"
         return {"text": text, "speaker": selected, "floor_action": out.decision, "selected_role": selected,
-                "floor_mode": "show", "floor_reason_code": out.reason_code,
+                "floor_mode": "show", "floor_reason_code": out.reason_code, "text_source": source,
                 "decisions": {r: actions[r].decision for r in PANEL}, "candidates": got["candidates"],
-                "controller_called": got["controller"] is not None, "controller_raw": controller_raw,
+                "controller_called": got["controller"] is not None, "controller_raw": outs.get("controller"),
                 "addressee_rule": got["addressee"], "raw": json.dumps({r: outs.get(f"think:{r}") for r in PANEL})}
 
     def requests(self, p: Pending, stage: int) -> list[Request]:

@@ -8,6 +8,10 @@ controller (``ThinkActionInteraction.arbitrate_free``) picks a speaker. With the
 latest human turn names one panelist (no panelist has spoken since; host lines skipped) and that
 panelist chose "speak", they get the floor without asking the controller. If they chose silent, the
 choice is unchanged (nobody is forced to speak) and the miss is logged.
+
+TALKSHOW_ADDRESSEE_FLOOR=force: the same, but a named panelist who chose silent gets the floor anyway
+(reason_code directed_response_forced); with no proposed reply of their own, their line comes from the
+worker draft, the path the show already takes for any picked panelist without one.
 """
 
 from __future__ import annotations
@@ -17,8 +21,17 @@ import re
 from typing import Any
 
 
+def addressee_floor_mode() -> str:
+    """"off", "on" (TALKSHOW_ADDRESSEE_FLOOR=1) or "force" (=force: the named panelist gets the floor even if they
+    chose silent; their line then comes from the worker draft, as for any picked panelist with no proposed reply)."""
+    value = os.environ.get("TALKSHOW_ADDRESSEE_FLOOR", "0").strip().lower()
+    if value == "force":
+        return "force"
+    return "on" if value in ("1", "true", "yes", "on") else "off"
+
+
 def addressee_floor_enabled() -> bool:
-    return os.environ.get("TALKSHOW_ADDRESSEE_FLOOR", "0").strip().lower() in ("1", "true", "yes", "on")
+    return addressee_floor_mode() != "off"
 
 
 def addressed_role(text: str, names: dict[str, str]) -> str | None:
