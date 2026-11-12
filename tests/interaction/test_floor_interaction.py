@@ -1106,3 +1106,133 @@ class InterruptHandoffTests(FloorInteractionTestCase):
     async def test_normal_line_still_waits_for_appraisals(self) -> None:
         _, returned_early = await self.run_speak(None)
         self.assertFalse(returned_early)
+
+
+class ControllerSelectionTests(FloorInteractionTestCase):
+    """Gemma names the panelist ("Ryan") where the prompt asks for the role ID."""
+
+    INTERRUPT = Action(
+        "interrupt", CommunicativeIntent("challenge", "push back", "Amy"), "But the policy allowed it."
+    )
+
+    async def test_an_interrupt_approved_by_persona_name_is_granted(self) -> None:
+        interaction, _consumer, data = self.make()
+        interaction.actions = {"commentator": self.INTERRUPT}
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='```json\n{"decision": "interrupt", "selected_role": "Ryan", '
+            '"reason_code": "timely_intervention", "reason": "timely"}\n```'
+        )
+        with patch("agent.config.load_persona_name", lambda role: {"commentator": "Ryan"}.get(role, role)):
+            selected = await interaction.arbitrate_occupied(
+                data, speaker="guest", visible_text="When I think about it,",
+                candidates=["commentator"], interval=1, history=None,
+            )
+        self.assertEqual(selected, "commentator")
+
+    async def test_a_name_that_is_no_candidate_is_still_rejected(self) -> None:
+        interaction, _consumer, data = self.make()
+        interaction.actions = {"commentator": self.INTERRUPT}
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "interrupt", "selected_role": "Amy", "reason": "x"}'
+        )
+        with patch("agent.config.load_persona_name", lambda role: {"commentator": "Ryan"}.get(role, role)):
+            selected = await interaction.arbitrate_occupied(
+                data, speaker="guest", visible_text="When I think about it,",
+                candidates=["commentator"], interval=1, history=None,
+            )
+        self.assertIsNone(selected)
+
+
+class HostInviteTargetTests(FloorInteractionTestCase):
+    """The panelist role "guest" is Amy; the human guest is "human"."""
+
+    def tearDown(self) -> None:
+        from agent.show.show_history import set_human_name
+
+        set_human_name(None)
+
+    def test_a_target_resolves_by_role_id_or_name(self) -> None:
+        from agent.interaction.floor_interaction import _roster, _target_role
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        roster = _roster(FLOOR_ROLES, "host")
+        self.assertIn("AI panelist", roster["guest"])
+        self.assertIn("Howard", roster["human"])
+        self.assertEqual(_target_role("guest", roster), "guest")
+        self.assertEqual(_target_role("Amy", roster), "guest")
+        self.assertEqual(_target_role("Howard", roster), "human")
+        self.assertEqual(_target_role("human", roster), "human")
+        self.assertIsNone(_target_role("Bob", roster))
+
+    async def test_the_controller_can_invite_the_human(self) -> None:
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        interaction, _consumer, data = self.make()
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "host_fallback", "selected_role": "host", '
+            '"reason_code": "no_suitable_candidate", "reason": "nobody applied", '
+            '"host_fallback": {"strategy": "invite", "target": "human", '
+            '"instruction": "Ask Howard for his story."}}'
+        )
+        outcome = await interaction.arbitrate_free(
+            data, candidates=[], history=data.show_history, interval=0
+        )
+        prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("guest = Amy, an AI panelist", prompt)
+        self.assertIn("human = the human guest, Howard", prompt)
+        self.assertEqual(
+            (outcome.decision, outcome.host_strategy, outcome.host_target),
+            ("host_fallback", "invite", "human"),
+        )
+
+        data.runtime.gemma_client.complete_text = AsyncMock(return_value="Howard, tell us.")
+        with patch("agent.config.load_persona_instructions", lambda *a, **k: "host persona"):
+            await interaction.host_fallback_line(data, "host")
+        line_prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("Invite the human guest, Howard, to speak.", line_prompt)
+        self.assertIsNone(interaction.pending_invitation_target)  # Amy is not owed the floor
+
+
+class OpeningAwaitHumanTests(FloorInteractionTestCase):
+    """After the welcome the host invites the human once, then the show waits."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        self.addCleanup(set_human_name, None)
+
+    def opening(self, data, *lines):
+        for role, text in lines:
+            data.show_history.append(role, text)
+
+    def test_waits_once_after_inviting_the_human(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(data, ("host", "Welcome, I'm Lessac."), ("host", "Howard, what are your first thoughts?"))
+        self.assertTrue(interaction.should_await_human(data))
+        self.assertFalse(interaction.should_await_human(data))  # once: the idle loop may re-open
+
+    def test_no_wait_once_the_human_has_spoken(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(
+            data,
+            ("host", "Welcome, I'm Lessac."),
+            ("human", "They fired my mentor."),
+            ("host", "Howard, how did that feel?"),
+        )
+        self.assertFalse(interaction.should_await_human(data))
+
+    async def test_no_forced_close_before_anyone_but_the_host_spoke(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.opening(data, ("host", "Welcome, I'm Lessac."))
+        interaction.host_fallback_streak = 5
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "host_fallback", "selected_role": "host", '
+            '"reason_code": "no_suitable_candidate", "reason": "quiet", '
+            '"host_fallback": {"strategy": "reframe", "target": null, "instruction": "Set up the topic."}}'
+        )
+        outcome = await interaction.arbitrate_free(data, candidates=[], history=data.show_history, interval=0)
+        self.assertEqual(outcome.host_strategy, "reframe")

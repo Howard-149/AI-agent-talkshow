@@ -13,6 +13,60 @@ logger = logging.getLogger(__name__)
 
 HUMAN_LABEL = "Human guest"
 
+# The human's display name (their LiveKit participant name), set when the session
+# opens. One job per process, so this is the show's human.
+_human_name: str | None = None
+
+
+def set_human_name(name: str | None) -> None:
+    global _human_name
+    _human_name = (name or "").strip() or None
+
+
+def name_room_human(room: object) -> str | None:
+    """Take the show's human name from the room: the first remote that is neither the
+    agent nor a ghost recording page, if they joined with a name of their own."""
+    from agent.locale.viewer_locales import remote_humans
+    from agent.session.ghost_flags import is_ghost_viewer
+
+    for participant in remote_humans(room):
+        if is_ghost_viewer(participant):
+            continue
+        name = str(getattr(participant, "name", "") or "").strip()
+        identity = str(getattr(participant, "identity", "") or "")
+        if name and name != identity and name.casefold() not in {"guest", "human guest"}:
+            set_human_name(name)
+            return name
+        break
+    set_human_name(None)
+    return None
+
+
+def human_name() -> str:
+    """What to call the human on screen: their name, else "Human guest"."""
+    return _human_name or HUMAN_LABEL
+
+
+def human_name_note() -> str:
+    """Prompt line naming the human, so a line can address them before they spoke."""
+    if not _human_name:
+        return ""
+    return f"The human guest is {_human_name}; address them as {_human_name}, never as 'Guest'.\n"
+
+
+def asks_human(text: str) -> bool:
+    """A line that asks the named human guest a question ("Howard, what drew you…?")."""
+    import re
+
+    if not _human_name or not text.rstrip().endswith("?"):
+        return False
+    return re.search(rf"\b{re.escape(_human_name)}\b", text) is not None
+
+
+def human_label() -> str:
+    """The human in transcripts and prompts: "Howard (human guest)", else "Human guest"."""
+    return f"{_human_name} (human guest)" if _human_name else HUMAN_LABEL
+
 
 @dataclass
 class HistoryLine:
@@ -91,7 +145,7 @@ class ShowHistory:
         msgs: list[dict[str, Any]] = []
         for line in self.lines:
             if line.role_id == "human":
-                msgs.append({"role": "user", "content": f"{HUMAN_LABEL}: {line.text}"})
+                msgs.append({"role": "user", "content": f"{human_label()}: {line.text}"})
             else:
                 msgs.append({"role": "assistant", "content": f"{_line_label(line)}: {line.text}"})
         return msgs
@@ -100,7 +154,7 @@ class ShowHistory:
 def _line_label(line: HistoryLine) -> str:
     """Transcript label: "Human guest", "Lessac (host)", "Ryan (Commentator)"."""
     if line.role_id == "human":
-        return HUMAN_LABEL
+        return human_label()
     if line.role_id == "host":
         return f"{line.speaker} (host)"
     from agent.panel.panel_context import role_label
@@ -110,7 +164,7 @@ def _line_label(line: HistoryLine) -> str:
 
 def _speaker_label(role_id: str) -> str:
     if role_id == "human":
-        return HUMAN_LABEL
+        return human_label()
     return load_persona_name(role_id)
 
 

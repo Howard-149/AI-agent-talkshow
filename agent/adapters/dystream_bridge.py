@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -136,6 +137,14 @@ class SyncStreamResult:
     cuda_mb_peak: float | None = None
     error: BaseException | None = None
     _reader_task: asyncio.Task | None = field(default=None, repr=False)
+    _stop: threading.Event | None = field(default=None, repr=False)
+
+    def cancel(self) -> None:
+        """Nobody will play the rest: close the sidecar stream. The sidecar renders one
+        stream at a time, so an abandoned one would hold the GPU for the next speaker
+        (a cut line's pre-rendered next sentence delayed an interrupter by ~9 s)."""
+        if self._stop is not None:
+            self._stop.set()
 
 
 def _resize_rgba_frame(
@@ -255,6 +264,7 @@ class AvatarBridge:
         preroll_ready = asyncio.Event()
         meta_box: dict = {}
         err_box: list[BaseException] = []
+        stop = threading.Event()
 
         def _reader() -> None:
             buffered = 0
@@ -265,14 +275,22 @@ class AvatarBridge:
             target_preroll = max(min_preroll, probe_n)
             t_frame1: float | None = None
             gen_fps = 0.0
+            stream = None
             try:
-                for kind, payload in run_dystream_synthesize_stream(
+                stream = run_dystream_synthesize_stream(
                     portrait=portrait_path,
                     audio_wav=wav_path,
                     denoising_steps=avatar_denoising_steps(),
                     cache_key=role,
                     skip_unused_wav2vec=avatar_skip_unused_wav2vec(),
-                ):
+                )
+                for kind, payload in stream:
+                    if stop.is_set():
+                        logger.info(
+                            "avatar stream cancelled role=%s step=%s after %d frames",
+                            role, step, buffered,
+                        )
+                        break
                     if kind == "meta":
                         meta_box.update(payload)
                         if payload.get("profile"):
@@ -360,6 +378,12 @@ class AvatarBridge:
                 err_box.append(exc)
                 logger.exception("avatar stream reader failed")
             finally:
+                close = getattr(stream, "close", None)
+                if close is not None:
+                    try:
+                        close()  # closes the HTTP response: the sidecar stops at its next frame
+                    except Exception:
+                        logger.debug("avatar stream close failed", exc_info=True)
                 wav_path.unlink(missing_ok=True)
                 profile = meta_box.get("profile")
                 if isinstance(profile, dict) and profile and self._turn_log is not None:
@@ -423,7 +447,11 @@ class AvatarBridge:
 
         reader_task = asyncio.create_task(asyncio.to_thread(_reader))
 
-        await preroll_ready.wait()
+        try:
+            await preroll_ready.wait()
+        except asyncio.CancelledError:
+            stop.set()  # the chunk is no longer wanted: free the sidecar
+            raise
         if err_box and frame_queue.empty():
             await reader_task
             raise err_box[0]
@@ -485,6 +513,7 @@ class AvatarBridge:
             gen_fps=gen_fps,
             error=err_box[0] if err_box else None,
             _reader_task=reader_task,
+            _stop=stop,
         )
 
     async def _bake_mp4(

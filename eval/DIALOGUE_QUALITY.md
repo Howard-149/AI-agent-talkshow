@@ -6,8 +6,8 @@ This document describes how we measure and improve what the AI panelists say. It
 | --- | --- | --- |
 | Dialogue fixes | Panelists ignore what the audience said, nobody answers when a panelist is named, lines are vague | In `main` (#1), behind flags that are off by default, ported to Think & Action |
 | Measurement tools | No way to tell whether a change helped | In `main` (#2) |
-| Fact pack | Asking for concrete lines makes panelists invent facts | This branch |
-| Benchmark | One fixed yardstick across systems and models | This branch |
+| Fact pack | Asking for concrete lines makes panelists invent facts | In `main`, behind a flag that is off by default |
+| Benchmark | One fixed yardstick across systems and models | In `main`; pilot results below |
 
 The document is kept up to date; see the changelog at the end.
 
@@ -112,13 +112,21 @@ These are pilot numbers on the dev split, averaged over both judges, on a 0 to 1
 | System | Overall | T1 | T2 | T3a | T3b | T4 |
 | --- | --- | --- | --- | --- | --- | --- |
 | Plain Gemma-4 E4B | 39.4 | 42 | 2 | 35 | 37 | 81 |
-| Plain Qwen2.5-7B | 30.0 | 31 | 6 | 35 | 35 | 43 |
-| Our show (Think & Action, 3 arms) | pending | | | | | |
+| Show, Think & Action, fast | 38.2 | 36 | 2 | 43 | 44 | 66 |
+| Show, Think & Action, fast + fact pack | 37.2 | 30 | 2 | 44 | 44 | 67 |
+| Show, Think & Action, production (current `main`) | 34.8 | 20 | 2 | 43 | 40 | 69 |
+| Plain Qwen2.5-7B | 30.1 | 31 | 6 | 36 | 35 | 43 |
+
+All show arms use Gemma-4 E4B as the panel model. Unsupported specifics count the show's own fact pack as a source.
 
 What these show:
 - **The benchmark itself checks out.** The paraphrase control sits at J = 0.53, near chance. Persona separates the two models clearly (J 0.94 vs 0.63, intervals far apart). Listening also differs (J 0.71 vs 0.66), though those intervals touch.
 - **Addressing.** Gemma never yields. Qwen yields 88% of the time, even when it is the one named.
-- **Grounding.** With or without the instruction, only about 2% of replies use the edited value from the fact pack.
+- **Grounding.** Plain models rarely use the facts they are given: about 2% of replies use the edited value, with or without the instruction. Think & Action panelists do so in 15 to 17% of replies, so they score higher on T3.
+- **Our fixes help listening on Think & Action.** The fast arm raises T1 from 20 to 36 (J 0.60 to 0.68); the paraphrase control stays at 0.52 for every arm.
+- **Think & Action is weaker on persona** than a plain prompt (66 to 69 vs 81), with or without our flags. The line is drafted inside a long think-and-JSON prompt, which may dilute the persona.
+- **The fact pack arm does not stand out here.** In T3 every arm is given the same facts by design, and it scores a little lower than fast on T1.
+- **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not yet exercise it; a two-panelist floor item is planned.
 
 The fact pack was also tested offline with the earlier worker prompt path: 72 topics, 1,152 lines per arm.
 
@@ -133,7 +141,8 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 ## Next steps
 
-- [ ] Put the three Think & Action arms (production, fast, fast + fact pack) on the leaderboard.
+- [ ] Add a two-panelist floor item to T2 so addressee priority is measured.
+- [ ] Look into the persona drop under Think & Action.
 - [ ] Run the full leaderboard on the test split: 11 open models plus the show.
 - [ ] Open the fact pack and benchmark PRs, with results attached.
 - [ ] Recover the persona fidelity lost with the fact pack; combine it with varied openers.
@@ -144,6 +153,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-12 | Three Think & Action arms on the leaderboard (dev); fact pack and benchmark merged into `main`; scoring counts the show's fact pack as a source |
 | 2026-11-11 | Merged `main` into the benchmark branch with no conflicts; the judge now exits cleanly when there is nothing to score; models resolve from the local cache or fail fast |
 | 2026-11-11 | Benchmark pilot done: 2 models, 5 tasks, 2 judges |
 | 2026-11-10 | Benchmark v1. Three design fixes from the pilot: drop implausible fact edits, ask about the edited fact and split T3 into a/b, let systems yield in T2 |

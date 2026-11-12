@@ -14,7 +14,7 @@ import {
 import { ConnectionState } from 'livekit-client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { HumanSeatCard } from '@/lib/talkshow/HumanSeatCard';
+import { HumanSeatCard, RemoteHumanSeatCard } from '@/lib/talkshow/HumanSeatCard';
 import { PanelAvatar } from '@/lib/talkshow/PanelAvatar';
 import { PadMeter, type PadState } from '@/lib/talkshow/PadMeter';
 import { TalkshowMediaControls } from '@/lib/talkshow/TalkshowMediaControls';
@@ -160,6 +160,7 @@ export function TalkshowView(
   onRoleIdleRef.current = onRoleIdle;
   const handleUiEventRef = useRef(handleUiEvent);
   handleUiEventRef.current = handleUiEvent;
+  const humanNameRef = useRef<string | null>(null);
   const viewerLocaleRef = useRef(viewerLocale);
   viewerLocaleRef.current = viewerLocale;
 
@@ -189,7 +190,10 @@ export function TalkshowView(
     } else if (ev.type === 'transcript' && ev.final) {
       const display = pickLocalizedText(ev.text, ev.texts, viewerLocaleRef.current);
       // Synced words are in the delivered language; another locale shows the whole line.
-      pushLineRef.current(ev.role, ev.speaker, display, {
+      // The worker labels every human "Human guest"; one human on stage shows by name.
+      const speaker =
+        ev.role === 'human' ? (humanNameRef.current ?? ev.speaker) : ev.speaker;
+      pushLineRef.current(ev.role, speaker, display, {
         stream: !!ev.stream && display === ev.text,
         step: ev.step,
       });
@@ -218,6 +222,7 @@ export function TalkshowView(
       ),
     [localName, localIdentity, remotes],
   );
+  humanNameRef.current = humans.length === 1 && !humans[0].isLocal ? humans[0].name : null;
 
   const agentConnected = remotes.some((p) => parseAgentMetadata(p.metadata)?.talkshowAgent);
   const waitingForAgent = panelists.length === 0 && !agentConnected;
@@ -282,18 +287,7 @@ export function TalkshowView(
                 activeRole={activeRole}
               />
             ) : (
-              <div
-                key={h.key}
-                className={styles.card}
-                data-human
-                data-speaking={activeRole === 'human' ? 'true' : 'false'}
-              >
-                <div className={styles.avatarHuman}>{h.name[0] ?? '?'}</div>
-                <div className={styles.meta}>
-                  <strong>{h.name}</strong>
-                  <span>{h.label}</span>
-                </div>
-              </div>
+              <RemoteHumanSeatCard key={h.key} human={h} activeRole={activeRole} />
             ),
           )}
           {panelists.map((p) => (

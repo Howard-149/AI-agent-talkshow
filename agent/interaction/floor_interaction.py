@@ -63,7 +63,55 @@ logger = logging.getLogger(__name__)
 def _speaker_name(role: str) -> str:
     from agent.config import load_persona_name
 
-    return "Human guest" if role == "human" else load_persona_name(role)
+    from agent.show.show_history import human_label
+
+    return human_label() if role == "human" else load_persona_name(role)
+
+
+def _candidate_role(selected: Any, candidates: list[dict[str, Any]]) -> str | None:
+    """The candidate the controller picked: its role ID, or its persona name (Gemma
+    answers "Ryan" for "commentator" even when asked for the ID)."""
+    if not isinstance(selected, str):
+        return None
+    picked = selected.strip().casefold()
+    for candidate in candidates:
+        if picked in (candidate["role"].casefold(), str(candidate.get("speaker", "")).casefold()):
+            return candidate["role"]
+    return None
+
+
+def _roster(roles: list[str], host_role: str) -> dict[str, str]:
+    """Role ID → who that is, for controller prompts. The panelist role "guest" is Amy,
+    an AI: without this the controller took "guest" for the human guest."""
+    from agent.config import load_persona_name
+    from agent.panel.panel_context import role_label
+    from agent.show.show_history import HUMAN_LABEL, human_name
+
+    roster = {}
+    for role in roles:
+        if role == "human":
+            continue
+        kind = "the host" if role == host_role else f"an AI panelist ({role_label(role)})"
+        roster[role] = f"{load_persona_name(role)}, {kind}"
+    name = human_name()
+    roster["human"] = "the human guest" + ("" if name == HUMAN_LABEL else f", {name}")
+    return roster
+
+
+def _roster_line(roster: dict[str, str]) -> str:
+    return "Role IDs: " + "; ".join(f"{role} = {who}" for role, who in roster.items()) + ".\n"
+
+
+def _target_role(target: Any, roster: dict[str, str]) -> str | None:
+    """A fallback target given as a role ID or as a name ("Amy", "Howard")."""
+    if not isinstance(target, str) or not target.strip():
+        return None
+    picked = target.strip().casefold()
+    for role, who in roster.items():
+        names = [role] + [part.strip() for part in who.split(",")]
+        if picked in {n.casefold() for n in names if n}:
+            return role
+    return None
 
 
 def _index_of(lines: list[Any], line: Any) -> int | None:
@@ -149,6 +197,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.host_fallback_close_spoken = False
         self.discussion_complete = False
         self.pending_invitation_target: str | None = None
+        # The opening waited once for the human after the host invited them.
+        self.awaited_human_at_opening = False
         # Panelist the host's opening invited; the first free-floor pick goes to them.
         self.opening_invite_role: str | None = None
         # The last routed line was cut by an approved interrupt (the interrupter is next).
@@ -325,8 +375,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         selected = result.get("selected_role") if result else None
         reason = result.get("reason") if result else ""
         reason_code = result.get("reason_code") if result else None
-        valid_candidate_roles = {candidate["role"] for candidate in candidate_payload}
-        if decision != "interrupt" or selected not in valid_candidate_roles:
+        selected = _candidate_role(selected, candidate_payload)
+        if decision != "interrupt" or selected is None:
             decision = "continue"
             selected = None
         # A rejected interrupt cannot be labeled as an approved intervention.
@@ -378,6 +428,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             if role in self.actions and self.actions[role].decision == "speak"
         ]
         candidate_roles = {item["role"] for item in candidate_payload}
+        roster = _roster(self._floor_roles(data), host_role)
         directed = self._addressee_pick(data, history, candidate_payload, interval)
         if directed is not None:
             self.rule_return_to = None
@@ -391,7 +442,10 @@ class ThinkActionInteraction(TextOnlyInteraction):
             role: self.actual_floor_counts.get(role, 0)
             for role in dict.fromkeys([host_role, *data.scenario.turn_control.order])
         }
+        from agent.show.show_history import human_name_note
+
         prompt = (
+            f"{human_name_note()}"
             "You are the centralized floor controller for a talk show. The current "
             "speech has ended and the floor is FREE. Choose a submitted speak candidate "
             "that will advance the discussion. Use host_fallback ONLY if nobody applied "
@@ -413,6 +467,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "invitations and circular questioning. Choose close if the topic is exhausted "
             "but not merely because one round was quiet. Never force a noncandidate "
             "to speak. selected_role and target MUST be exact machine role IDs.\n"
+            f"{_roster_line(roster)}"
             f"Public transcript:\n{self._recent_public_text(history)}\n"
             f"Speak candidates: {json.dumps(candidate_payload, ensure_ascii=False)}\n"
             f"Pending host invitation target (role ID): {invited_role!r}\n"
@@ -428,7 +483,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
             '"reason":"short explanation", "host_fallback":'
             '{"strategy":"invite|summarize|contribute|reframe|close", '
             '"target":null, "instruction":"short instruction"}}. '
-            'When strategy=invite, target must be an actual panel role ID instead of null.'
+            'When strategy=invite, target must be a role ID from the list above: a panelist, '
+            'or "human" to invite the human guest.'
         )
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
@@ -441,7 +497,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         )
         result = _json_object(raw) or {}
         decision = result.get("decision")
-        selected = result.get("selected_role")
+        selected = _candidate_role(result.get("selected_role"), candidate_payload)
         reason = result.get("reason")
         reason_code = result.get("reason_code")
         proposed_fallback = result.get("host_fallback")
@@ -501,7 +557,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
                 strategy = "reframe"
                 instruction = "Offer a concrete unresolved issue or example to move the conversation forward."
                 target = None
-            if target not in panel_roles:
+            target = _target_role(target, roster)
+            if target not in panel_roles | {"human"}:
                 target = None
             if strategy == "invite" and target is None:
                 strategy = "reframe"
@@ -517,7 +574,9 @@ class ThinkActionInteraction(TextOnlyInteraction):
             )
             self.host_fallback_streak += 1
             # Hard deadlock guard; normally the controller decides when to conclude.
-            if self.host_fallback_streak >= 4:
+            # Never before anyone but the host has spoken: the show has not started.
+            others_spoke = any(line.role_id != host_role for line in history.lines)
+            if self.host_fallback_streak >= 4 and others_spoke:
                 outcome = FloorOutcome(
                     "host_fallback",
                     selected_role=host_role,
@@ -1046,11 +1105,36 @@ class ThinkActionInteraction(TextOnlyInteraction):
         instruction = self.host_fallback_instruction
         strategy = self.host_fallback_strategy or "reframe"
         target = self.host_fallback_target
-        target_context = f"Invite role {target} if appropriate.\n" if target else ""
+        from agent.show.show_history import HUMAN_LABEL, human_name
+
+        target_context = ""
+        if target == "human":
+            name = human_name()
+            target_context = (
+                "Invite the human guest to speak.\n" if name == HUMAN_LABEL
+                else f"Invite the human guest, {name}, to speak.\n"
+            )
+        elif target:
+            target_context = (
+                f"Invite {load_persona_name(target)} (an AI panelist) if appropriate.\n"
+            )
+        lines = getattr(getattr(data, "show_history", None), "lines", None) or []
+        if not any(line.role_id != role for line in lines):
+            # Only the host has spoken (the welcome): there is no discussion to refer
+            # back to, whatever the strategy says ("reframe" made up "we've touched on a
+            # lot today" right after the welcome). Not an instruction to invite anyone:
+            # that turned every queued fallback into the same question to the human.
+            target_context += (
+                "The show has just opened: nobody but you has spoken yet. Do not refer to "
+                "any earlier discussion.\n"
+            )
         mood = self.mood_block(data, role) if self.mood_block is not None else ""
         mood = f"{mood}\n" if mood else ""
+        from agent.show.show_history import human_name_note
+
         prompt = (
             f"{mood}"
+            f"{human_name_note()}"
             f"Host fallback strategy: {strategy}.\n"
             f"Controller instruction: {instruction}\n"
             f"{target_context}"
@@ -1075,7 +1159,13 @@ class ThinkActionInteraction(TextOnlyInteraction):
             flags=re.IGNORECASE,
         ).strip()
         if not text:
-            if strategy == "invite" and target:
+            if strategy == "invite" and target == "human":
+                name = human_name()
+                text = (
+                    "What do you think?" if name == HUMAN_LABEL
+                    else f"{name}, what do you think?"
+                )
+            elif strategy == "invite" and target:
                 text = f"{load_persona_name(target)}, would you like to share your perspective?"
             elif strategy == "close":
                 text = "We've covered some important tensions today. Thanks to everyone for joining the discussion."
@@ -1089,6 +1179,34 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.host_fallback_strategy = None
         self.host_fallback_target = None
         return text
+
+    def should_await_human(self, data: Any) -> bool:
+        """At the opening (the human has not spoken yet) the host's last line invited or
+        asked the human: stop writing host lines and wait for their answer, once. Without
+        this, a silent panel left the controller falling back to the host, who talked on
+        for five lines (all written ahead of playback) and closed the show."""
+        from agent.show.show_history import asks_human
+
+        if self.awaited_human_at_opening:
+            return False
+        lines = getattr(getattr(data, "show_history", None), "lines", None) or []
+        if not lines or any(line.role_id == "human" for line in lines):
+            return False
+        last = lines[-1]
+        host = data.scenario.turn_control.listen_role
+        if last.role_id != host:
+            return False
+        invited = any(
+            entry.get("strategy") == "invite" and entry.get("target") == "human"
+            for entry in self.fallback_history[-1:]
+        )
+        if not (invited or asks_human(last.text)):
+            return False
+        self.awaited_human_at_opening = True
+        self.host_fallback_instruction = None
+        self.host_fallback_strategy = None
+        self.host_fallback_target = None
+        return True
 
     def take_close_line_override(self) -> bool:
         """True when the host's closing speech already ended the show (skip canned close)."""
@@ -1564,6 +1682,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         from agent.config import load_persona_name
         from agent.panel.panel_prompts import panelist_personality_block
         from agent.panel.think_prompt import think_prompt_additions
+        from agent.show.show_history import human_name_note
 
         rules = floor_rules_enabled()
         is_host = role == data.scenario.turn_control.listen_role
@@ -1592,6 +1711,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             occupied_guidance = HOST_OCCUPIED_GUIDANCE
         prompt = (
             f"You are {load_persona_name(role)} ({role}).\n"
+            f"{human_name_note()}"
             f"{mood}"
             f"Current floor state: {floor_state}.\n"
             f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"

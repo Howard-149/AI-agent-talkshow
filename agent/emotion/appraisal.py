@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
@@ -130,10 +131,10 @@ def appraisal_listeners(data: TalkShowData, speaker: str) -> list[str]:
 
 
 def _speaker_label(role: str) -> str:
-    from agent.show.show_history import HUMAN_LABEL
+    from agent.show.show_history import human_label
 
     if role == "human":
-        return HUMAN_LABEL
+        return human_label()
     from agent.config import load_persona_name
     from agent.panel.panel_context import role_label
 
@@ -346,21 +347,63 @@ def apply_appraisal(data: TalkShowData, utt: Utterance, result: AppraisalResult)
             room=getattr(data, "room_name", "") or "",
         )
     if result.delta is not None:
-        publish_pad_state(data, result.role, feeling=result.word)
+        publish_pad_state(
+            data, result.role, feeling=result.word, source=(utt.speaker, utt.text)
+        )
 
 
 _ui_tasks: set[asyncio.Task[None]] = set()
 
 
-def publish_pad_state(data: TalkShowData, role: str, *, feeling: str | None = None) -> None:
-    """Fire-and-forget ``pad_state`` UI event (current PAD + spoken label) for talkshow-web."""
-    from agent.emotion.role_pad import get_role_pad
+PAD_DISPLAY_PENDING_MAX = 64
 
+
+def pad_display_sync_enabled() -> bool:
+    """TALKSHOW_PAD_DISPLAY_SYNC (default on): show a mood change when the line that
+    caused it starts playing, not when the script that runs ahead of playback is
+    appraised."""
+    return os.environ.get("TALKSHOW_PAD_DISPLAY_SYNC", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _line_key(role: str, text: str) -> tuple[str, str]:
+    return role, re.sub(r"\W+", " ", text or "").strip().lower()[:80]
+
+
+def _same_line(a: tuple[str, str], b: tuple[str, str]) -> bool:
+    """Same speaker and text; a cut line's text may be a prefix of the written one."""
+    if a[0] != b[0] or not a[1] or not b[1]:
+        return False
+    short = min(len(a[1]), len(b[1]))
+    return short >= 15 and a[1][:short] == b[1][:short]
+
+
+def _send_pad_state(fields: dict[str, object]) -> None:
     try:
         loop = asyncio.get_running_loop()
         from agent.ui.ui_events import publish_ui_event
     except (RuntimeError, ImportError):
         return
+    task = loop.create_task(publish_ui_event("pad_state", **fields))
+    _ui_tasks.add(task)
+    task.add_done_callback(_ui_tasks.discard)
+
+
+def publish_pad_state(
+    data: TalkShowData,
+    role: str,
+    *,
+    feeling: str | None = None,
+    source: tuple[str, str] | None = None,
+) -> None:
+    """``pad_state`` UI event (current PAD + spoken label) for talkshow-web.
+
+    ``source`` is the line (speaker, text) that caused the change. An AI line is
+    written ahead of its audio, so its event waits for ``release_pad_display`` when
+    that line starts playing; a human line has already been heard."""
+    from agent.emotion.role_pad import get_role_pad
+
     fields: dict[str, object] = {
         "role": role,
         "pad": [round(float(x), 3) for x in get_role_pad(data, role)],
@@ -368,9 +411,34 @@ def publish_pad_state(data: TalkShowData, role: str, *, feeling: str | None = No
     }
     if feeling:
         fields["feeling"] = feeling
-    task = loop.create_task(publish_ui_event("pad_state", **fields))
-    _ui_tasks.add(task)
-    task.add_done_callback(_ui_tasks.discard)
+    pending = getattr(data, "pad_display_pending", None)
+    if (
+        source is not None
+        and source[0] not in ("", "human")
+        and pending is not None
+        and pad_display_sync_enabled()
+    ):
+        pending.append((_line_key(*source), fields))
+        while len(pending) > PAD_DISPLAY_PENDING_MAX:
+            _send_pad_state(pending.pop(0)[1])
+        return
+    _send_pad_state(fields)
+
+
+def release_pad_display(data: TalkShowData, role: str, text: str) -> int:
+    """A line started playing: show the mood changes it caused, and every change still
+    held from earlier lines (played already, or dropped). Returns how many were sent."""
+    pending = getattr(data, "pad_display_pending", None)
+    if not pending:
+        return 0
+    key = _line_key(role, text)
+    last = max((i for i, (src, _) in enumerate(pending) if _same_line(src, key)), default=None)
+    if last is None:
+        return 0
+    for _, fields in pending[: last + 1]:
+        _send_pad_state(fields)
+    del pending[: last + 1]
+    return last + 1
 
 
 # --- scheduling glue (replaced by a graph node later) ---------------------
@@ -399,7 +467,9 @@ def expression_arousal_decay() -> float:
     )))
 
 
-def relax_after_expression(data: TalkShowData, speaker: str) -> float | None:
+def relax_after_expression(
+    data: TalkShowData, speaker: str, text: str | None = None
+) -> float | None:
     """Speaking lowers the speaker's own arousal proportionally: A ← A·(1 − γ).
 
     Ours for LLM agents, after Schweitzer & Garcia 2010 (agent-based model: arousal
@@ -426,7 +496,7 @@ def relax_after_expression(data: TalkShowData, speaker: str) -> float | None:
             arousal_after=round(new_a, 4),
             room=getattr(data, "room_name", "") or "",
         )
-    publish_pad_state(data, speaker)
+    publish_pad_state(data, speaker, source=(speaker, text) if text else None)
     return new_a
 
 
@@ -434,7 +504,7 @@ def on_utterance(data: TalkShowData, speaker: str, text: str) -> list[str]:
     """Hook for every spoken line: speaker relaxes, listeners appraise in background."""
     if not (text or "").strip():
         return []
-    relax_after_expression(data, speaker)
+    relax_after_expression(data, speaker, text)
     return schedule_appraisals(data, speaker, text)
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent.config import ScenarioConfig, load_persona_name, load_scenario
-from agent.show.show_history import HUMAN_LABEL
+from agent.show.show_history import human_label
 
 _ROLE_LABELS = {
     "host": "Host",
@@ -74,7 +74,7 @@ def panel_room_roster(scenario: ScenarioConfig | None = None) -> str:
     host = load_persona_name("host")
     panel = format_name_list(panel_speaker_names(sc))
     return (
-        f"Cast: {HUMAN_LABEL} (real person on the mic — brings topics and claims), "
+        f"Cast: {human_label()} (real person on the mic — brings topics and claims), "
         f"{host} (host — summarizes and moderates), {panel} (panel, including you). "
         f"Read transcript speaker labels before you reply; engage the person who owns the point."
     )

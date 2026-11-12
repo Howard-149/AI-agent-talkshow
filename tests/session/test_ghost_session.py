@@ -110,6 +110,14 @@ class ScriptAndLogTests(unittest.TestCase):
         self.assertEqual((first.after_lines, first.when, first.emotion), (1, "line_end", "Anger"))
         self.assertEqual((second.after_lines, second.when, second.after_sec), (4, "mid_line", 3.0))
 
+    def test_script_names_the_guest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "named.yaml"
+            path.write_text("name: Howard\nturns:\n  - text: hi\n", encoding="utf-8")
+            self.assertEqual(load_script(path).name, "Howard")
+            path.write_text("turns:\n  - text: hi\n", encoding="utf-8")
+            self.assertEqual(load_script(path).name, "Guest")
+
     def test_script_rejects_an_unknown_cut_in_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.yaml"

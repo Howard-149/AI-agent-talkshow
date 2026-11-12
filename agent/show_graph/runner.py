@@ -377,6 +377,9 @@ async def open_show_session(
 
         if await wait_for_ghost_viewer(room):
             logger.info("session opening: the ghost's recording page is up")
+        from agent.show.show_history import name_room_human
+
+        logger.info("session opening: human=%s", name_room_human(room) or "unnamed")
         needed = recompute_needed_locales(data, room)
         logger.info("session opening locales=%s", sorted(needed))
     from agent.floor.host_floor import host_opening_line, topic_announcement
