@@ -102,6 +102,8 @@ LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TA
 # Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
 CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
                  "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
+# FAST plus the two context variants that helped on the dev benchmark (lean, persona near); focus did not.
+FAST_V2_FLAGS = {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"]}
 
 ARMS: dict[str, dict] = {
     "production": {},
@@ -119,6 +121,8 @@ ARMS: dict[str, dict] = {
     "fast_focus": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["focus"]}, "best_of": 1},
     "fast_context_all": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"],
                                         **CONTEXT_FLAGS["focus"]}, "best_of": 1},
+    # The recommended set after the context variants (FAST2 in deploy/arms/dialogue-quality.arms).
+    "fast_v2": {"live_flags": FAST_V2_FLAGS, "best_of": 1},
 }
 
 

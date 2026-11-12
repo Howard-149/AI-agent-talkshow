@@ -42,12 +42,15 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Answer the audience | Lists the audience member's figures, names and stance, and asks the panelist to answer that point | Think prompt; extraction starts when the audience turn is committed | `TALKSHOW_UPTAKE_PLANNER=lite`, `TALKSHOW_PANEL_SCAFFOLD_FIX=1` |
 | Concrete lines | Style examples that carry facts, and a one-concrete-fact rule | Think prompt and worker fallback | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete`, `TALKSHOW_PANEL_CONCRETE=1` |
 | Fact pack | The 6 most relevant checked facts for the topic; specifics may come only from them or from what was said in the show | Think prompt and worker fallback | `TALKSHOW_FACT_PACK=<json>` |
+| Lean think prompt | On a free floor: no repeat of the line the transcript ends with, no interrupt or backchannel guidance, no canned host lines in the transcript | Panelist think prompt, `agent/panel/think_prompt.py` | `TALKSHOW_THINK_LEAN=1` |
+| Persona near the line | "Write the content as Ryan: ..." from the persona card, right before the line is written | Panelist think prompt | `TALKSHOW_THINK_PERSONA_NEAR=1` |
+| Respond to now | Who spoke last, whom they named, the planner's points, and a rule to stay silent when someone else was named | Panelist think prompt | `TALKSHOW_THINK_FOCUS=1` |
 | Listening test | Edit one element of the audience turn, replay, and check whether the reply changes | `eval/responsiveness.py`, `eval/judge_context.py`, replay hooks | `TALKSHOW_GHOST_REPLAY=1` |
 | Quality ruler | Yes/no checklist scored by two judges plus counted metrics; every judge measure is validated before use | `eval/quality_ruler/` | none |
 | Unsupported specifics | Counts numbers and names that have no source in the fact pack or the show so far | `eval/quality_ruler/specifics.py` | none |
 | Benchmark | Fixed items, a common system interface, judges, leaderboard | `eval/bench/` | none |
 
-The recommended set ("fast") turns on addressee priority, answer the audience and concrete lines. It is listed in `deploy/arms/dialogue-quality.arms`.
+The recommended set ("fast") turns on addressee priority, answer the audience and concrete lines. "fast_v2" adds the lean think prompt and the persona reminder; it is the recommended set for Think & Action. Both are listed in `deploy/arms/dialogue-quality.arms` (FAST, FAST2); `fast` stays unchanged so earlier results remain comparable.
 
 ## Fact pack pipeline
 
@@ -128,6 +131,21 @@ What these show:
 - **The fact pack arm does not stand out here.** In T3 every arm is given the same facts by design, and it scores a little lower than fast on T1.
 - **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not yet exercise it; a two-panelist floor item is planned.
 
+**Think prompt context variants** (Think & Action, fast arm plus one variant each; dev split, both judges):
+
+| Arm | T1 Listening | T4 Persona |
+| --- | --- | --- |
+| fast | 36 (J 0.68) | 66 |
+| fast + lean think prompt | 50 (J 0.75) | 71 |
+| fast + persona near the line | about the same as fast | 68 (+2) |
+| fast + respond to now | no change | no change |
+| fast + all three | 48 | 72 |
+
+- The lean prompt helps most: the panelist sees the audience line once, as the last transcript line, without 2,500 characters of interrupt and backchannel rules after it.
+- The persona reminder adds a little on persona.
+- **Prompting does not make the model yield.** With the "respond to now" block and its rule to stay silent when someone else was named, Gemma still chose to speak on 100% of those items. Yielding has to come from the floor (addressee priority), not from the prompt.
+- So the recommended set for Think & Action is fast_v2 = fast + lean + persona near (FAST2), without the focus block.
+
 The fact pack was also tested offline with the earlier worker prompt path: 72 topics, 1,152 lines per arm.
 
 | Measure | Current show | Fast | Fast + fact pack |
@@ -153,6 +171,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-12 | Think prompt context variants measured on dev; fast_v2 (FAST2) = fast + lean prompt + persona near the line becomes the recommended Think & Action set |
 | 2026-11-12 | Three Think & Action arms on the leaderboard (dev); fact pack and benchmark merged into `main`; scoring counts the show's fact pack as a source |
 | 2026-11-11 | Merged `main` into the benchmark branch with no conflicts; the judge now exits cleanly when there is nothing to score; models resolve from the local cache or fail fast |
 | 2026-11-11 | Benchmark pilot done: 2 models, 5 tasks, 2 judges |

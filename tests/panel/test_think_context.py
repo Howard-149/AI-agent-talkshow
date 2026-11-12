@@ -167,6 +167,16 @@ class ArmTests(unittest.TestCase):
             self.assertEqual({k: v for k, v in flags.items() if k not in keys}, arms.FAST_FLAGS)
             self.assertTrue(all(flags[k] == "1" for k in keys))
             self.assertIn(name, SHOW_ARMS)
+        v2 = arms.ARMS["fast_v2"]["live_flags"]
+        self.assertEqual(v2, {**arms.FAST_FLAGS, "TALKSHOW_THINK_LEAN": "1", "TALKSHOW_THINK_PERSONA_NEAR": "1"})
+        self.assertIn("fast_v2", SHOW_ARMS)
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        line = next(l for l in (root / "deploy/arms/dialogue-quality.arms").read_text().splitlines()
+                    if l.startswith("FAST2 "))
+        self.assertEqual(dict(kv.split("=", 1) for kv in line.split()[1:]),
+                         {k: v for k, v in v2.items() if k != "TALKSHOW_PANEL_BEST_OF"})
         with mock.patch.dict(os.environ, {"TALKSHOW_THINK_LEAN": "1"}):
             arms.apply_env(arms.ARMS["fast"])  # the fast arm clears a context flag left in the environment
             self.assertNotIn("TALKSHOW_THINK_LEAN", os.environ)

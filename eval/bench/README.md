@@ -113,7 +113,8 @@ None when the system was simply asked for a line; yield, wait and backchannel al
 The show's systems take `--arm production | fast | concrete_fact_pack` (flag presets, `eval/quality_ruler/arms.py`), and
 the context variants of the Think & Action think prompt on top of fast: `fast_lean` (`TALKSHOW_THINK_LEAN`),
 `fast_persona` (`TALKSHOW_THINK_PERSONA_NEAR`), `fast_focus` (`TALKSHOW_THINK_FOCUS`) and `fast_context_all` (all three;
-see `agent/panel/think_prompt.py`).
+see `agent/panel/think_prompt.py`), and `fast_v2` (fast + lean + persona near, the recommended Think & Action set). Any
+preset in `eval/quality_ruler/arms.py` made only of the show's flags is accepted.
 Items with facts always reach the show's fact block, whatever the arm. The show only accepts its own persona cards or
 the swapped pair.
 

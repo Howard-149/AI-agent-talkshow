@@ -255,7 +255,15 @@ class PlainLLM(System):
 
 # ------------------------------------------------------------------------------------------------ the show
 
-SHOW_ARMS = ("production", "fast", "concrete_fact_pack", "fast_lean", "fast_persona", "fast_focus", "fast_context_all")
+def _show_arms() -> tuple[str, ...]:
+    """Arm presets made of the show's own flags (live_flags, fact_pack; best-of 1): the ones the show adapters take."""
+    from eval.quality_ruler.arms import ARMS
+
+    return tuple(k for k, v in ARMS.items()
+                 if set(v) <= {"live_flags", "fact_pack", "best_of"} and int(v.get("best_of", 1)) == 1)
+
+
+SHOW_ARMS = _show_arms()
 
 
 def show_fact_instruction(messages: list[dict], obs: dict) -> tuple[list[dict], str | None]:
