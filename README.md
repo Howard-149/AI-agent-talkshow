@@ -151,7 +151,7 @@ Three panel fixes, all off by default. Turn them on in the repo-root `.env` (age
 
 | Flag | What it does |
 |---|---|
-| `TALKSHOW_ADDRESSEE_FLOOR=1` | If the human names a panelist ("Amy, what do you think?"), that panelist answers first. |
+| `TALKSHOW_ADDRESSEE_FLOOR=1` | If the human names a panelist ("Amy, what do you think?"), that panelist answers first. `=force` also gives the floor to a named panelist who chose silent; their line is then drafted by the worker. |
 | `TALKSHOW_UPTAKE_PLANNER=lite` + `TALKSHOW_PANEL_SCAFFOLD_FIX=1` | The first panel line after a human turn is pointed at what the human just said (their figures, names and stance), instead of the previous panelist. |
 | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete` + `TALKSHOW_PANEL_CONCRETE=1` | Style examples that carry facts, plus a rule asking for one concrete fact per line. |
 | `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. Only for lines drafted by the worker (see below). |

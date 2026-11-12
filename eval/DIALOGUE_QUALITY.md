@@ -39,6 +39,7 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Component | What it does | Where it hooks in | Flag |
 | --- | --- | --- | --- |
 | Addressee priority | If the audience names a panelist and that panelist chose to speak, they get the floor | Free-floor selection, `ThinkActionInteraction.arbitrate_free` | `TALKSHOW_ADDRESSEE_FLOOR=1` |
+| Addressee priority, forced | Also gives the floor to a named panelist who chose silent; their line is drafted by the worker, as for any picked panelist with no line of their own (reason code `directed_response_forced`) | Same | `TALKSHOW_ADDRESSEE_FLOOR=force` |
 | Answer the audience | Lists the audience member's figures, names and stance, and asks the panelist to answer that point | Think prompt; extraction starts when the audience turn is committed | `TALKSHOW_UPTAKE_PLANNER=lite`, `TALKSHOW_PANEL_SCAFFOLD_FIX=1` |
 | Concrete lines | Style examples that carry facts, and a one-concrete-fact rule | Think prompt and worker fallback | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete`, `TALKSHOW_PANEL_CONCRETE=1` |
 | Fact pack | The 6 most relevant checked facts for the topic; specifics may come only from them or from what was said in the show | Think prompt and worker fallback | `TALKSHOW_FACT_PACK=<json>` |
@@ -50,6 +51,7 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Quality ruler | Yes/no checklist scored by two judges plus counted metrics; every judge measure is validated before use | `eval/quality_ruler/` | none |
 | Unsupported specifics | Counts numbers and names that have no source in the fact pack or the show so far | `eval/quality_ruler/specifics.py` | none |
 | Benchmark | Fixed items, a common system interface, judges, leaderboard | `eval/bench/` | none |
+| T2f floor items | Both panelists bid on one audience line and the show's own free-floor selection picks; plain systems answer a floor question instead | `eval/bench/floor.py` | none |
 
 The recommended set ("fast") turns on addressee priority, answer the audience and concrete lines. "fast_v2" adds the lean think prompt and the persona reminder; it is the recommended set for Think & Action. Both are listed in `deploy/arms/dialogue-quality.arms` (FAST, FAST2); `fast` stays unchanged so earlier results remain comparable.
 
@@ -131,7 +133,7 @@ What these show:
 - **Our fixes help listening on Think & Action.** The fast arm raises T1 from 20 to 36 (J 0.60 to 0.68); the paraphrase control stays at 0.52 for every arm.
 - **Think & Action is weaker on persona** than a plain prompt (66 to 69 vs 81), with or without our flags. The line is drafted inside a long think-and-JSON prompt, which may dilute the persona.
 - **The fact pack arm does not stand out here.** In T3 every arm is given the same facts by design, and it scores a little lower than fast on T1.
-- **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not exercise it. T2f now does: both panelists bid and the show's own floor selection picks (results pending).
+- **Limit of T2 as built:** each item tests one panelist's own speak-or-yield decision. Addressee priority acts in the floor controller when both panelists bid, so T2 does not exercise it. T2f does (results below).
 
 **Think prompt context variants** (Think & Action, fast arm plus one variant each; dev split, both judges):
 
@@ -148,6 +150,21 @@ What these show:
 - **Prompting does not make the model yield.** With the "respond to now" block and its rule to stay silent when someone else was named, Gemma still chose to speak on 100% of those items. Yielding has to come from the floor (addressee priority), not from the prompt.
 - So the recommended set for Think & Action is fast_v2 = fast + lean + persona near (FAST2), without the focus block.
 
+**v2 arms** (Think & Action on Gemma-4 E4B, dev split, both judges; a dash means the number was not part of this run's summary):
+
+| System | T1 | T2 | T2f | T4 |
+| --- | --- | --- | --- | --- |
+| Show, fast | 37 | — | — | 68 |
+| Show, fast_v2 | 49 | — | 100 | 75 |
+| Show, fast_v2 without addressee priority | — | — | 9 | — |
+| Show, fast_v2 + persona library | 56 (J 0.78) | — | 84 | 79 |
+| Plain Gemma-4 E4B, floor question | — | — | about 0 (picks Ryan 90% of the time) | — |
+
+- **Addressee priority does the floor work.** With it, the named panelist gets the floor on every T2f item (100); without it, 9. The Think & Action floor controller ignores who was named.
+- **A plain model asked "who should speak next" mostly says Ryan** (90%), whoever was named.
+- **The persona library is the best Think & Action arm so far:** persona 79, close to the plain prompt's 81, and the best listening score (56, J 0.78).
+- **Named but silent.** With the library, Amy chooses silent on 16% of the items where she is named, so the controller hands the floor to Ryan and T2f drops to 84. `TALKSHOW_ADDRESSEE_FLOOR=force` gives a named panelist the floor even after a silent decision; the line then comes from the worker draft, the path the show already uses when a picked panelist has no line. Arm `fast_v2_lib_force` measures it.
+
 The fact pack was also tested offline with the earlier worker prompt path: 72 topics, 1,152 lines per arm.
 
 | Measure | Current show | Fast | Fast + fact pack |
@@ -163,7 +180,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 - [x] Add a two-panelist floor item (T2f) so addressee priority is measured; run fast_v2 with and without it.
 - [ ] Look into the persona drop under Think & Action.
-- [ ] Run the full leaderboard on the test split: 11 open models plus the show.
+- [ ] Run the test split: production, fast, fast_v2 and fast_v2_lib_force against plain Gemma-4 E4B, then the 11 open models.
 - [ ] Open the fact pack and benchmark PRs, with results attached.
 - [ ] Recover the persona fidelity lost with the fact pack; combine it with varied openers.
 - [ ] Validate the judge prompts that have not passed the gates yet: fact-edit identification, and interrupt and backchannel scoring.
@@ -173,6 +190,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-12 | v2 dev results (fast_v2, without addressee priority, with the persona library); `TALKSHOW_ADDRESSEE_FLOOR=force` for named panelists who chose silent, arm `fast_v2_lib_force` |
 | 2026-11-12 | T2f floor items (both panelists bid, the show's floor picks); persona library behind a flag with five personas (Ryan, Amy, Lessac, Dana, Theo) |
 | 2026-11-12 | Think prompt context variants measured on dev; fast_v2 (FAST2) = fast + lean prompt + persona near the line becomes the recommended Think & Action set |
 | 2026-11-12 | Three Think & Action arms on the leaderboard (dev); fact pack and benchmark merged into `main`; scoring counts the show's fact pack as a source |

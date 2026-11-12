@@ -125,7 +125,8 @@ The show's systems take `--arm production | fast | concrete_fact_pack` (flag pre
 the context variants of the Think & Action think prompt on top of fast: `fast_lean` (`TALKSHOW_THINK_LEAN`),
 `fast_persona` (`TALKSHOW_THINK_PERSONA_NEAR`), `fast_focus` (`TALKSHOW_THINK_FOCUS`) and `fast_context_all` (all three;
 see `agent/panel/think_prompt.py`), `fast_v2` (fast + lean + persona near, the recommended Think & Action set), `fast_v2_noaddr` (fast_v2 without
-addressee priority, for T2f) and `fast_v2_lib` (fast_v2 with the library personas ryan_skeptic and amy_warm). Any
+addressee priority, for T2f) `fast_v2_lib` (fast_v2 with the library personas ryan_skeptic and amy_warm) and `fast_v2_lib_force` (fast_v2_lib with
+`TALKSHOW_ADDRESSEE_FLOOR=force`; on T2f a forced panelist's line is the worker draft, `text_source` worker_fallback). Any
 preset in `eval/quality_ruler/arms.py` made only of the show's flags is accepted.
 Items with facts always reach the show's fact block, whatever the arm. The show only accepts its own persona cards or
 the swapped pair. Items always carry the seats' own prose cards; under a library arm (`fast_v2_lib`) the show plays
