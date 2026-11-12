@@ -114,6 +114,36 @@ flowchart LR
 
 ## Current results
 
+### Test split (final)
+
+42 public topics, 937 items, 3 reruns, both judges, 0 to 100. Unsupported specifics count the show's fact pack as a
+source. All show arms run Think & Action on Gemma-4 E4B.
+
+| System | Overall | T1 | T2 | T2f | T3a | T3b | T4 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| fast_v2 + persona library + forced addressee | 40.4 | 20 | 3 | 100 | 46 | 48 | 86 |
+| fast_v2 | 38.3 | 17 | 3 | 100 | 46 | 46 | 80 |
+| fast | 37.1 | 12 | 3 | 98 | 43 | 44 | 83 |
+| Plain Gemma-4 E4B | 34.4 | 15 | 3 | 4 | 34 | 35 | 85 |
+| Think & Action production (current `main`) | 33.5 | 9 | 6 | 18 | 37 | 35 | 81 |
+
+Overall is the mean of T1, T2, T3a, T3b and T4; T2f is reported separately.
+
+- **Listening.** T1 identification J rises from 0.543 [0.531, 0.556] for production to 0.598 [0.574, 0.623] for the
+  best arm; the paraphrase control stays at 0.50 to 0.53. T1 is much harder on test than on dev because the test
+  audience turns are real debate speech (median 120 words, 3 to 4 times longer than the dev turns), so one edit is a
+  small share of the turn. The ranking of the arms is the same as on dev.
+- **Floor.** Production scores 18 on T2f: its floor controller often hands the floor to the wrong panelist (a named
+  guest got it 44% of the time). Addressee priority gives 100, and the forced variant also covers a named panelist who
+  chose silent.
+- **Grounding.** Replies that use the edited value: production 6% (T3a) and 3% (T3b), the best arm 20% and 21%, plain
+  Gemma 1% and 5%.
+- **Persona.** With the persona library, Think & Action reaches 86 on T4, level with the plain prompt (85).
+- **Cost.** Lines with an unsupported specific rise on T1 from 0.5% (production) to 4.8% (best arm), because the
+  concrete style is on without the fact pack. The next step is the best arm plus the fact pack.
+
+### Dev split (pilot)
+
 These are pilot numbers on the dev split, averaged over both judges, on a 0 to 100 scale.
 
 | System | Overall | T1 | T2 | T3a | T3b | T4 |
@@ -178,11 +208,10 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 ## Next steps
 
-- [x] Add a two-panelist floor item (T2f) so addressee priority is measured; run fast_v2 with and without it.
-- [ ] Look into the persona drop under Think & Action.
-- [ ] Run the test split: production, fast, fast_v2 and fast_v2_lib_force against plain Gemma-4 E4B, then the 11 open models.
-- [ ] Open the fact pack and benchmark PRs, with results attached.
-- [ ] Recover the persona fidelity lost with the fact pack; combine it with varied openers.
+- [ ] Run the best arm (fast_v2 + persona library + forced addressee) with the fact pack, to bring unsupported specifics back down.
+- [ ] Open the PR for the context variants, T2f, the persona library and forced addressee, with the test-split results attached.
+- [ ] Run the 11 open models on the test split against the best arm.
+- [ ] Generate persona checks from the library fields and extend T4 to library personas.
 - [ ] Validate the judge prompts that have not passed the gates yet: fact-edit identification, and interrupt and backchannel scoring.
 - [ ] Build T5 (hosting, with a fixed reference panel) and T6 (full show).
 
@@ -190,6 +219,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-12 | Test split (final): the best arm (fast_v2 + persona library + forced addressee) scores 40.4 overall vs 33.5 for production and 34.4 for plain Gemma-4 E4B |
 | 2026-11-12 | v2 dev results (fast_v2, without addressee priority, with the persona library); `TALKSHOW_ADDRESSEE_FLOOR=force` for named panelists who chose silent, arm `fast_v2_lib_force` |
 | 2026-11-12 | T2f floor items (both panelists bid, the show's floor picks); persona library behind a flag with five personas (Ryan, Amy, Lessac, Dana, Theo) |
 | 2026-11-12 | Think prompt context variants measured on dev; fast_v2 (FAST2) = fast + lean prompt + persona near the line becomes the recommended Think & Action set |
