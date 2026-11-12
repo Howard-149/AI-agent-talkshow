@@ -151,7 +151,10 @@ def cmd_embed(args: argparse.Namespace) -> None:
 
     out = Path(args.out)
     rows = [json.loads(l) for l in (out / "lines.jsonl").read_text().splitlines()]
-    llm = LLM(model=args.embed_model, runner="pooling", gpu_memory_utilization=0.5)
+    from eval.hf_local import local_snapshot
+
+    # offline: the cached snapshot dir (a copied snapshot can fail the hub check by name)
+    llm = LLM(model=local_snapshot(args.embed_model), runner="pooling", gpu_memory_utilization=0.5)
     res = llm.embed([r["text"] for r in rows])
     emb = np.array([r.outputs.embedding for r in res], dtype=np.float32)
     emb /= np.linalg.norm(emb, axis=1, keepdims=True)

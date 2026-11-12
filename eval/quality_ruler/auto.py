@@ -59,7 +59,10 @@ def names_figs(t: str) -> set[str]:
 def embed(args, texts: list[str]) -> np.ndarray:
     from vllm import LLM
 
-    llm = LLM(model=args.embed_model, runner="pooling", gpu_memory_utilization=0.5)
+    from eval.hf_local import local_snapshot
+
+    # offline: the cached snapshot dir (a copied snapshot can fail the hub check by name)
+    llm = LLM(model=local_snapshot(args.embed_model), runner="pooling", gpu_memory_utilization=0.5)
     e = np.array([r.outputs.embedding for r in llm.embed(texts)], dtype=np.float32)
     return e / np.linalg.norm(e, axis=1, keepdims=True)
 

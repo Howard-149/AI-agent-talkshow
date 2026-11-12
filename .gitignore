@@ -51,4 +51,5 @@ eval/data/public_set/selection_stats.json
 eval/data/public_set/edit_stats.json
 eval/data/minimal_pairs/cond/
 eval/data/minimal_pairs/prefix/pfx-*.yaml
+eval/data/bench/build/
 .venv-pubdata/

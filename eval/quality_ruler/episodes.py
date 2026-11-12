@@ -169,47 +169,61 @@ def generate(args) -> None:
     """Model-only episodes: turn 1 → beat 1 (4 panel lines) → turn 2 (orig) → beat 2 (4 lines), production panel prompts.
     Panel speakers alternate starting with Ryan; before each panel line the host says a production tee-up line.
     `--arm` / `--arm-spec` (eval/quality_ruler/arms.py) set the generation knobs; `--pairs` picks the topic set (the 30
-    hand-written topics in minimal_pairs/pairs.yaml, or the public test set build/pairs_public.yaml). Seeds are per
-    (topic, k, step), shared across arms.
+    hand-written topics in minimal_pairs/pairs.yaml, or the public test set build/pairs_public.yaml; a comma list
+    concatenates files). Seeds are per (topic, k, step), shared across arms.
+
+    Arms with `live_flags` build every panel prompt with the live worker's fixes (model_only.build_request(
+    live_fixes=True)): the uptake plan only on the first panel line after a human turn, the fact pack, the concrete
+    instruction. `--dry-run DIR`: no model; every prompt is written to DIR (prompts.jsonl, one readable .txt per
+    episode) and each panel line is a placeholder, so later prompts show the placeholder in the transcript.
 
     `--path think_action`: each panel line is what the Think & Action show would speak, the `content` of the panelist's
-    think call on the finished previous turn (made before the host's tee-up, as live), with the TALKSHOW_* flags from
-    the environment. The speaker order stays fixed (no floor controller). A think that does not choose speak falls
-    back to the production worker prompt, as the live show does when a selected panelist has no proposed reply (here
-    without the flag blocks). `--arm` knobs apply to worker prompts only and are refused with this path."""
+    think call on the finished previous turn (made before the host's tee-up, as live). The speaker order stays fixed
+    (no floor controller). A think that does not choose speak falls back to the worker prompt (with the arm's live
+    fixes), as the live show does when a selected panelist has no proposed reply. Only arms made of `live_flags` and
+    `fact_pack` apply on this path (they set the TALKSHOW_* flags both prompts read); the other knobs shape worker
+    prompts and are refused."""
     import hashlib
     import json as _json
     import os
     import re
 
     import yaml
-    from vllm import LLM, SamplingParams
 
     from agent.floor.host_lines import _INTRO_SPEAKER
+    from agent.panel.uptake import uptake_planner_enabled
     from eval.model_only import TEMPERATURE, add_plan, build_request, planner_messages, postprocess
-    from eval.quality_ruler.arms import ARMS, BANNED_OPENERS, ban_text, opener, opener_plan_text, rerank_score
+    from eval.quality_ruler.arms import (ARMS, BANNED_OPENERS, apply_env, ban_text, opener, opener_plan_text,
+                                         rerank_score)
 
     arm = dict(ARMS.get(args.arm, {})) if args.arm in ARMS else {}
     if args.arm_spec:
         arm.update(_json.loads(args.arm_spec))
     think_path = getattr(args, "path", "worker") == "think_action"
-    plan_beats = bool(arm.get("lite_plan"))
+    if think_path and (set(arm) - {"live_flags", "fact_pack", "best_of"} or int(arm.get("best_of", 1)) != 1):
+        raise SystemExit("--path think_action takes only arms made of live_flags / fact_pack (TALKSHOW_* flags); "
+                         "the other knobs shape worker prompts")
+    apply_env(arm)
+    live = bool(arm.get("live_flags"))
+    plan_beats = bool(arm.get("lite_plan")) or ((live or think_path) and uptake_planner_enabled())
     if think_path:
-        from agent.panel.uptake import uptake_planner_enabled
         from eval.think_action_prompt import spoken_content, think_request
 
-        if arm:
-            raise SystemExit("--arm/--arm-spec knobs apply to worker prompts; with --path think_action set TALKSHOW_* flags")
-        plan_beats = uptake_planner_enabled()
         # The final interval of a panel line is split with the show's tokenizer: the generating model's.
         if not (os.environ.get("VLLM_MODEL_PATH") or os.environ.get("VLLM_MODEL")):
             os.environ["VLLM_MODEL_PATH"] = args.model
-    pairs = yaml.safe_load(Path(args.pairs).read_text())["topics"]
+    pairs = [t for f in str(args.pairs).split(",") if f for t in yaml.safe_load(Path(f).read_text())["topics"]]
     if args.topics:
         keep = set(args.topics.split(","))
         pairs = [t for t in pairs if t["slug"] in keep]
-    llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=8192, gpu_memory_utilization=0.88,
-              seed=args.seed, disable_custom_all_reduce=args.tp > 1)
+    dry = Path(args.dry_run) if getattr(args, "dry_run", "") else None
+    if dry:
+        llm, SamplingParams = DryRunLLM(), _DrySampling
+    else:
+        from vllm import LLM, SamplingParams
+
+        llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=8192, gpu_memory_utilization=0.88,
+                  seed=args.seed, disable_custom_all_reduce=args.tp > 1)
     chat_kwargs = {"enable_thinking": False} if "qwen3" in args.model.lower() else None
 
     def chat(convs, sps):
@@ -250,20 +264,30 @@ def generate(args) -> None:
                     # Live, the speaker's content comes from its think on the previous turn, before the tee-up.
                     before = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
                                          "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
-                    think = think_request(before, role, plan=e["fact_plan"].get(beat, ""))
+                    think = think_request(before, role, plan=e["fact_plan"].get(beat, ""), topic_id=e["topic_id"])
                 e["lines"].append({"role": "host", "speaker": "Lessac", "procedural": True,
                                    "text": rng.choice(_INTRO_SPEAKER).format(name=NAMES[role])})
                 prefix = {"lines": [{"role_id": l["role"], "speaker": l["speaker"], "text": l["text"],
                                      "procedural": bool(l.get("procedural"))} for l in e["lines"]]}
                 if think_path:
-                    think["fallback"] = build_request(prefix, "", role, False, include_human=False)
+                    if think.get("fact_pack"):
+                        think["think_fact_pack"] = {"line": len(e["lines"]), **think["fact_pack"]}
+                    think["fallback"] = build_request(prefix, "", role, False, include_human=False, live_fixes=live,
+                                                      plan=e["fact_plan"].get(beat, "") if live else "",
+                                                      topic_id=e["topic_id"])
                     reqs.append(think)
                     convs.append(think["messages"])
+                    if dry:
+                        llm.record(e["id"], len(e["lines"]), role, think["messages"])
                     sps.append(SamplingParams(temperature=think["temperature"], max_tokens=think["max_tokens"],
                                               seed=seed_of(e["topic_id"], e["k"], beat, step)))
                     continue
                 r = build_request(prefix, "", role, False, include_human=False,
-                                  dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"))
+                                  dialogue_pick=arm.get("dialogue_pick"), dialogue_library=arm.get("dialogue_library"),
+                                  live_fixes=live, plan=e["fact_plan"].get(beat, "") if live else "",
+                                  topic_id=e["topic_id"])
+                if r.get("fact_pack"):
+                    e.setdefault("fact_pack", []).append({"line": len(e["lines"]), **r["fact_pack"]})
                 msgs = [dict(m) for m in r["messages"]]
                 extra = []
                 if arm.get("instruction"):
@@ -275,10 +299,12 @@ def generate(args) -> None:
                                                   role if arm["opener_plan"] == "persona" else None))
                 if extra:
                     msgs[-1]["content"] = msgs[-1]["content"] + "\n\n" + "\n".join(extra)
-                if arm.get("lite_plan"):
+                if arm.get("lite_plan") and not live:
                     msgs = add_plan(msgs, e["fact_plan"][beat], lite=True)
                 reqs.append(r)
                 convs.append(msgs)
+                if dry:
+                    llm.record(e["id"], len(e["lines"]), role, msgs)
                 sps.append(SamplingParams(temperature=temp, min_p=arm.get("min_p", 0.0), max_tokens=512, n=n,
                                           seed=seed_of(e["topic_id"], e["k"], beat, step),
                                           **({"bad_words": bad_words} if arm.get("ban_openers") else {})))
@@ -296,7 +322,11 @@ def generate(args) -> None:
                         r = reqs[i]["fallback"]
                         raw = re.sub(r"<think>.*?</think>", "", o.outputs[0].text, flags=re.S).strip()
                         spoken[i] = postprocess(raw, role, r["panel_roles"], r["data"].show_history)
+                        if r.get("fact_pack"):
+                            eps[i].setdefault("fact_pack", []).append({"line": len(eps[i]["lines"]), **r["fact_pack"]})
                 for i, (e, line) in enumerate(zip(eps, spoken)):
+                    if i not in redo and reqs[i].get("think_fact_pack"):
+                        e.setdefault("fact_pack", []).append(reqs[i]["think_fact_pack"])
                     e["lines"].append({"role": role, "speaker": NAMES[role], "text": line or "…",
                                        "source": "worker_fallback" if i in redo else "think"})
                 print(f"[think_action] beat {beat} step {step} done ({len(eps)} episodes, "
@@ -321,5 +351,59 @@ def generate(args) -> None:
     for e in eps:
         e.pop("plan")
         e["scored"] = panel_idx(e)
+    if dry:
+        llm.dump(dry, eps)
+        print(f"dry run: {len(llm.rows)} prompts for {len(eps)} episodes → {dry}")
+        return
     save(Path(args.out), eps)
     print(f"wrote {len(eps)} episodes → {args.out}")
+
+
+class _DrySampling:
+    def __init__(self, **kw) -> None:
+        self.kw = kw
+
+
+class DryRunLLM:
+    """Stands in for vllm.LLM in `generate --dry-run`: records prompts, returns placeholder text (no model)."""
+
+    PLACEHOLDER = "[reply]: (dry run: no model was called; the panelist's line goes here)"
+    # A Think & Action think prompt (--path think_action) gets a "speak" action with the same placeholder line.
+    THINK = json.dumps({"think": "", "action": {
+        "decision": "speak", "intent": {"type": "contribute", "goal": "dry run", "target": None},
+        "content": "(dry run: no model was called; the panelist's line goes here)", "backchannels": []}})
+    PLAN = "- (dry run: the planner's extracted points go here)"
+
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+
+    def record(self, eid: str, line: int, role: str, msgs: list[dict]) -> None:
+        self.rows.append({"episode": eid, "line": line, "role": role, "messages": msgs})
+
+    def chat(self, convs, sps, **_kw):
+        from types import SimpleNamespace
+
+        def text(conv) -> str:
+            if conv[0]["content"].startswith("You extract"):
+                return self.PLAN
+            return self.THINK if "JSON schema:" in conv[-1]["content"] else self.PLACEHOLDER
+
+        return [SimpleNamespace(outputs=[SimpleNamespace(text=text(c))]) for c in convs]
+
+    def dump(self, out: Path, eps: list[dict]) -> None:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "prompts.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in self.rows))
+        by_ep: dict[str, list[dict]] = {}
+        for r in self.rows:
+            by_ep.setdefault(r["episode"], []).append(r)
+        for e in eps:
+            name = e["id"].replace(":", "__").replace("/", "_") + ".txt"
+            with (out / name).open("w") as f:
+                f.write(f"# episode={e['id']} topic={e['topic']}\n")
+                for r in by_ep.get(e["id"], []):
+                    f.write(f"\n\n######## panel line at index {r['line']} — speaker={r['role']}\n")
+                    offered = next((x for x in e.get("fact_pack", []) if x["line"] == r["line"]), None)
+                    if offered:
+                        f.write(f"# fact pack: {json.dumps({k: v for k, v in offered.items() if k != 'line'})}\n")
+                    for m in r["messages"]:
+                        f.write(f"\n===== {m['role']} =====\n{m['content']}\n")

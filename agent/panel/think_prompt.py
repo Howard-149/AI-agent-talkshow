@@ -14,7 +14,10 @@ Order follows the worker prompt:
   instruction, because the think JSON has no place for the hidden [engages] line).
 - TALKSHOW_DIALOGUE_LIBRARY: one move example from that library, rotating per spoken line of this
   panelist (the worker injects the catalog; the think prompt is long already).
-- TALKSHOW_PANEL_CONCRETE: the one-fact instruction (same text as the worker).
+- TALKSHOW_FACT_PACK: the checked-facts block and its "only from these facts" rule (agent.panel.fact_pack.pack_block,
+  the worker's function, on the transcript this think call sees).
+- TALKSHOW_PANEL_CONCRETE: the one-fact instruction (same text as the worker; pointing at the facts when a fact
+  block is present).
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     ``history`` is the transcript the think call sees (the visible prefix of the current line included).
     """
     from agent.panel.concrete import CONCRETE, concrete_instruction_enabled, dialogue_library_override
+    from agent.panel.fact_pack import CONCRETE_WITH_PACK, fact_pack_enabled, pack_block
     from agent.panel.uptake import (
         await_uptake_plan,
         latest_human_unanswered,
@@ -70,7 +74,8 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     planner = uptake_planner_enabled()
     library = dialogue_library_override()
     concrete = concrete_instruction_enabled()
-    if not (scaffold or planner or library or concrete):
+    facts = fact_pack_enabled()
+    if not (scaffold or planner or library or concrete or facts):
         return "", {}
 
     parts: list[str] = []
@@ -92,8 +97,15 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
         if example:
             parts.append(example)
             info["dialogue_library"] = library
+    block = ""
+    if facts:
+        # Offline builders know the topic id (data.fact_pack_topic); live, the pack resolves it as for the worker.
+        block, fact_info = pack_block(data, getattr(data, "fact_pack_topic", None), history=history)
+        if block:
+            parts.append(block.strip())
+        info.update(fact_info)
     if concrete:
-        parts.append(CONCRETE)
+        parts.append(CONCRETE_WITH_PACK if block else CONCRETE)
         info["concrete_instruction"] = True
     if not parts:
         return "", info

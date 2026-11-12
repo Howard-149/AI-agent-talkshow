@@ -6,7 +6,8 @@ Score a version of the show (R = --root, default eval/results/ruler):
   live      (CPU)  episodes from live ghost replay session logs -> episodes jsonl
   embed     (GPU)  Qwen3-Embedding for every line of the given episode files -> emb.npy (for the counted metrics)
   jury      (GPU)  one judge model per run: yes/no items, speaker attribution -> jury_<tag>.jsonl
-  score     (CPU)  kept measures + counted metrics per episode file -> scores_<name>.json + a printed table
+  score     (CPU)  kept measures + counted metrics per episode file -> scores_<name>.json + a printed table;
+                   with --fact-pack (or TALKSHOW_FACT_PACK) also unsupported specifics (specifics.py)
 
 Validate the ruler (final measure set: --v2):
   build2    (CPU)  units = system beats + human anchors + length-matched anchors + live episodes; deterministic
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sys
 from collections import defaultdict
@@ -328,6 +330,13 @@ def cmd_score(args) -> None:
     jrows = {p.stem[len("jury_"):]: E.load(p) for p in sorted(d.glob("jury_*.jsonl")) if "partial" not in p.name}
     am = auto.metrics([e for v in sets.values() for e in v], d)
     res = score_sets(sets, jrows, am)
+    if args.fact_pack:  # same pack for every set, also those generated without it
+        from eval.quality_ruler import specifics
+
+        pack = specifics.load_pack(args.fact_pack)
+        for name, eps in sets.items():
+            sp = specifics.score_episodes(eps, pack)
+            res[name].update({f"specifics.{k}": sp[k] for k in specifics.SET_KEYS})
     keys = [k for k in next(iter(res.values())) if k not in ("episodes", "lines")]
     L = ["| measure | " + " | ".join(res) + " |", "|---|" + "---|" * len(res)]
     for k in ["episodes", "lines"] + keys:
@@ -692,6 +701,8 @@ def main() -> None:
     p.add_argument("episodes", nargs="+", help="episode jsonl files, one per version of the show")
     p.add_argument("--dir", default="", help="dir with jury_*.jsonl and emb.npy (default: the first file's dir)")
     p.add_argument("--out", default="", help="scores json (default <dir>/scores.json)")
+    p.add_argument("--fact-pack", default=os.environ.get("TALKSHOW_FACT_PACK", ""),
+                   help="fact pack json for the unsupported-specifics metric (default TALKSHOW_FACT_PACK; empty = skip)")
     p.set_defaults(fn=cmd_score)
     p = sub.add_parser("live", help="episodes from live ghost replay logs (CPU)")
     p.add_argument("logs", help="dir with session-*.jsonl")
@@ -720,10 +731,12 @@ def main() -> None:
     p.add_argument("--out", default=str(R / "system.jsonl"))
     p.add_argument("--arm", default="production", help="knob preset from eval/quality_ruler/arms.py ARMS")
     p.add_argument("--arm-spec", default="", help="JSON knobs added to the preset")
-    p.add_argument("--pairs", default=str(E.PUBLIC / "build" / "pairs_public.yaml"))
+    p.add_argument("--pairs", default=str(E.PUBLIC / "build" / "pairs_public.yaml"),
+                   help="topics file(s), comma list (e.g. the 30 tuning topics and the 42 public ones)")
+    p.add_argument("--dry-run", default="", help="no model: write every prompt to this dir (CPU)")
     p.add_argument("--path", choices=("worker", "think_action"), default="worker",
                    help="panel lines from the worker prompt (default) or from the Think & Action think content "
-                   "(TALKSHOW_* flags from the environment; --arm must stay production)")
+                   "(only live_flags / fact_pack arms apply)")
     p.set_defaults(fn=lambda a: E.generate(a))
     sub.add_parser("build", help="validation episode set, first measures (CPU)").set_defaults(fn=cmd_build)
     p = sub.add_parser("invert", help="persona-inversion rewrites for build (GPU)")
