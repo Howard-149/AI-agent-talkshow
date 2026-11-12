@@ -6,7 +6,8 @@
     python -m eval.bench.run ... --dry-run   # no model: writes every exact prompt to DIR/prompts.jsonl (+ DIR/prompts/*.txt)
     python -m eval.bench.run ... --fake      # no model: placeholder replies, the full output format (tests, plumbing)
 
-Systems: plain | worker | think_action (systems.py). --arm (show systems): production | fast | concrete_fact_pack.
+Systems: plain | worker | think_action (systems.py). --arm (show systems): production | fast | concrete_fact_pack,
+and the Think & Action context variants fast_lean | fast_persona | fast_focus | fast_context_all.
 Output DIR/outputs.jsonl: one row per (item, rerun) with the reply, floor_action, latency, prompt hash; DIR/run.json:
 the configuration. Paired items share sampling seeds: the seed depends on (pair group, role, rerun, --seed), not on the
 version, so the two sides of a counterfactual pair differ only in the edited input.
@@ -82,7 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--system", choices=("plain", "worker", "think_action"), required=True)
     ap.add_argument("--model", default="", help="HF model id or path (not needed with --dry-run / --fake)")
-    ap.add_argument("--arm", default="production", help="show systems: production | fast | concrete_fact_pack")
+    ap.add_argument("--arm", default="production", help="show systems: production | fast | concrete_fact_pack | fast_lean | fast_persona | "
+                    "fast_focus | fast_context_all")
     ap.add_argument("--tasks", default="T1,T2,T3a,T3b,T4", help="comma list; T3 = T3a and T3b")
     ap.add_argument("--split", choices=("dev", "test"), default="dev")
     ap.add_argument("--items", default="", help="items jsonl (default: eval/data/bench/dev.jsonl or build/test.jsonl)")

@@ -110,7 +110,10 @@ None when the system was simply asked for a line; yield, wait and backchannel al
   action. If the panelist does not choose to speak, the text is the worker line (as live, when the floor still goes to
   it); `--no-fallback` leaves it empty.
 
-The show's systems take `--arm production | fast | concrete_fact_pack` (flag presets, `eval/quality_ruler/arms.py`).
+The show's systems take `--arm production | fast | concrete_fact_pack` (flag presets, `eval/quality_ruler/arms.py`), and
+the context variants of the Think & Action think prompt on top of fast: `fast_lean` (`TALKSHOW_THINK_LEAN`),
+`fast_persona` (`TALKSHOW_THINK_PERSONA_NEAR`), `fast_focus` (`TALKSHOW_THINK_FOCUS`) and `fast_context_all` (all three;
+see `agent/panel/think_prompt.py`).
 Items with facts always reach the show's fact block, whatever the arm. The show only accepts its own persona cards or
 the swapped pair.
 

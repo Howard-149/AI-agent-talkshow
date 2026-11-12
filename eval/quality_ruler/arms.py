@@ -97,7 +97,11 @@ FAST_FLAGS = {"TALKSHOW_ADDRESSEE_FLOOR": "1", "TALKSHOW_UPTAKE_PLANNER": "lite"
               "TALKSHOW_PANEL_BEST_OF": "1"}
 # Every flag apply_env sets or clears (the replayable panel flags, agent/session/ghost_replay.REPLAY_FLAGS).
 LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TALKSHOW_ADDRESSEE_FLOOR",
-                   "TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF")
+                   "TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF",
+                   "TALKSHOW_THINK_LEAN", "TALKSHOW_THINK_PERSONA_NEAR", "TALKSHOW_THINK_FOCUS")
+# Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
+CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
+                 "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
 
 ARMS: dict[str, dict] = {
     "production": {},
@@ -110,6 +114,11 @@ ARMS: dict[str, dict] = {
     # Same as concrete_fact_pack, but the style examples carry no figures or named cases of their own.
     "concrete_fact_pack_nofig": {"live_flags": {**FAST_FLAGS, "TALKSHOW_DIALOGUE_LIBRARY": "panel_concrete_nofig"},
                                  "best_of": 1, "fact_pack": True},
+    "fast_lean": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["lean"]}, "best_of": 1},
+    "fast_persona": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["persona"]}, "best_of": 1},
+    "fast_focus": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["focus"]}, "best_of": 1},
+    "fast_context_all": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"],
+                                        **CONTEXT_FLAGS["focus"]}, "best_of": 1},
 }
 
 

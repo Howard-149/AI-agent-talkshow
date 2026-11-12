@@ -255,7 +255,7 @@ class PlainLLM(System):
 
 # ------------------------------------------------------------------------------------------------ the show
 
-SHOW_ARMS = ("production", "fast", "concrete_fact_pack")
+SHOW_ARMS = ("production", "fast", "concrete_fact_pack", "fast_lean", "fast_persona", "fast_focus", "fast_context_all")
 
 
 def show_fact_instruction(messages: list[dict], obs: dict) -> tuple[list[dict], str | None]:

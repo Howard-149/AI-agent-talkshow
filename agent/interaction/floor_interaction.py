@@ -1681,6 +1681,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
     ) -> Action | None:
         from agent.config import load_persona_name
         from agent.panel.panel_prompts import panelist_personality_block
+        from agent.panel import think_prompt as tp
         from agent.panel.think_prompt import think_prompt_additions
         from agent.show.show_history import human_name_note
 
@@ -1709,22 +1710,16 @@ class ThinkActionInteraction(TextOnlyInteraction):
         if rules and is_host and floor_state == "occupied":
             # Floor rules: the host moderates a speaker who holds the floor, never debates.
             occupied_guidance = HOST_OCCUPIED_GUIDANCE
-        prompt = (
-            f"You are {load_persona_name(role)} ({role}).\n"
-            f"{human_name_note()}"
-            f"{mood}"
-            f"Current floor state: {floor_state}.\n"
-            f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"
+        # Context variants for panelists (agent/panel/think_prompt.py; each flag default off = text unchanged).
+        panelist = not is_host and role != "human"
+        free_panelist = panelist and floor_state == "free"
+        lean = free_panelist and tp.think_lean_enabled()
+        latest = (
             f"Latest public interval: {interval_text}\n"
             f"Complete visible speech prefix so far: {visible_text}\n\n"
-            "Reflect privately on the actual point and possible next moves, then return "
-            "one JSON object matching the required schema. Think is open-ended private "
-            "understanding, not necessarily a speaking wish; do not reduce it to a rule "
-            "like 'the speaker has not finished, so I must wait.' "
-            "Decision controls only the main floor; a backchannel never requests the floor. "
-            f"{occupied_guidance}"
-            "When free, choose speak only if you can respond, add substance, or perform "
-            "a useful conversational role (including host facilitation). "
+        )
+        backchannel_note = "Decision controls only the main floor; a backchannel never requests the floor. "
+        backchannel_guidance = (
             "Backchannels are OPTIONAL and independent of your main-floor decision: "
             "speaking or requesting an interrupt does not imply a backchannel, and vice versa. "
             "Prefer backchannels: [] unless a short listener response adds clear conversational "
@@ -1738,9 +1733,50 @@ class ThinkActionInteraction(TextOnlyInteraction):
             "interval. Backchannels never take the floor and must not be arguments, "
             "questions requiring an answer, or attempts to interrupt. Do not put agreement "
             "before the words it agrees with. Silence is preferable to artificial feedback. "
+        )
+        backchannel_schema = (
+            '    "backchannels": [{"intent": {"type": "acknowledge | support | surprise | encourage", '
+            '"goal": "specific listener feedback", "target": "specific target or null"}, '
+            '"content": "1-3 words", "after_word_index": 1}]\n'
+        )
+        if lean:
+            # Free floor: no repeat of a line the transcript already ends with, no interrupt or
+            # backchannel guidance (interrupts and backchannels belong to an occupied floor).
+            if tp.same_as_last_line(history, interval_text, visible_text):
+                latest = f"{tp.LEAN_SAME_LINE}\n\n"
+            occupied_guidance = ""
+            backchannel_note = "Decision controls only the main floor. "
+            backchannel_guidance = ""
+            backchannel_schema = '    "backchannels": []\n'
+        focus = ""
+        if free_panelist and tp.think_focus_enabled():
+            focus = await tp.focus_block(data, role, history, speaker, visible_text) + "\n\n"
+        # Dialogue quality fixes for panelists (flags default off: nothing is added).
+        extra, extra_info = await think_prompt_additions(data, role, history)
+        near = tp.persona_reminder(role) if panelist and tp.persona_near_enabled() else ""
+        if near and extra:  # right before the "About content" section
+            extra = f"\n\n{near}{extra}"
+        prompt = (
+            f"You are {load_persona_name(role)} ({role}).\n"
+            f"{human_name_note()}"
+            f"{mood}"
+            f"Current floor state: {floor_state}.\n"
+            f"Current floor holder: {_speaker_name(speaker)} ({speaker}).\n"
+            f"{latest}"
+            f"{focus}"
+            "Reflect privately on the actual point and possible next moves, then return "
+            "one JSON object matching the required schema. Think is open-ended private "
+            "understanding, not necessarily a speaking wish; do not reduce it to a rule "
+            "like 'the speaker has not finished, so I must wait.' "
+            f"{backchannel_note}"
+            f"{occupied_guidance}"
+            "When free, choose speak only if you can respond, add substance, or perform "
+            "a useful conversational role (including host facilitation). "
+            f"{backchannel_guidance}"
             "Return no markdown or text outside the JSON object."
             f"{QUOTE_RULE if ask_quote else ''}"
             "\n\n"
+            f"{near + chr(10) + chr(10) if near and not extra else ''}"
             "JSON schema:\n"
             "{\n"
             '  "think": "private reflection",\n'
@@ -1750,16 +1786,12 @@ class ThinkActionInteraction(TextOnlyInteraction):
             '"goal": "specific outcome", "target": "specific target or null"} | null,\n'
             '    "content": "candidate utterance or null",\n'
             f"{QUOTE_SCHEMA_LINE if ask_quote else ''}"
-            '    "backchannels": [{"intent": {"type": "acknowledge | support | surprise | encourage", '
-            '"goal": "specific listener feedback", "target": "specific target or null"}, '
-            '"content": "1-3 words", "after_word_index": 1}]\n'
+            f"{backchannel_schema}"
             "  }\n"
             "}\n"
             "For silent: intent and content must be null. For speak/interrupt: both are required. "
             "Interrupt is valid only while occupied; speak is valid only when free."
         )
-        # Dialogue quality fixes for panelists (flags default off: nothing is added).
-        extra, extra_info = await think_prompt_additions(data, role, history)
         prompt += extra
         if extra_info:
             data.runtime.gemma_client.log_text_only_event(
@@ -1773,7 +1805,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         raw = await data.runtime.gemma_client.complete_text(
             prompt,
             system_prompt=system_prompt,
-            history_messages=history.prior_messages(perspective=role),
+            history_messages=(tp.lean_history(history) if lean else history).prior_messages(perspective=role),
             raw=True,
             max_tokens=768,
             temperature=0.2,
