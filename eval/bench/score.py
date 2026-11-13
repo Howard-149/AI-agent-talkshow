@@ -5,6 +5,8 @@
 Rules, no model:
   T2 right floor       systems that decide the floor (floor_action set): per panelist per rerun, speak when
                        addressed, yield when not; accuracy for each case and balanced (always-speak = 0.5)
+  T2f floor            both panelists bid, the system's floor selection picks: the named panelist got the floor
+                       (balanced over the two named versions), the control's distribution (floor_score)
   T3a/T3b follows     does the reply state the edited value ("new"), the original value ("old"), both, or neither
                        (fact_edit.follows); on fact_orig_<n> replies, how often the original values are stated
   unsupported specifics  every reply: numbers, years, amounts and names that appear nowhere in what the panelist was
@@ -42,6 +44,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from eval.bench.items import GROUNDING, PANEL, Item, read_items  # noqa: E402
+
+NO_REPLY_TASKS = ("T2f",)  # scored on who got the floor, not on a reply
+OVERALL_TASKS = ("T1", "T2", "T3a", "T3b", "T4")  # T2f is reported separately for now
 
 IDENT_FACT_SYSTEM = (
     "You are a careful annotator of talk-show transcripts. A panelist was shown a list of checked facts; one fact came "
@@ -109,6 +114,39 @@ def right_floor(rows: list[dict], items: dict[str, Item]) -> dict:
             "balanced": round(sum(parts) / len(parts), 3)}
 
 
+FLOOR_OUTCOMES = ("commentator", "guest", "host", "none")
+
+
+def floor_score(rows: list[dict], items: dict[str, Item]) -> dict:
+    """T2f: who got the floor (selected_role) per version. Right = the named panelist got it; balanced accuracy is
+    the mean over the two named versions (always picking one panelist gives 0.5). The control (nobody named) reports
+    the distribution. floor_mode says how it was measured: "show" (the show's floor selection), "question" (a plain
+    system's answer to the floor question) or "not_applicable" (no floor selection)."""
+    rs = [r for r in rows if r["task"] == "T2f"]
+    modes = Counter(r.get("floor_mode") or "unknown" for r in rs)
+    rs = [r for r in rs if r.get("floor_mode") != "not_applicable"]
+    if not rs:
+        return {"n": 0, "applicable": False, "modes": dict(modes)}
+    dist: dict[str, Counter] = defaultdict(Counter)
+    hits: dict[str, list[int]] = defaultdict(list)
+    for r in rs:
+        it = items[r["item_id"]]
+        sel = r.get("selected_role")
+        sel = sel if sel in FLOOR_OUTCOMES else "none"
+        dist[it.version][sel] += 1
+        if it.expected.get("addressee"):
+            hits[it.expected["addressee"]].append(int(sel == it.expected["addressee"]))
+    acc = {a: round(sum(v) / len(v), 3) for a, v in sorted(hits.items())}
+    res = {"n": len(rs), "applicable": True, "modes": dict(modes),
+           "acc_by_addressee": acc, "balanced": round(sum(acc.values()) / len(acc), 3) if acc else None,
+           "distribution": {v: {k: round(c[k] / sum(c.values()), 3) for k in FLOOR_OUTCOMES}
+                            for v, c in sorted(dist.items())}}
+    ctrl = [r for r in rs if r.get("controller_called") is not None]
+    if ctrl:
+        res["controller_called"] = round(sum(bool(r["controller_called"]) for r in ctrl) / len(ctrl), 3)
+    return res
+
+
 def follows_fact(rows: list[dict], items: dict[str, Item], task: str = "T3a") -> dict:
     from eval.bench.fact_edit import follows
 
@@ -136,7 +174,7 @@ def unsupported(rows: list[dict], items: dict[str, Item], pack: dict | None) -> 
 
     by_task: dict[str, list] = defaultdict(list)
     for r in rows:
-        if not r["text"]:
+        if not r["text"] or r["task"] in NO_REPLY_TASKS:
             continue
         it = items[r["item_id"]]
         if pack is not None:
@@ -166,7 +204,7 @@ def r_hook(rows: list[dict], items: dict[str, Item], out: Path, boot: int = 1000
     res = {}
     by_task: dict[str, list] = defaultdict(list)
     for r in rows:
-        if r["text"]:
+        if r["text"] and r["task"] not in NO_REPLY_TASKS:
             by_task[r["task"]].append(r)
     for task, rs in sorted(by_task.items()):
         d = out / "R" / task
@@ -208,7 +246,7 @@ def judge_requests(rows: list[dict], items: dict[str, Item], out: Path, rubric_r
         groups[it.pair_group][it.version] = it
     ident, rubric = [], []
     for r in rows:
-        if not r["text"]:
+        if not r["text"] or r["task"] in NO_REPLY_TASKS:
             continue
         it = items[r["item_id"]]
         if it.task == "T2" and not (addressed_row(it) and r.get("floor_action") in (None, *SPEAKS)):
@@ -342,6 +380,7 @@ def task_scores(per_task: dict, judged: dict) -> dict:
     T3a, T3b (each)  200*(J-0.5) on the fact pair; 100*share of edited-fact replies stating the new value only;
         100*(1 - share of replies with an unsupported specific)
     T4  200*(J-0.5) on persona attribution; 100*persona item pass rate
+    T2f 200*(balanced floor accuracy - 0.5): the named panelist got the floor (reported, not in the overall yet)
     J is pooled over all judges. Components without data are left out; the overall score is the mean over the tasks
     scored (T1, T2, T3a, T3b, T4 on a full run)."""
     jt = {k: v.get("all", {}) for k, v in judged.get("tasks", {}).items()}
@@ -363,9 +402,13 @@ def task_scores(per_task: dict, judged: dict) -> dict:
     fid = jt.get("T4", {}).get("rubric_pass", {}).get("fidelity")
     if fid is not None:
         comps["T4"]["persona_items"] = _clip(100 * fid)
+    fl = per_task.get("T2f", {}).get("floor", {})
+    if fl.get("applicable") and fl.get("balanced") is not None:
+        comps["T2f"]["right_floor"] = _clip(200 * (fl["balanced"] - 0.5))
     scores = {t: {"score": round(sum(c.values()) / len(c), 1), "components": c} for t, c in sorted(comps.items()) if c}
-    if scores:
-        scores["overall"] = round(sum(v["score"] for v in scores.values()) / len(scores), 1)
+    in_overall = [v["score"] for t, v in scores.items() if t in OVERALL_TASKS]
+    if in_overall:
+        scores["overall"] = round(sum(in_overall) / len(in_overall), 1)
     return scores
 
 
@@ -382,11 +425,20 @@ def markdown_report(rep: dict) -> str:
     for t, v in sc.items():
         if t != "overall":
             lines.append(f"| {t} | {v['score']} | " + ", ".join(f"{k} {x}" for k, x in v["components"].items()) + " |")
-    lines.append(f"| overall | {sc.get('overall', '-')} | mean over tasks |")
+    lines.append(f"| overall | {sc.get('overall', '-')} | mean over {', '.join(OVERALL_TASKS)} |")
     jt = rep.get("judged", {}).get("tasks", {})
     for task, v in rep["tasks"].items():
         lines += ["", f"## {task}", "",
                   f"{v['replies']} replies ({v['empty']} empty), floor actions {v['floor_actions']}."]
+        fl = v.get("floor")
+        if fl:
+            if fl.get("applicable"):
+                lines.append(f"Floor ({', '.join(fl['modes'])}): balanced {fl['balanced']}, named panelist got the floor "
+                             f"{fl['acc_by_addressee']}; distribution by version {fl['distribution']}"
+                             + (f"; controller called on {fl['controller_called']} of items." if "controller_called" in fl
+                                else "."))
+            else:
+                lines.append("Floor: not applicable (this system has no floor selection).")
         a = jt.get(task, {}).get("all", {})
         if a.get("J"):
             lines.append(f"Identification J {a['J']['J']} (95% CI {a['J']['ci95']}, n {a['J']['n']}); chance 0.5.")
@@ -465,6 +517,8 @@ def score(run: Path, items_path: str = "", pack_path: str = "", out: Path | None
         per_task[task]["unsupported_specifics"] = v
     if "T2" in per_task:
         per_task["T2"]["right_floor"] = right_floor(rows, items)
+    if "T2f" in per_task:
+        per_task["T2f"]["floor"] = floor_score(rows, items)
     for task in GROUNDING:
         if task in per_task:
             per_task[task]["follows_fact"] = follows_fact(rows, items, task)

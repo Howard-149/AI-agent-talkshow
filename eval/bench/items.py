@@ -4,7 +4,7 @@ An item is everything a system sees at one turn of a talk show (topic, persona c
 new line, optional checked facts) and the expected behaviour that scoring checks. Items that differ only in the edited
 element share a ``pair_group``; the group's reference version is ``meta["reference_version"]``.
 
-Tasks (README.md): T1 listening, T2 addressing, T3a grounding (facts listed), T3b grounding (facts listed plus an
+Tasks (README.md): T1 listening, T2 addressing, T2f floor (who gets the floor when both panelists bid), T3a grounding (facts listed), T3b grounding (facts listed plus an
 instruction to use them), T4 persona, T5 hosting, T6 full show.
 """
 
@@ -19,6 +19,7 @@ from typing import Any, Iterable
 TASKS = {
     "T1": "listening",
     "T2": "addressing",
+    "T2f": "floor",  # both panelists bid; the system's floor selection picks the speaker
     "T3a": "grounding",  # facts listed, no instruction to use them
     "T3b": "grounding_instructed",  # the same items, plus one instruction to use the facts
     "T4": "persona",
@@ -26,7 +27,7 @@ TASKS = {
     "T6": "full_show",
 }
 SPLITS = ("dev", "test")
-ROLES = ("host", "commentator", "guest")
+ROLES = ("host", "commentator", "guest", "panel")  # "panel": the floor decides who of the panel speaks (T2f)
 PANEL = ("commentator", "guest")
 HISTORY_ROLES = ("host", "commentator", "guest", "human")
 FLOOR_TASKS = ("T2",)
@@ -138,6 +139,8 @@ def observation(item: Item) -> dict[str, Any]:
         "task": item.task,
         # T2: the panelist decides whether to take the floor (speak) or leave it to the addressed panelist (yield)
         "floor_choice": item.task in FLOOR_TASKS,
+        # T2f: the item is answered by the floor selection over both panelists, not by one panelist
+        "floor_item": item.task == "T2f",
         # T3b: an instruction to use the facts (None elsewhere)
         "fact_instruction": item.meta.get("fact_instruction"),
         "topic_id": item.topic_id,

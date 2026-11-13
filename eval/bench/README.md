@@ -11,6 +11,7 @@ element of the input is edited, and a good reply should change with it (or shoul
 |---|---|---|---|
 | T1 listening | the audience line: a number, the stance, a named entity, a cause; a paraphrase as control | the panelist the line addresses | follows the edit; ignores the paraphrase |
 | T2 addressing | the audience line names panelist A or panelist B | both panelists, each may speak or yield | the named panelist speaks and answers, the other yields |
+| T2f floor | the same lines, plus a control naming nobody | the floor selection over both panelists | the named panelist gets the floor |
 | T3a grounding | one number in the fact the audience asks about (up to 2 pairs per topic); facts listed, no instruction to use them | the addressed panelist | uses the fact as given, unprompted |
 | T3b grounding, instructed | the T3a items plus one instruction to use the facts | the addressed panelist | uses the fact as given |
 | T4 persona | the two panelists' persona cards are swapped | both panelists | sounds like the card it was given |
@@ -21,6 +22,16 @@ T2 template: the audience line with its opening name removed, put to one panelis
 generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`). T2 is a floor
 decision plus a reply: the tested panelist may speak or yield the floor. Only T2 offers that choice; T1, T3a/T3b and T4
 always ask for a line.
+
+T2f (`floor.py`) measures the floor itself: both panelists bid on the same audience line and the system decides who
+speaks. For Think & Action, both panelists' think calls run on the same state, then the show's production free-floor
+selection (`ThinkActionInteraction.arbitrate_free`) picks: the addressee priority (`TALKSHOW_ADDRESSEE_FLOOR`) when it
+is on and the named panelist chose to speak, else the LLM floor controller, whose prompt is the live one (a recording
+client captures it, then it runs again on the controller's answer). Only the two panelists bid; the host does not think
+on this turn. Plain systems have no floor, so they get one floor question per item ("Who should speak next: Ryan or
+Amy? Answer with one name."). The two kinds are measured differently: each row records `floor_mode` (show, question,
+or not_applicable for the worker, which has no floor selection). The control (nobody named) is reported as the
+distribution of who got the floor.
 
 T3 pairs (`build.py`): the facts to edit are taken, in the show's order, from the 6 facts it would offer for the
 original audience line (at most 2 per topic, from different Wikipedia pages). For each, the audience asks the
@@ -51,10 +62,10 @@ Example: "employers must pay minimum wage unless employees customarily receive m
 
 ## Splits
 
-| split | topics | source | history before the audience line | items (T1 / T2 / T3a / T3b / T4) |
+| split | topics | source | history before the audience line | items (T1 / T2 / T2f / T3a / T3b / T4) |
 |---|---|---|---|---|
-| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 574 (150 / 120 / 92 / 92 / 120) |
-| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 811 (243 / 168 / 116 / 116 / 168) |
+| dev | 30 | hand-written (`eval/data/minimal_pairs`) | the recorded show (panel already discussed the topic) | 664 (150 / 120 / 90 / 92 / 92 / 120) |
+| test | 42 | real audience and debater turns from public debates (`eval/data/public_set`) | the host's two opening lines | 937 (243 / 168 / 126 / 116 / 116 / 168) |
 
 Test items start from the host's opening by choice: every test item must be rebuildable from committed data plus the
 public corpus, and a recorded show state (made by our own system) exists for only some test topics. So on test the
@@ -110,9 +121,17 @@ None when the system was simply asked for a line; yield, wait and backchannel al
   action. If the panelist does not choose to speak, the text is the worker line (as live, when the floor still goes to
   it); `--no-fallback` leaves it empty.
 
-The show's systems take `--arm production | fast | concrete_fact_pack` (flag presets, `eval/quality_ruler/arms.py`).
+The show's systems take `--arm production | fast | concrete_fact_pack` (flag presets, `eval/quality_ruler/arms.py`), and
+the context variants of the Think & Action think prompt on top of fast: `fast_lean` (`TALKSHOW_THINK_LEAN`),
+`fast_persona` (`TALKSHOW_THINK_PERSONA_NEAR`), `fast_focus` (`TALKSHOW_THINK_FOCUS`) and `fast_context_all` (all three;
+see `agent/panel/think_prompt.py`), `fast_v2` (fast + lean + persona near, the recommended Think & Action set), `fast_v2_noaddr` (fast_v2 without
+addressee priority, for T2f) `fast_v2_lib` (fast_v2 with the library personas ryan_skeptic and amy_warm) and `fast_v2_lib_force` (fast_v2_lib with
+`TALKSHOW_ADDRESSEE_FLOOR=force`; on T2f a forced panelist's line is the worker draft, `text_source` worker_fallback). Any
+preset in `eval/quality_ruler/arms.py` made only of the show's flags is accepted.
 Items with facts always reach the show's fact block, whatever the arm. The show only accepts its own persona cards or
-the swapped pair.
+the swapped pair. Items always carry the seats' own prose cards; under a library arm (`fast_v2_lib`) the show plays
+its library personas instead (the swapped pair on a T4 swap item), so the library is a property of the system, as the
+fact-pack arm is.
 
 To add a system: subclass `System`, build the prompts in `requests` and turn the model output into a reply in `finish`
 (or override `respond_batch` for a remote service), and register it in `SYSTEMS`.
@@ -158,6 +177,9 @@ Task scores (0-100, `score.task_scores`), each the mean of the parts that exist 
 - T3a and T3b, each: 200 x (J - 0.5) on the fact pair; 100 x share of replies stating the new value only; 100 x share of replies with
   no unsupported specific.
 - T4: 200 x (J - 0.5) on persona attribution; 100 x persona item pass rate.
+- T2f: 200 x (balanced floor accuracy - 0.5), where balanced accuracy is the mean over the two named versions of "the
+  named panelist got the floor" (always picking the same panelist gives 0). Reported as its own column, not yet in the
+  overall score, so earlier overall scores stay comparable.
 - overall: the mean over T1, T2, T3a, T3b and T4 (the tasks scored). Scores are clipped to 0-100. The report and the
   leaderboard show T3a and T3b as separate columns. `--tasks T3` selects both.
 

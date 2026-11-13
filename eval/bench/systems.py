@@ -92,8 +92,13 @@ class FakeBackend:
 
         if req.kind == "planner":
             return DryRunLLM.PLAN
-        if req.kind == "think":
+        if req.kind.startswith("think"):
             return DryRunLLM.THINK
+        if req.kind == "controller":  # the free-floor controller: take the first panelist
+            return json.dumps({"decision": "speak", "selected_role": "commentator",
+                               "reason_code": "high_contribution", "reason": "placeholder (no model was called)"})
+        if req.kind == "floor":
+            return "Ryan"
         return DryRunLLM.PLACEHOLDER
 
     def generate(self, reqs: list[Request]) -> list[str]:
@@ -242,9 +247,20 @@ class PlainLLM(System):
     def requests(self, p: Pending, stage: int) -> list[Request]:
         if stage:
             return []
+        if p.obs.get("floor_item"):  # T2f: one floor question (eval/bench/floor.py)
+            from eval.bench.floor import plain_floor_messages
+
+            return [Request("floor", plain_floor_messages(p.obs), 0.0, 16, p.seed, p.obs["item_id"])]
         return [Request("reply", plain_messages(p.obs), self.temperature, self.max_tokens, p.seed, p.obs["item_id"])]
 
     def finish(self, p: Pending, stage: int) -> dict:
+        if p.obs.get("floor_item"):
+            from eval.bench.floor import parse_name
+
+            raw = p.state["outputs"]["floor"]
+            role = parse_name(strip_think(raw), p.obs.get("names", {}))
+            return {"text": "", "speaker": role, "floor_action": "speak" if role else None, "selected_role": role,
+                    "floor_mode": "question", "raw": raw}
         text = plain_postprocess(p.state["outputs"]["reply"], p.obs["name"])
         floor = None
         if p.obs.get("floor_choice"):  # exact PASS = yield the floor, no line
@@ -255,7 +271,15 @@ class PlainLLM(System):
 
 # ------------------------------------------------------------------------------------------------ the show
 
-SHOW_ARMS = ("production", "fast", "concrete_fact_pack")
+def _show_arms() -> tuple[str, ...]:
+    """Arm presets made of the show's own flags (live_flags, fact_pack; best-of 1): the ones the show adapters take."""
+    from eval.quality_ruler.arms import ARMS
+
+    return tuple(k for k, v in ARMS.items()
+                 if set(v) <= {"live_flags", "fact_pack", "best_of"} and int(v.get("best_of", 1)) == 1)
+
+
+SHOW_ARMS = _show_arms()
 
 
 def show_fact_instruction(messages: list[dict], obs: dict) -> tuple[list[dict], str | None]:
@@ -367,21 +391,25 @@ class _Show(System):
 class TalkshowWorker(_Show):
     name = "worker"
 
-    def worker_request(self, p: Pending, kind: str = "reply") -> tuple[Request, dict]:
+    def worker_request(self, p: Pending, kind: str = "reply", role: str | None = None) -> tuple[Request, dict]:
+        """The worker prompt for ``role`` (default the role under test)."""
         from eval.model_only import TEMPERATURE, build_request
 
         obs = p.obs
+        role = role or obs["role"]
         env, tid = self.pack_env(obs)
         swap = show_persona_swap(obs)
         human = obs.get("audience_turn")
         with _env(**env):
-            req = build_request(self.prefix(obs), human or "", obs["role"], swap, include_human=human is not None,
+            req = build_request(self.prefix(obs), human or "", role, swap, include_human=human is not None,
                                 live_fixes=self.live or bool(env["TALKSHOW_FACT_PACK"]),
                                 plan=self.plan(p), topic_id=tid)
         req["messages"], p.state["fact_instruction"] = show_fact_instruction(req["messages"], obs)
         return Request(kind, req["messages"], TEMPERATURE, 512, p.seed, obs["item_id"]), req
 
     def requests(self, p: Pending, stage: int) -> list[Request]:
+        if p.obs.get("floor_item"):
+            return []  # the worker path has no floor selection: T2f does not apply
         if stage == 0 and self.planner_request(p):
             p.state["planned"] = True
             return self.planner_request(p)
@@ -394,6 +422,9 @@ class TalkshowWorker(_Show):
     def finish(self, p: Pending, stage: int) -> dict | None:
         from eval.model_only import postprocess
 
+        if p.obs.get("floor_item"):
+            return {"text": "", "speaker": None, "floor_action": None, "selected_role": None,
+                    "floor_mode": "not_applicable", "raw": ""}
         if "reply" not in p.state.get("outputs", {}):
             return None
         req = p.state["req"]
@@ -422,9 +453,93 @@ class TalkshowThinkAction(TalkshowWorker):
     def describe(self) -> dict:
         return {**super().describe(), "fallback": self.fallback}
 
+    # T2f (eval/bench/floor.py): both panelists think on the same state, then the production free-floor selection
+    # picks; the controller call, when the selection needs it, is one more model request.
+
+    def floor_requests(self, p: Pending, stage: int) -> list[Request]:
+        from eval.bench.floor import PANEL, arbitrate
+        from eval.think_action_prompt import think_request
+
+        obs = p.obs
+        if stage == 0 and self.planner_request(p):
+            p.state["planned"] = True
+            return self.planner_request(p)
+        first = 1 if p.state.get("planned") else 0
+        if stage == first:
+            reqs = []
+            for k, role in enumerate(PANEL):
+                req = think_request(self.prefix(obs), role, human_text=obs.get("audience_turn"), plan=self.plan(p))
+                p.state[f"think:{role}"] = req
+                reqs.append(Request(f"think:{role}", req["messages"], req["temperature"], req["max_tokens"],
+                                    None if p.seed is None else p.seed + k, obs["item_id"]))
+            return reqs
+        if stage == first + 1:
+            p.state["actions"] = self.floor_actions(p)
+            got = arbitrate(self.prefix(obs), obs.get("audience_turn") or "", p.state["actions"])
+            p.state["floor"] = got
+            if got["controller"] is not None:
+                c = got["controller"]
+                return [Request("controller", c["messages"], c["temperature"], c["max_tokens"], p.seed,
+                                obs["item_id"])]
+            return self.floor_settle(p, got)  # a rule picked (addressee priority): no controller call
+        if stage == first + 2 and "controller" in p.state.get("outputs", {}) and "outcome" not in p.state:
+            got = arbitrate(self.prefix(obs), obs.get("audience_turn") or "", p.state["actions"],
+                            p.state["outputs"]["controller"])
+            return self.floor_settle(p, got)
+        return []
+
+    def floor_settle(self, p: Pending, got: dict) -> list[Request]:
+        """The final selection; a selected panelist with no proposed line (e.g. forced by ADDRESSEE_FLOOR=force)
+        gets the worker draft, as in the live show (actuators.generate_panelist_line)."""
+        p.state["outcome"] = got
+        out = got["outcome"]
+        action = p.state["actions"].get(out.selected_role)
+        if out.decision == "speak" and action is not None and not (action.decision == "speak" and action.content):
+            r, req = self.worker_request(p, "fallback", role=out.selected_role)
+            p.state["req"] = req
+            return [r]
+        return []
+
+    def floor_actions(self, p: Pending) -> dict:
+        from agent.interaction.think_action import parse_think_action
+        from eval.bench.floor import PANEL
+
+        outs = p.state.get("outputs", {})
+        return {role: parse_think_action(outs[f"think:{role}"], floor_state="free",
+                                         interval_text=p.state[f"think:{role}"]["interval_text"],
+                                         allow_backchannels=True).action for role in PANEL}
+
+    def floor_finish(self, p: Pending) -> dict | None:
+        from eval.bench.floor import PANEL
+        from eval.model_only import postprocess
+
+        outs = p.state.get("outputs", {})
+        if "outcome" not in p.state:
+            return None
+        got = p.state["outcome"]
+        out = got["outcome"]
+        actions = p.state["actions"]
+        selected = out.selected_role
+        text, source = "", "none"
+        if "req" in p.state:  # the selected panelist had no line of their own: worker draft
+            if "fallback" not in outs:
+                return None
+            req = p.state["req"]
+            text = postprocess(outs["fallback"], selected, req["panel_roles"], req["data"].show_history)
+            source = "worker_fallback"
+        elif selected in actions and out.decision == "speak":
+            text, source = actions[selected].content or "", "think"
+        return {"text": text, "speaker": selected, "floor_action": out.decision, "selected_role": selected,
+                "floor_mode": "show", "floor_reason_code": out.reason_code, "text_source": source,
+                "decisions": {r: actions[r].decision for r in PANEL}, "candidates": got["candidates"],
+                "controller_called": got["controller"] is not None, "controller_raw": outs.get("controller"),
+                "addressee_rule": got["addressee"], "raw": json.dumps({r: outs.get(f"think:{r}") for r in PANEL})}
+
     def requests(self, p: Pending, stage: int) -> list[Request]:
         from eval.think_action_prompt import think_request
 
+        if p.obs.get("floor_item"):
+            return self.floor_requests(p, stage)
         if stage == 0 and self.planner_request(p):
             p.state["planned"] = True
             return self.planner_request(p)
@@ -452,6 +567,8 @@ class TalkshowThinkAction(TalkshowWorker):
         from eval.model_only import postprocess
         from eval.think_action_prompt import spoken_content
 
+        if p.obs.get("floor_item"):
+            return self.floor_finish(p)
         outs = p.state.get("outputs", {})
         if "think" not in outs:
             return None

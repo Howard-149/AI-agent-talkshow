@@ -97,7 +97,15 @@ FAST_FLAGS = {"TALKSHOW_ADDRESSEE_FLOOR": "1", "TALKSHOW_UPTAKE_PLANNER": "lite"
               "TALKSHOW_PANEL_BEST_OF": "1"}
 # Every flag apply_env sets or clears (the replayable panel flags, agent/session/ghost_replay.REPLAY_FLAGS).
 LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TALKSHOW_ADDRESSEE_FLOOR",
-                   "TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF")
+                   "TALKSHOW_DIALOGUE_LIBRARY", "TALKSHOW_PANEL_CONCRETE", "TALKSHOW_PANEL_BEST_OF",
+                   "TALKSHOW_THINK_LEAN", "TALKSHOW_THINK_PERSONA_NEAR", "TALKSHOW_THINK_FOCUS",
+                   "TALKSHOW_PERSONA_LIBRARY", "TALKSHOW_PERSONA_LIBRARY_NAMES", "TALKSHOW_PERSONA_COMMENTATOR",
+                   "TALKSHOW_PERSONA_GUEST")
+# Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
+CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
+                 "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
+# FAST plus the two context variants that helped on the dev benchmark (lean, persona near); focus did not.
+FAST_V2_FLAGS = {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"]}
 
 ARMS: dict[str, dict] = {
     "production": {},
@@ -110,6 +118,25 @@ ARMS: dict[str, dict] = {
     # Same as concrete_fact_pack, but the style examples carry no figures or named cases of their own.
     "concrete_fact_pack_nofig": {"live_flags": {**FAST_FLAGS, "TALKSHOW_DIALOGUE_LIBRARY": "panel_concrete_nofig"},
                                  "best_of": 1, "fact_pack": True},
+    "fast_lean": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["lean"]}, "best_of": 1},
+    "fast_persona": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["persona"]}, "best_of": 1},
+    "fast_focus": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["focus"]}, "best_of": 1},
+    "fast_context_all": {"live_flags": {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"],
+                                        **CONTEXT_FLAGS["focus"]}, "best_of": 1},
+    # The recommended set after the context variants (FAST2 in deploy/arms/dialogue-quality.arms).
+    "fast_v2": {"live_flags": FAST_V2_FLAGS, "best_of": 1},
+    # fast_v2 without addressee priority, for T2f (who gets the floor when both panelists bid).
+    "fast_v2_noaddr": {"live_flags": {**FAST_V2_FLAGS, "TALKSHOW_ADDRESSEE_FLOOR": "0"}, "best_of": 1},
+    # fast_v2 with the structured library personas for Ryan and Amy (agent/persona_library.py; seats keep their names).
+    "fast_v2_lib": {"live_flags": {**FAST_V2_FLAGS, "TALKSHOW_PERSONA_LIBRARY": "1",
+                                   "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
+                                   "TALKSHOW_PERSONA_GUEST": "amy_warm"},
+                    "best_of": 1},
+    # fast_v2_lib, and a named panelist who chose silent still gets the floor (ADDRESSEE_FLOOR=force).
+    "fast_v2_lib_force": {"live_flags": {**FAST_V2_FLAGS, "TALKSHOW_PERSONA_LIBRARY": "1",
+                                         "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
+                                         "TALKSHOW_PERSONA_GUEST": "amy_warm", "TALKSHOW_ADDRESSEE_FLOOR": "force"},
+                          "best_of": 1},
 }
 
 
