@@ -41,22 +41,50 @@ class _ControllerClient:
         self.events.append((role, kind, fields))
 
 
-def arbitrate(prefix: dict, human_text: str, actions: dict[str, Any], answer: str | None = None) -> dict[str, Any]:
-    """The production free-floor selection after ``human_text`` with the panelists' ``actions``.
+# The interaction's floor bookkeeping that carries from one free-floor selection to the next (multi-beat episodes,
+# eval/bench/show.py): grants per role, host fallbacks, a pending invitation.
+FLOOR_STATE_KEYS = ("actual_floor_counts", "fallback_history", "host_fallback_streak", "pending_invitation_target",
+                    "host_fallback_instruction", "host_fallback_strategy", "host_fallback_target",
+                    "host_fallback_close_spoken", "rule_return_to")
+
+
+def _interaction(state: dict | None) -> Any:
+    """A fresh ThinkActionInteraction, with the floor bookkeeping of ``state`` (a copy) when given."""
+    import copy
+
+    from agent.interaction import ConsoleSpeechConsumer, ThinkActionInteraction
+
+    inter = ThinkActionInteraction(ConsoleSpeechConsumer())
+    for k, v in copy.deepcopy(state or {}).items():
+        if k in FLOOR_STATE_KEYS:
+            setattr(inter, k, v)
+    return inter
+
+
+def floor_state(inter: Any) -> dict[str, Any]:
+    import copy
+
+    return {k: copy.deepcopy(getattr(inter, k)) for k in FLOOR_STATE_KEYS if hasattr(inter, k)}
+
+
+def arbitrate(prefix: dict, human_text: str | None, actions: dict[str, Any], answer: str | None = None,
+              roles: tuple[str, ...] = PANEL, state: dict | None = None) -> dict[str, Any]:
+    """The production free-floor selection after ``human_text`` (None: the prefix already ends with the last turn) with
+    the bidders' ``actions``. ``roles``: who may bid (T2f: the two panelists; T6 also the host). ``state``: floor
+    bookkeeping from the previous selection (FLOOR_STATE_KEYS; None = a fresh show). The input state is not changed.
 
     Returns {"outcome": FloorOutcome, "controller": {"messages", "temperature", "max_tokens"} or None,
-    "candidates": [roles that chose speak], "addressee": event fields or None}."""
+    "candidates": [roles that chose speak], "addressee": event fields or None, "state": the bookkeeping after}."""
     from agent.adapters.gemma_mm_client import GemmaMMClient
-    from agent.interaction import ConsoleSpeechConsumer, ThinkActionInteraction
     from agent.show.show_history import ShowHistory
     from eval.think_action_prompt import _data_for
 
     data = _data_for(prefix, human_text, "")
     client = _ControllerClient(answer)
     data.runtime.gemma_client = client
-    inter = ThinkActionInteraction(ConsoleSpeechConsumer())
+    inter = _interaction(state)
     inter.actions = dict(actions)
-    candidates = [r for r in PANEL if r in actions and actions[r].decision == "speak"]
+    candidates = [r for r in roles if r in actions and actions[r].decision == "speak"]
     history = ShowHistory(lines=list(data.show_history.lines))
     outcome = asyncio.run(inter.arbitrate_free(data, candidates=candidates, history=history, interval=1))
     controller = None
@@ -73,7 +101,40 @@ def arbitrate(prefix: dict, human_text: str, actions: dict[str, Any], answer: st
             "max_tokens": req["max_tokens"],
         }
     addressee = next((f for _r, kind, f in client.events if kind == "addressee"), None)
-    return {"outcome": outcome, "controller": controller, "candidates": candidates, "addressee": addressee}
+    return {"outcome": outcome, "controller": controller, "candidates": candidates, "addressee": addressee,
+            "state": floor_state(inter)}
+
+
+def host_fallback(prefix: dict, state: dict, answer: str | None = None) -> dict[str, Any]:
+    """The host's own turn after the controller chose host_fallback (``state`` holds its strategy and instruction):
+    the production ``host_fallback_line``, run against a recording client like ``arbitrate``. Run once without
+    ``answer`` for the request, then with the model's answer for the spoken text (the show's own clean-up and
+    fallback wording apply). Returns {"request": {"messages", "temperature", "max_tokens"} or None, "text",
+    "state": the bookkeeping after (the invitation it made, the instruction consumed)}."""
+    from agent.adapters.gemma_mm_client import GemmaMMClient
+    from eval.think_action_prompt import _data_for
+
+    data = _data_for(prefix, None, "")
+    client = _ControllerClient("" if answer is None else answer)
+    data.runtime.gemma_client = client
+    inter = _interaction(state)
+    host = data.scenario.turn_control.listen_role
+    text = asyncio.run(inter.host_fallback_line(data, host))
+    request = None
+    if client.requests:
+        (req,) = client.requests
+        request = {"messages": GemmaMMClient._build_messages(
+            None,  # type: ignore[arg-type]  # uses no instance state
+            req["system_prompt"], history_messages=req.get("history_messages") or [], tail_user=req["prompt"]),
+            "temperature": req["temperature"], "max_tokens": req["max_tokens"]}
+    return {"request": request, "text": text or "", "state": floor_state(inter)}
+
+
+def record_grant(state: dict, role: str) -> dict:
+    """The bookkeeping after ``role`` got the floor (ThinkActionInteraction.record_floor_grant)."""
+    inter = _interaction(state)
+    inter.record_floor_grant(role)
+    return floor_state(inter)
 
 
 def plain_floor_messages(obs: dict) -> list[dict]:

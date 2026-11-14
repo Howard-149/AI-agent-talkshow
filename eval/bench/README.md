@@ -16,7 +16,7 @@ element of the input is edited, and a good reply should change with it (or shoul
 | T3b grounding, instructed | the T3a items plus one instruction to use the facts | the addressed panelist | uses the fact as given |
 | T4 persona | the two panelists' persona cards are swapped | both panelists | sounds like the card it was given |
 | T5 hosting | (later) fixed reference panel, only the host varies | host | |
-| T6 full show | (later) a free multi-beat episode | all | |
+| T6 full show (pilot) | nothing: a whole episode around a fixed audience script | all, floor included | answers the audience, adds new points, does not repeat itself |
 
 T2 template: the audience line with its opening name removed, put to one panelist as `"{name}, {question}"`. Every
 generated line is checked with the show's own addressee detector (`agent/floor/addressee.py`). T2 is a floor
@@ -59,6 +59,46 @@ from 55%"), a year in a sentence that names another year, a decade or a century,
 (a percentage of 100 or more, a negative value).
 Example: "employers must pay minimum wage unless employees customarily receive more than $30 a month in tips" becomes
 "... more than $60 a month in tips".
+
+## T6 full show (`show.py`, pilot)
+
+One T6 item is a topic, the two panel personas and a fixed audience script of 3 turns
+(`eval/data/bench/t6_dev_scripts.yaml`: on dev, `turn1` and `turn2.orig` of the hand-written topics, then a
+hand-written third turn addressed to Amy). The episode opens with the host's two opening lines, then each audience turn
+is followed by 3 lines that the system produces itself (who speaks, what they say, whether the host steps in). The
+audience turns are fixed text, so every system gets the same input at the same points.
+
+How a system runs an episode (offline, all episodes batched in lockstep):
+- `think_action`: the show's free floor, slot by slot. Every floor role except the last speaker (host, Ryan, Amy)
+  makes its production think call on the finished turn, as `ThinkActionInteraction._react_free` does live; the
+  production selection picks (`floor.arbitrate`: addressee priority, else the LLM floor controller, with the floor
+  bookkeeping carried from slot to slot). The selected role speaks its think content; a panelist selected with no
+  content (forced by `TALKSHOW_ADDRESSEE_FLOOR=force`) gets the worker draft; when the controller hands the floor to
+  the host (`host_fallback`), the host speaks the production `host_fallback_line` (`floor.host_fallback`).
+- `plain`: the T2f floor question picks the next panelist each slot, then the PlainLLM prompt answers. No host.
+
+Not modelled, by design: interrupts and backchannels (every think is on a finished turn), speech timing, the human
+taking the floor between script turns; the number of lines per audience turn is fixed.
+
+Scores (`python -m eval.bench.show compare`):
+- counted, no judge: opener repetition (a panelist's line opening with the same first word as its own previous line;
+  per panelist the share of its most frequent first word), self-repetition (content-bigram overlap with the speaker's
+  own earlier lines), the quality ruler's lexical counted metrics, words per line, unsupported specifics (against the
+  fact pack), floor statistics;
+- audience uptake: yes/no judge item on the first panel line after each audience turn (`judge/uptake.jsonl`);
+- show quality: pairwise judge over two episodes of the same topic and rerun, both orders (`judge/pairwise.jsonl`),
+  Bradley–Terry over systems with a bootstrap over topics. Gates before it is trusted: perturbed episodes
+  (`quality_ruler/perturb.py`: generic_swap, duplicate_argument, same_opener, turn_shuffle) lose to their originals;
+  real human debate segments beat the systems (not yet: no human episodes on the dev topics); the two judges agree
+  (Krippendorff's alpha).
+
+```bash
+python -m eval.bench.show generate --system think_action --arm fast_v2_lib_force --model google/gemma-4-E4B-it \
+  --topics tipping,ai-jobs --reruns 3 --out DIR            # --fake / --dry-run: no model
+python -m eval.bench.show compare --runs DIR1,DIR2 --base DIR1 --out CMP --pack <fact pack json>
+python -m eval.bench.judge --requests CMP --model <judge> --tag <name> --tp 2 --rubric-reruns all --max-model-len 8192
+python -m eval.bench.show compare --runs DIR1,DIR2 --base DIR1 --out CMP --pack <fact pack json>   # merges answers
+```
 
 ## Splits
 
@@ -126,9 +166,12 @@ the context variants of the Think & Action think prompt on top of fast: `fast_le
 `fast_persona` (`TALKSHOW_THINK_PERSONA_NEAR`), `fast_focus` (`TALKSHOW_THINK_FOCUS`) and `fast_context_all` (all three;
 see `agent/panel/think_prompt.py`), `fast_v2` (fast + lean + persona near, the recommended Think & Action set), `fast_v2_noaddr` (fast_v2 without
 addressee priority, for T2f) `fast_v2_lib` (fast_v2 with the library personas ryan_skeptic and amy_warm) and `fast_v2_lib_force` (fast_v2_lib with
-`TALKSHOW_ADDRESSEE_FLOOR=force`; on T2f a forced panelist's line is the worker draft, `text_source` worker_fallback). Any
+`TALKSHOW_ADDRESSEE_FLOOR=force`; on T2f a forced panelist's line is the worker draft, `text_source` worker_fallback),
+Any
 preset in `eval/quality_ruler/arms.py` made only of the show's flags is accepted.
-Items with facts always reach the show's fact block, whatever the arm. The show only accepts its own persona cards or
+Items with facts always reach the show's fact block, whatever the arm. With `--pack`, the score also reports
+`fact_overlap` on states both panelists answered (T2, T4): the share of the pack facts cited (by number or name) that
+both panelists cite. The show only accepts its own persona cards or
 the swapped pair. Items always carry the seats' own prose cards; under a library arm (`fast_v2_lib`) the show plays
 its library personas instead (the swapped pair on a T4 swap item), so the library is a property of the system, as the
 fact-pack arm is.

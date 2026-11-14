@@ -1,0 +1,266 @@
+# T6 full show, dev split: one fixed audience script per hand-written topic (eval/bench/README.md, T6).
+#
+# Each script is three audience turns, given to every system at the same points of the episode:
+#   1. the opening turn (minimal_pairs/pairs.yaml `turn1`, addressed to nobody),
+#   2. the original second turn (pairs.yaml `turn2.orig`, addressed to Ryan),
+#   3. a hand-written third turn addressed to Amy (a personal or practical angle, new to the episode).
+# Turns 1 and 2 are copied verbatim from pairs.yaml so the file stands alone.
+topics:
+- slug: tipping
+  topic: Has tipping culture gone too far?
+  audience:
+  - I got asked for a 25 percent tip at a self-checkout kiosk at an airport yesterday. Nobody served me. I think tipping in
+    America has turned into a guilt tax.
+  - Ryan, my friend who waits tables in Chicago says tips are the only reason she makes rent, because her base wage is $2.13
+    an hour. So if we kill tipping, don't we just cut her pay?
+  - Amy, I'm a college student and I tip 20 percent even when I can't really afford it, because I'd feel judged otherwise.
+    Is that kindness or just social pressure?
+- slug: nuclear-power
+  topic: Should we build more nuclear power plants?
+  audience:
+  - Germany shut down its last nuclear plants in 2023 and burned more coal to cover it. I think that was one of the dumbest
+    energy decisions in Europe this century.
+  - 'Ryan, the counterargument I keep hearing is cost: Vogtle in Georgia came in seven years late and about $17 billion over
+    budget. Why would anyone sign up for that again?'
+  - Amy, I live about 30 miles from a reactor and my kids go to school near it. What would you say to parents who are simply
+    scared of living next to one?
+- slug: self-driving
+  topic: Should fully self-driving cars be allowed on public roads now?
+  audience:
+  - I rode in a Waymo in Phoenix last month and it drove more carefully than any Uber driver I've had. I think robotaxis should
+    be allowed everywhere already.
+  - Ryan, but when a robotaxi blocked a fire truck in San Francisco for 12 minutes, nobody could even give it a ticket. Who's
+    responsible when there's no driver?
+  - Amy, my dad is 81 and lost his license last year. Wouldn't a robotaxi give people like him their independence back?
+- slug: four-day-week
+  topic: Should the four-day work week become standard?
+  audience:
+  - The UK ran a trial with sixty-one companies on a four-day week and most of them kept it afterwards. I think five days
+    is just a habit we never questioned.
+  - Ryan, but my brother is a nurse at a hospital with 40 open shifts a month. A four-day week for him just means Fridays
+    are short-staffed. Does this only work for office jobs?
+  - Amy, I run a small bakery with six employees. If I give everyone Fridays off, who bakes the bread?
+- slug: college-worth
+  topic: Is a four-year college degree still worth it?
+  audience:
+  - My cousin graduated with $80,000 in debt and a communications degree and now manages a coffee shop. Meanwhile his friend
+    became an electrician at 22 with zero debt. I think we oversold college.
+  - Ryan, but the averages still say degree holders earn about $1.2 million more over a lifetime. Is my cousin just an anecdote?
+  - Amy, I'm 17 and an electrician apprenticeship offered me a paid spot right after high school. Why shouldn't I take it
+    instead of going into debt?
+- slug: rent-control
+  topic: Does rent control help or hurt renters?
+  audience:
+  - My rent went up 30 percent in one year in Austin. I think strict rent control is the only thing that will protect working
+    families from being pushed out of their cities.
+  - Ryan, but a Stanford study of San Francisco found rent control cut the rental supply by 15 percent as landlords converted
+    units to condos. Are the economists wrong?
+  - Amy, my landlord just raised my rent 18 percent in one year. What am I supposed to do if there's no cap at all?
+- slug: minimum-wage
+  topic: Should the federal minimum wage be $20 an hour?
+  audience:
+  - The federal minimum wage has been $7.25 since 2009. Nobody can live on that anywhere in America. I think it should be
+    $20 an hour nationwide.
+  - Ryan, but $20 in Manhattan and $20 in rural Mississippi are completely different; rent in Jackson is about a third of
+    New York's. Wouldn't one national number shut down small businesses in poor towns?
+  - Amy, I own a diner in a small town. If I have to pay $20 an hour, I'll probably cut two of my five staff. Who does that
+    help?
+- slug: drug-decriminalization
+  topic: Should hard drugs be decriminalized?
+  audience:
+  - Portugal decriminalized all drugs in 2001 and overdose deaths dropped. I think arresting addicts just makes everything
+    worse.
+  - Ryan, but Oregon tried something similar and reversed it after three years because public drug use exploded downtown in
+    Portland. Why did it fail there?
+  - Amy, my brother has been arrested for possession three times and jail never got him clean. Isn't treatment the only thing
+    that ever works?
+- slug: electric-cars
+  topic: Should gas car sales be banned by 2035?
+  audience:
+  - California wants to ban new gas car sales by 2035. I drive 80 miles a day in a rural county with two public chargers.
+    I think this policy was written by people who live in cities.
+  - Ryan, then again, people said the same about seatbelts and catalytic converters, and Ford adapted within five years. Isn't
+    a hard deadline the only thing that makes automakers move?
+  - Amy, I live in an apartment with street parking and no charger anywhere near. How am I supposed to own an electric car
+    in 2035?
+- slug: ai-jobs
+  topic: Will AI take more jobs than it creates?
+  audience:
+  - My friend was a freelance translator for twelve years, and her work dried up within eighteen months of ChatGPT. I think
+    AI will wipe out more jobs than it creates this time.
+  - Ryan, but people said the same about ATMs and bank tellers, and the number of tellers actually went up for 30 years. Why
+    would this time be different?
+  - Amy, I'm a paralegal and half of what I did five years ago, software does now. What should someone like me actually retrain
+    for?
+- slug: sugar-tax
+  topic: Should sugary drinks carry a special tax?
+  audience:
+  - My nephew drinks three cans of soda a day and he's eleven. I think sugary drinks should be taxed like cigarettes, because
+    nothing else seems to work.
+  - Ryan, but when Mexico added a soda tax, purchases only dropped about 8 percent in the first two years. Is a tax that small
+    really worth the backlash?
+  - Amy, I'm a single mom and soda is one of the few cheap treats my kids get. Isn't a tax like this just punishing families
+    who don't have much?
+- slug: olympics-host
+  topic: Is hosting the Olympics worth it for a city?
+  audience:
+  - My city is bidding for the Olympics and everyone downtown is excited about the new stadiums. I think it would put us on
+    the map for decades.
+  - Ryan, but Montreal took 30 years to pay off the debt from its 1976 Games. Why would any city sign up for that?
+  - Amy, my city is bidding for the Games and the organizers promise thousands of jobs. How do I know if those promises are
+    real?
+- slug: daylight-saving
+  topic: Should we abolish daylight saving time?
+  audience:
+  - Every March I lose an hour of sleep and feel wrecked for a week. I think switching the clocks twice a year is an outdated
+    ritual we should drop.
+  - Ryan, one study found heart attacks jump about 24 percent on the Monday after the spring change. Isn't that reason enough
+    to end it?
+  - Amy, I'm a dairy farmer and my cows don't care what the clock says. Who actually benefits from changing the clocks twice
+    a year?
+- slug: facial-recognition
+  topic: Should police use facial recognition?
+  audience:
+  - A store near me caught a shoplifter in a day using facial recognition. I think police should use it everywhere if it catches
+    criminals that fast.
+  - Ryan, but a federal test found some systems misidentify Black faces up to 100 times more often than white faces. How is
+    that acceptable for policing?
+  - Amy, someone broke into my car last month and the police said a camera match could have found him in a day. Shouldn't
+    victims get that help?
+- slug: retirement-age
+  topic: Should the retirement age be raised?
+  audience:
+  - My dad is 66 and still lays bricks because he can't afford to stop. I think raising the retirement age punishes people
+    with physical jobs.
+  - Ryan, but France raised its pension age to 64 and the system still runs a deficit. Do we just keep pushing it back forever?
+  - Amy, I've been a roofer for 35 years and my knees are done. How is it fair to ask someone like me to work until 70?
+- slug: video-ref
+  topic: Has video review ruined football?
+  audience:
+  - I used to love going to matches, but now every goal gets paused while some referee watches a monitor. I think video review
+    has killed the joy of the sport.
+  - Ryan, but the Premier League says video review raised correct decisions to about 96 percent. Isn't getting it right worth
+    a pause?
+  - Amy, I took my son to his first match and we waited four minutes for a review before anyone could celebrate a goal. Hasn't
+    that killed the joy for fans?
+- slug: nursing-homes
+  topic: Should families care for aging parents at home?
+  audience:
+  - We moved my grandmother into a nursing home and she declined fast. I think families should care for their parents at home
+    whenever they possibly can.
+  - Ryan, but my cousin quit her job to care for her mother and lost about $300,000 in wages and pension over ten years. Is
+    that fair to ask of anyone?
+  - Amy, my mother has dementia and wanders at night. I love her, but I can't stay awake every night. Am I a bad daughter
+    if I choose a care home?
+- slug: mars-mission
+  topic: Should we send humans to Mars?
+  audience:
+  - I watched a rocket launch last week and got chills. I think sending humans to Mars is the most inspiring thing our generation
+    could do.
+  - Ryan, but NASA estimates a crewed Mars mission would cost around $500 billion. Couldn't that money fix a lot of problems
+    here first?
+  - Amy, my daughter wants to be an astronaut because of the Mars plans. Isn't inspiring kids like her worth something?
+- slug: crypto-pay
+  topic: Should countries adopt cryptocurrency as legal tender?
+  audience:
+  - I got paid in Bitcoin for a freelance job and it felt like the future. I think more countries should make crypto legal
+    tender.
+  - Ryan, but El Salvador made Bitcoin legal tender and a survey found about 80 percent of people never used it. Doesn't that
+    say it's a gimmick?
+  - Amy, my family sends money home to Guatemala every month and the transfer fees eat about 7 percent. Couldn't crypto at
+    least fix that?
+- slug: school-start
+  topic: Should high schools start later in the morning?
+  audience:
+  - My teenage son has to catch a bus at 6:40 and he's a zombie all day. I think high schools starting at 7:30 is just cruel.
+  - Ryan, but when Seattle pushed start times back by about an hour, students got 34 more minutes of sleep a night. Why isn't
+    every district doing this?
+  - Amy, I drive a school bus and the district says later starts mean buying 20 more buses. Where does that money come from?
+- slug: ubi
+  topic: Should governments give everyone a universal basic income?
+  audience:
+  - My friend lost her job to a warehouse robot and is drowning in bills. I think a universal basic income is the only fair
+    answer to automation.
+  - Ryan, but in Finland's trial, people on basic income worked only about 6 days more per year than the control group. Is
+    that really the success people claim?
+  - Amy, I care full time for my disabled son and I don't get paid a cent for it. Wouldn't a basic income finally recognize
+    that work?
+- slug: noncompetes
+  topic: Should non-compete agreements be banned?
+  audience:
+  - My sister couldn't take a better job across town because of a non-compete she signed at a sandwich shop. I think non-competes
+    should be illegal.
+  - Ryan, but California banned non-competes decades ago and Silicon Valley still became the richest tech hub on earth. Doesn't
+    that settle it?
+  - Amy, I run a small marketing firm and I spent a year training a designer who then took three of my clients to a competitor.
+    How do I protect myself without one?
+- slug: wild-wolves
+  topic: Should wolves be reintroduced into the wild?
+  audience:
+  - I hiked in Yellowstone and heard wolves howling at night — it was magical. I think we should bring wolves back to more
+    of their old range.
+  - Ryan, but a rancher in Colorado says he lost 12 calves to wolves in a single season after they were released. Who pays
+    for that?
+  - Amy, I hike in Yellowstone every summer and seeing wolves there was the highlight of my life. Don't people like me count
+    too?
+- slug: streaming-music
+  topic: Do streaming services pay musicians fairly?
+  audience:
+  - My favorite indie band broke up because they couldn't afford to tour. I think streaming has gutted the income of working
+    musicians.
+  - Ryan, Spotify pays roughly $3 per 1,000 streams. A band would need about 400,000 streams a month just to earn minimum
+    wage. Is that sustainable?
+  - Amy, I pay $11 a month and listen to hundreds of artists. Honestly, how much more am I supposed to pay so musicians get
+    a fair deal?
+- slug: tiny-homes
+  topic: Are tiny homes a real answer to the housing crisis?
+  audience:
+  - I toured a 300-square-foot tiny home and honestly it had everything I need. I think tiny homes could fix the housing crisis
+    if cities allowed them.
+  - Ryan, but in Portland a tiny-home village for the homeless cost about $25,000 per unit, cheaper than any shelter bed.
+    Why aren't we building thousands of them?
+  - Amy, my town just rejected a tiny-home community because neighbors said it would lower property values. Are they wrong?
+- slug: ai-medicine
+  topic: Should AI be allowed to diagnose patients?
+  audience:
+  - My mother's cancer was missed by two doctors before a third caught it. I think AI should be reading every scan because
+    humans clearly miss things.
+  - Ryan, a Google system caught breast cancers in mammograms with about 9 percent fewer false negatives than radiologists.
+    Shouldn't hospitals be using it already?
+  - Amy, my grandmother lives two hours from the nearest dermatologist. If an app could check her skin spots tonight, why
+    should she wait three months?
+- slug: congestion-pricing
+  topic: Should big cities charge cars to enter downtown?
+  audience:
+  - I drive into the city for work and the new toll would cost me hundreds a month. I think congestion pricing is just a tax
+    on working people.
+  - Ryan, but after London started congestion charging, traffic in the zone fell about 30 percent in the first year. Isn't
+    that exactly the point?
+  - Amy, I'm a nurse on night shifts downtown and the train doesn't run when I get off. Why should I pay to drive to work?
+- slug: smartphone-repair
+  topic: Should companies be forced to make products repairable?
+  audience:
+  - My phone battery died after two years and the store told me to just buy a new phone. I think companies design products
+    to break on purpose.
+  - Ryan, but the EU now requires phone batteries to be user-replaceable by 2027. Will Apple really change its whole design
+    just for Europe?
+  - Amy, my phone is three years old and the only thing wrong is the battery, yet the store told me to buy a new one. Isn't
+    that just waste?
+- slug: kids-sports
+  topic: Is youth sports specialization hurting kids?
+  audience:
+  - My 10-year-old plays travel soccer year-round, five days a week, and she's already had two stress injuries. I think kids
+    are being pushed way too hard.
+  - Ryan, but one study found kids who specialize early are about 70 percent more likely to get overuse injuries. Why do parents
+    keep doing it?
+  - Amy, my 11-year-old daughter plays soccer six days a week and says she loves it. Should I really make her quit something
+    she loves?
+- slug: book-bans
+  topic: Should school libraries remove controversial books?
+  audience:
+  - My daughter came home with a library book that had scenes I wasn't ready to explain to a 12-year-old. I think parents
+    should have a say in what's on the shelves.
+  - Ryan, but last year one Florida district pulled over 1,600 titles, including a dictionary. Doesn't that show how fast
+    this goes too far?
+  - Amy, my 10-year-old came home with a book that described things I wasn't ready to explain to him. Don't parents get any
+    say?
