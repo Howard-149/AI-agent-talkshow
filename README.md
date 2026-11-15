@@ -1,528 +1,120 @@
-# AI-Agent-Talkshow
+<div align="center">
 
-Voice-in / voice-out talk show: **3 AI roles** (Host / Guest / Commentator), **Gemma 4 audio-in**, **CosyVoice TTS** (default), optional **DyStream** talking-head avatars, **LiveKit Agents**, custom frontend in **`talkshow-web/`**.
+# AI Agent Talk Show
 
-CMU capstone — single RTC agent + role handoff + virtual panel UI (Lessac / Ryan / Amy).
+**A live, voice-in / voice-out talk show with three AI hosts and panelists, and a benchmark for what makes them good.**
 
-**Collaboration:** [CONTRIBUTING.md](CONTRIBUTING.md)
+Host **Lessac** moderates, commentator **Ryan** pushes back, guest **Amy** brings it back to people.
+You join from the browser and take the floor just by speaking.
 
----
+[Setup](SETUP.md) · [Benchmark](eval/bench/README.md) · [Dialogue quality report](eval/DIALOGUE_QUALITY.md) · [Contributing](CONTRIBUTING.md)
 
-## Who runs what
-
-| Machine | You install | You run |
-|---------|-------------|---------|
-| **Laptop** | `requirements-laptop.txt` + Node/pnpm | `api/tokens.py`, `talkshow-web` (`pnpm dev`) |
-| **Babel (login node)** | — | `sbatch deploy/slurm-talkshow-3gpu.sh` |
-| **Babel GPU (the SLURM job)** | `requirements.txt` (conda `talkshow`, **Python 3.11**) + CosyVoice / DyStream sidecars | vLLM + CosyVoice + DyStream + `python -m agent.main dev` |
-| **LiveKit Cloud** | (project keys in `.env`) | WebRTC room — no self-hosted server |
-
-You do **not** need vLLM, CosyVoice, or the full agent stack on your laptop.
-
-```
-Laptop (talkshow-web + token)
-    │  WebRTC
-    ▼
-LiveKit Cloud  (LIVEKIT_URL, room e.g. talkshow-dev)
-    │
-    ▼
-Babel 3-GPU job  —  vLLM (Gemma) + CosyVoice TTS + DyStream + agent worker
-```
+</div>
 
 ---
 
-## How to run a session
+## Highlights
 
-### 1. Babel — start the 3-GPU stack
+- **Talks like a panel, not a chatbot.** Every listener thinks while someone is speaking and decides whether to
+  speak, interrupt, back-channel or stay quiet. A floor controller picks who goes next, and deterministic floor rules
+  keep interruptions grounded and polite.
+- **Live voice and faces.** Audio in through Gemma 4, speech out through CosyVoice, optional lip-synced DyStream
+  avatars, all streamed over LiveKit to a Next.js stage.
+- **Moods that carry over.** Each AI keeps a PAD (pleasure, arousal, dominance) mood that shifts with what it hears;
+  it goes into the think prompts and the voice instruction for speech.
+- **Swappable personas.** Structured persona cards (role, leaning, style, signature moves, things to avoid) can be
+  dropped into any seat.
+- **Measured, not guessed.** An open benchmark scores whether the panel listens, answers the right person, sticks to
+  checked facts, stays in character and makes a watchable show, with open-model judges that are validated before use.
 
-From a Babel **login** node (not an interactive GPU shell). The job starts vLLM, the DyStream sidecar, the **CosyVoice** sidecar, then the agent worker.
+## How it works
 
-| CUDA slot (`.env` / default) | Conda env | Process |
-|------------------------------|-----------|---------|
-| `VLLM_CUDA_DEVICE` (0) | `talkshow` | vLLM Gemma |
-| `DYSTREAM_CUDA_DEVICE` (1) | `dystream` | DyStream sidecar |
-| `COSYVOICE_CUDA_DEVICE` (2) | `cosyvoice_vllm` | CosyVoice sidecar |
-| all slots visible | `talkshow` | `python -m agent.main dev` |
-
-```bash
-ssh babel
-cd ~/AI-agent-talkshow
-mkdir -p slurm-logs
-git pull
-
-sbatch deploy/slurm-talkshow-3gpu.sh
-# Override partition if needed:  sbatch -p <name> deploy/slurm-talkshow-3gpu.sh
+```mermaid
+flowchart LR
+    U["You<br/>browser mic"] -->|WebRTC| LK["LiveKit"]
+    LK --> STT["Speech to text<br/>Gemma 4 audio"]
+    STT --> SH["Show graph<br/>opening · turns · closing"]
+    SH --> TA
+    subgraph TA["Think & Action floor"]
+        direction TB
+        L["Host, Ryan, Amy think<br/>every interval"] --> FR["Floor rules"] --> FC["Floor controller<br/>who speaks next"]
+    end
+    TA --> TTS["CosyVoice TTS"] --> AV["DyStream avatar"] --> LK2["LiveKit"] --> W["Web stage"]
+    EM["PAD mood"] -.-> L
+    P["Persona cards<br/>fact pack"] -.-> L
 ```
 
-Logs:
+**One line, step by step**
 
-- `slurm-logs/slurm-talkshow-<jobid>.{out,err}`
-- `logs/slurm-<jobid>/{vllm,dystream,cosyvoice,agent}.log`
-- GPU bind check: `cat logs/slurm-<jobid>/gpu-bind.txt`
+1. While someone speaks, the host and both panelists each make a short *think* call: what is the point, and do I
+   want the floor? Each returns a decision and a draft line.
+2. When the floor is free, the floor controller picks the best draft or asks the host to step in. With the dialogue
+   quality settings on, a panelist the audience named answers first.
+3. The chosen draft is spoken, interval by interval, so the others can react, interrupt or back-channel mid-line.
 
-Wait until vLLM (`:8000/v1/models`), DyStream (`:8766/health`, avatar runs only), and CosyVoice (`:8767/health`) are up — the script blocks on those, then starts the agent. Room name defaults to **`talkshow-dev`**.
+## Benchmark
 
-If host RAM OOMs while models load: `TALKSHOW_STAGGER_START=1 sbatch --export=ALL deploy/slurm-talkshow-3gpu.sh`.
+The benchmark treats a talk show like an environment: fixed inputs, any system plugs in through one interface, and
+every score comes from rules or validated judges. Most tasks are counterfactual pairs: change one thing in the
+input and check whether the reply changes as it should.
 
-**Audio-only (no avatar).** The script skips DyStream and needs only 2 GPUs:
+| Task | What changes | What a good system does |
+| --- | --- | --- |
+| **T1** Listening | A number, stance, name or cause in the audience turn | The reply changes with the edit, not with a paraphrase |
+| **T2 / T2f** Addressing | The audience names Ryan or Amy | The named panelist answers; the floor goes to them |
+| **T3a / T3b** Grounding | One number in the checked facts | The reply uses the new value and invents nothing |
+| **T4** Persona | The two persona cards are swapped | The style follows the card |
+| **T6** Full show | Nothing: a whole episode around a fixed audience script | Judged pairwise as a show; repetition and flow counted |
 
-| Where | Setting |
-|-------|---------|
-| Babel `.env` | `TALKSHOW_AVATAR_ENABLED=0`, `COSYVOICE_CUDA_DEVICE=1` (slot 2 does not exist with 2 GPUs) |
-| Laptop `.env` | `NEXT_PUBLIC_DYSTREAM_ENABLED=0` |
-| Submit | `sbatch --gpus=2 deploy/slurm-talkshow-3gpu.sh` |
+Test split: 42 motions from public debates (Intelligence Squared, via ConvoKit), 937 items, 3 reruns, two open
+judges (Qwen2.5-72B, Llama-3.3-70B).
 
-After **agent code** or agent `.env` changes: push / sync, then `deploy/talkshow-ctl.sh restart agent` (about 20 s; vLLM, CosyVoice and DyStream stay loaded, `.env` is re-read). Sidecar code: `deploy/talkshow-ctl.sh restart cosyvoice` (or `dystream`, `vllm`). Resubmit only for GPU layout changes. On 3 GPUs DyStream always starts, so `TALKSHOW_AVATAR_ENABLED` switches with an agent restart. Frontend-only changes stay on the laptop (`pnpm dev`).
+### Results so far
 
-**Sharing a LiveKit project.** Without `TALKSHOW_AGENT_NAME`, every unnamed worker in the project (anyone's) can take any new room. Set the same `TALKSHOW_AGENT_NAME` in the Babel and laptop `.env` to get explicit dispatch.
+| System (test split, 0 to 100) | Overall | Listening | Grounding | Persona |
+| --- | ---: | ---: | ---: | ---: |
+| Show, best settings, Qwen3.6-35B-A3B panel | **45.0** | **27** | **54** | **87** |
+| Show, best settings, Gemma-4 E4B panel | 40.4 | 20 | 47 | 86 |
+| Plain Gemma-4 E4B, no show logic | 34.4 | 15 | 35 | 85 |
+| Show, original settings | 33.5 | 9 | 36 | 81 |
 
-Sidecar install and `.env` keys: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
+Benchmark runs are offline; the Qwen panel has not been run in the live stack yet.
 
-### 2. Laptop — frontend + token
+What moved the needle: showing panelists the right context, structured persona cards, letting the named person
+answer, and a stronger panel model. What did not: adding more style rules and examples to the prompt. Full numbers,
+ablations and known limits are in the [dialogue quality report](eval/DIALOGUE_QUALITY.md).
 
-```bash
-cd talkshow-web && pnpm dev          # http://localhost:3000
-# another terminal, repo root, venv active:
-python api/tokens.py --room talkshow-dev --identity your-name
+## Quick start
+
+| I want to | Go to |
+| --- | --- |
+| Run the full voice show (3 GPUs) | [SETUP: How to run a session](SETUP.md#how-to-run-a-session) |
+| Run a text-only show on one GPU | [SETUP: text-only mode](SETUP.md#4-optional---text-only-mode-babel) |
+| Drive a show with a scripted audience | [eval/ghost_session](eval/ghost_session/README.md) |
+| Turn on the dialogue quality settings | [SETUP: dialogue quality fixes](SETUP.md#5-optional---dialogue-quality-fixes) |
+| Score a system on the benchmark | [eval/bench](eval/bench/README.md) |
+| Set up a laptop or the cluster | [SETUP: teammate setup](SETUP.md#teammate-setup--laptop-one-time) |
+
+## Repository layout
+
+```
+agent/            Live agent: show graph, Think & Action floor, panel prompts, personas, emotion
+talkshow-web/     Next.js stage (panel, transcript, avatars)
+config/           Personas, persona library, scenarios, dialogue style libraries
+deploy/           Job scripts, vLLM, CosyVoice and DyStream sidecars, flag presets
+eval/             Benchmark (bench/), quality ruler, ghost sessions, fact packs, reports
+tests/            Unit and integration tests
+api/tokens.py     LiveKit token helper for the laptop
 ```
 
-Paste `LIVEKIT_URL` + `TOKEN` into the **Talkshow (token)** tab. **Room name must match** the Babel agent (default `talkshow-dev`).
+## Data and licences
 
-### 3. Optional — ghost session (no mic)
-
-Same running 3-GPU job. See [eval/ghost_session/README.md](eval/ghost_session/README.md).
-
-```bash
-# Babel (no frontend recording):
-python -m eval.ghost_session
-
-# Laptop (record the real UI):
-python -m eval.ghost_session --record --start-frontend
-```
-
-### 4. Optional - text-only mode (Babel)
-
-Run the talk show without a microphone, LiveKit room, TTS, or avatars. This uses one GPU for vLLM and runs the host-moderated panel in the background.
-
-On Babel, set `TALKSHOW_TEXT_ONLY=1` in the repo-root `.env`, then submit the text-only job:
-
-```bash
-cd ~/AI-agent-talkshow
-mkdir -p slurm-logs
-sbatch deploy/slurm-talkshow-1gpu.sh
-```
-
-The job starts vLLM and waits for its health endpoint before starting the text-session manager. Find the job ID in the `sbatch` response or with `squeue -u "$USER"`. Once the manager is ready, start a session from another Babel login-node terminal:
-
-```bash
-cd ~/AI-agent-talkshow
-python cli/text_session_control.py start --job <jobid>
-```
-
-Session controls:
-
-```bash
-python cli/text_session_control.py status --job <jobid>
-python cli/text_session_control.py stop --job <jobid>
-python cli/text_session_control.py restart --job <jobid>
-```
-
-`stop` stops the current text session but leaves the SLURM job and vLLM running. To stop the whole job, run `scancel <jobid>`.
-
-Speak as the human (interrupts whoever is talking; the agents then react to your line):
-
-```bash
-python cli/text_session_control.py human --job <jobid> --text "What about rural schools?"
-```
-
-Logs:
-
-- `slurm-logs/slurm-talkshow-text-<jobid>.{out,err}`
-- `logs/slurm-text-<jobid>/{vllm,agent}.log`
-- `logs/model-outputs/session-*.log` — model responses labeled with each persona's display name
-
-No frontend or token is needed. To return to the regular voice mode, use the 3-GPU workflow above and set `TALKSHOW_TEXT_ONLY=0` in `.env`.
+Fact packs quote Wikipedia (CC BY-SA 4.0); every fact keeps its page and URL. Test topics come from the Intelligence
+Squared debates corpus (Zhang et al., NAACL 2016). The test text is rebuilt locally and never committed; only item
+ids and edits are.
 
 ---
 
-### 5. Optional - dialogue quality fixes
-
-Three panel fixes, all off by default. Turn them on in the repo-root `.env` (agent restart is enough):
-
-| Flag | What it does |
-|---|---|
-| `TALKSHOW_ADDRESSEE_FLOOR=1` | If the human names a panelist ("Amy, what do you think?"), that panelist answers first. `=force` also gives the floor to a named panelist who chose silent; their line is then drafted by the worker. |
-| `TALKSHOW_UPTAKE_PLANNER=lite` + `TALKSHOW_PANEL_SCAFFOLD_FIX=1` | The first panel line after a human turn is pointed at what the human just said (their figures, names and stance), instead of the previous panelist. |
-| `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete` + `TALKSHOW_PANEL_CONCRETE=1` | Style examples that carry facts, plus a rule asking for one concrete fact per line. |
-| `TALKSHOW_PANEL_BEST_OF=4` | Optional: draft 4 lines in one request and keep the most specific, least repetitive one. Adds about 1 s. Only for lines drafted by the worker (see below). |
-| `TALKSHOW_THINK_LEAN=1` | Think & Action, free floor: the panelist's think prompt does not repeat the line the transcript already ends with, leaves out the interrupt and backchannel guidance, and drops canned host lines ("Floor's open") from the transcript. |
-| `TALKSHOW_THINK_PERSONA_NEAR=1` | Think & Action: a short persona reminder ("Write the content as Ryan: ...") right where the line is written. |
-| `TALKSHOW_THINK_FOCUS=1` | Think & Action, free floor: a "Respond to now" block (who spoke, whom they named) and a rule to stay silent when someone else was named. Measured with no effect; not in a recommended set. |
-| `TALKSHOW_PERSONA_LIBRARY=1` | Under test: panel seats take structured personas from `config/persona_library/` (a short card in the system message, and a style/moves/avoid block right where a Think & Action line is written). `TALKSHOW_PERSONA_COMMENTATOR` / `TALKSHOW_PERSONA_GUEST` pick the persona (default `ryan_skeptic`, `amy_warm`); seats keep voice, avatar and their spoken name unless `TALKSHOW_PERSONA_LIBRARY_NAMES=1`. See `agent/persona_library.py`. |
-| `TALKSHOW_FACT_PACK=<path to json>` | Under test: each panel line (the worker prompt and, with Think & Action, the panelist think prompt) gets the most relevant checked facts for the topic (from Wikipedia) and may take specific numbers, names, studies and cases only from them or from what was said in the show. `TALKSHOW_FACT_PACK_K` sets how many facts (default 6); `TALKSHOW_FACT_PACK_TOPIC` pins the topic id. See `agent/panel/fact_pack.py`. |
-
-With the Think & Action floor, the selected panelist speaks the `content` of their own think call, so the fixes act there: the addressee rule in the free-floor choice (`ThinkActionInteraction.arbitrate_free`; a named panelist who chose silent is not forced to speak), and the other blocks at the end of each panelist's think prompt (`agent/panel/think_prompt.py`). The worker prompt keeps the same fixes for lines it still drafts (a selected panelist with no proposed reply). The uptake planner starts when the human line is committed and the panelists' think calls wait for it (at most 3 s), so with Think & Action it adds its own latency to the first reply instead of hiding behind a host reply.
-
-`deploy/arms/dialogue-quality.arms` has the current show (A), the recommended set without best-of (FAST, about +0.6 s on the slowest lines), FAST plus the lean think prompt and the persona reminder (FAST2, recommended for Think & Action), and the full set (FULL), for `deploy/ghost-arms.sh`.
-
-In our tests the fixes raised judged specificity from 0.60 to 0.80 on 42 public debate topics, the named panelist answered first in 75/75 shows (0/75 before), and template openers such as "I hear Ryan's point" dropped. Known cost: more concrete lines also means more invented details (lines with a wrong fact: 1.7% for FAST vs 0.7% today in the live A/B, not significant), which is the next thing we are working on. These results were measured on the hand-raise floor before Think & Action and have not been re-measured on it yet.
-
----
-
-### 6. Floor rules for interrupts
-
-Deterministic rules run in front of the Think & Action floor controller. They are on by default; `TALKSHOW_FLOOR_RULES=0` turns them off, which gives exactly the prompts and floor decisions of Think & Action without the rules.
-
-| Rule | What it does |
-|---|---|
-| Quote | A listener asking to interrupt must quote the words it reacts to; the quote has to appear in the speech disclosed so far (case and punctuation ignored, no paraphrase). Ungrounded requests never reach the controller. |
-| Minimum speaking time | Nobody cuts in before the speaker has spoken 3 s (`TALKSHOW_FLOOR_MIN_SPEECH_S`). |
-| Host moderates | While someone holds the floor, the host only cuts in for a clear drift from the topic or a personal attack (never to take a side or correct a fact). A grounded host cut is granted without a controller call, outranks panelists, is not limited by the cooldown or chain cap, and the stopped speaker gets the floor back after the host's line if they choose to speak. The host's think call is also told it is the neutral host. On a free floor the host's options (invite, summarize, reframe, close) are unchanged. |
-| Chain cap | After a cut, the line that took over cannot be cut by a panelist (`TALKSHOW_FLOOR_MAX_CHAIN_CUTS=1`); the chain ends when a line finishes uncut or the human speaks. |
-| Cooldown | Panelist cuts are at least 15 s apart (`TALKSHOW_FLOOR_AI_COOLDOWN_S`). |
-
-Times are on the speech clock (disclosed words / `TALKSHOW_SPEECH_WORDS_PER_SEC`), because the script runs ahead of playback. Each interval with interrupt requests logs a `floor rules - interval N` event with every request's status and rule; when every request is blocked, the controller is not called.
-
-## Teammate setup — laptop (one-time)
-
-### 1. Clone and Python venv
-
-```bash
-git clone <repo-url> AI-agent-talkshow
-cd AI-agent-talkshow
-
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-pip install -r requirements-laptop.txt
-```
-
-`requirements-laptop.txt` is only:
-
-- `livekit-api` — mint room tokens (`api/tokens.py`)
-- `python-dotenv` — read repo root `.env`
-
-Do **not** run `pip install -r requirements.txt` on a laptop unless you are debugging the agent locally with a GPU.
-
-### 2. Environment file (repo root)
-
-```bash
-cp .env.example .env
-```
-
-Edit **at minimum** on the laptop:
-
-| Variable | Where to get it |
-|----------|-----------------|
-| `LIVEKIT_URL` | [LiveKit Cloud](https://cloud.livekit.io) → Project → Settings |
-| `LIVEKIT_API_KEY` | same |
-| `LIVEKIT_API_SECRET` | same |
-
-Laptop `.env` does **not** need CosyVoice / vLLM paths unless you are also developing on Babel. The frontend reads this same file via `talkshow-web/next.config.js` — **no** `talkshow-web/.env.local`.
-
-For avatars in the panel: `NEXT_PUBLIC_DYSTREAM_ENABLED=1`.
-
-### 3. Frontend
-
-```bash
-cd talkshow-web
-pnpm install    # or: npm install
-pnpm dev
-# → http://localhost:3000
-```
-
-### 4. Laptop checklist
-
-- [ ] `pip install -r requirements-laptop.txt` (not `requirements.txt`)
-- [ ] Root `.env` has LiveKit URL + key + secret
-- [ ] `pnpm dev` in `talkshow-web/`
-- [ ] 3-GPU job running on Babel (`sbatch deploy/slurm-talkshow-3gpu.sh`)
-- [ ] Same room name on token and cluster
-
----
-
-## Teammate setup — Babel (one-time)
-
-Only if you submit or debug the **agent / vLLM / sidecars**. Replace `$USER` with your Babel username. Conda may live in `~/miniconda3` or `/data/user_data/$USER/miniconda3` — use whichever you actually have (`which python` after `conda activate`).
-
-The 3-GPU job needs **three separate conda envs** (three Python binaries). Do not pip-install CosyVoice or DyStream into `talkshow`.
-
-| Env | Python | Used by |
-|-----|--------|---------|
-| `talkshow` | **3.11** | vLLM + agent worker |
-| `dystream` | **3.11** | DyStream sidecar |
-| `cosyvoice_vllm` | **3.10** | CosyVoice sidecar |
-
-### 1. Code + `.env` stub
-
-```bash
-git clone <repo-url> ~/AI-agent-talkshow
-cd ~/AI-agent-talkshow
-cp .env.example .env
-```
-
-Fill LiveKit keys and the path variables in step 6 **before** you download models (several scripts `source .env`). `.env` is not in git — scp a filled copy if you already have one on the laptop.
-
-### 2. `talkshow` env (agent + vLLM)
-
-```bash
-conda create -n talkshow python=3.11 -y
-conda activate talkshow
-cd ~/AI-agent-talkshow
-pip install -r requirements.txt
-python --version   # 3.11.x
-```
-
-Login-node pip is often slow or blocked. Prefer:
-
-```bash
-mkdir -p slurm-logs
-sbatch deploy/slurm-install-deps.sh
-```
-
-Gemma: first `vllm serve` can pull `google/gemma-4-E4B-it` from Hugging Face, or set `VLLM_MODEL_PATH=/data/user_data/$USER/models/gemma-4-E4B-it` if the team already has weights. Keep `VLLM_MODEL=google/gemma-4-E4B-it` as the API id either way.
-
-### 3. LiveKit agent ONNX (VAD / end-of-turn)
-
-In `.env`:
-
-```
-TALKSHOW_TURN_DETECTOR_CACHE=/data/user_data/$USER/livekit-turn-detector/hub
-TALKSHOW_ORT_NUM_THREADS=1
-```
-
-```bash
-set -a && source .env && set +a
-bash deploy/download-livekit-agent-models.sh
-```
-
-### 4. CosyVoice (default TTS)
-
-Do **not** `pip install` CosyVoice into `talkshow`. The 3-GPU job looks for conda env **`cosyvoice_vllm`** (Python 3.10). Login-node pip is usually too slow for torch / vLLM — create the empty env on login, then install on a GPU node.
-
-**4a. Clone + Fun-CosyVoice3 weights** (login is fine):
-
-```bash
-export COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
-git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git "${COSYVOICE_ROOT}"
-# if you cloned without --recursive:
-#   cd "${COSYVOICE_ROOT}" && git submodule update --init --recursive
-
-export HF_TOKEN=hf_...
-huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 \
-  --local-dir "${COSYVOICE_ROOT}/pretrained_models/Fun-CosyVoice3-0.5B"
-```
-
-**4b. Create + install env `cosyvoice_vllm`:**
-
-```bash
-# login: empty env only
-conda create -n cosyvoice_vllm python=3.10 -y
-
-# GPU node: inference deps + vLLM 0.11 (needed by the sidecar)
-srun -p preempt --gres=gpu:1 --mem=32G --time=02:00:00 --pty bash
-cd ~/AI-agent-talkshow
-export COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
-export COSYVOICE_CONDA_ENV=cosyvoice_vllm   # must match slurm-talkshow-3gpu.sh
-bash deploy/install-cosyvoice-env.sh
-```
-
-That script `conda create`s the env if missing, then `pip install`s `deploy/cosyvoice-requirements-inference.txt` plus vLLM/TensorRT. Do **not** `pip install -r "${COSYVOICE_ROOT}/requirements.txt"`.
-
-```bash
-conda activate cosyvoice_vllm
-python --version                                          # 3.10.x
-python -c "import whisper; print('whisper ok')"
-python -c "import vllm; print('vllm', vllm.__version__)"  # 0.11.x
-which python
-# → COSYVOICE_PYTHON=.../envs/cosyvoice_vllm/bin/python
-```
-
-**Prompt wavs** (`cosyvoice-prompts/`) are Howard’s local test clips. Teammates skip bake / copy.
-
-### 5. DyStream (talking heads)
-
-Do **not** `pip install` DyStream into `talkshow` or `pip install -r $DYSTREAM_ROOT/requirements.txt` (upstream pins conflict). The 3-GPU job looks for conda env **`dystream`** (Python 3.11).
-
-**5a. Clone + weights** (login is fine; HF token required on Babel shared IPs):
-
-```bash
-export DYSTREAM_ROOT=/data/user_data/$USER/dystream
-export HF_TOKEN=hf_...
-huggingface-cli whoami          # must print your HF user, not "Not logged in"
-git clone https://github.com/RobinWitch/DyStream.git "${DYSTREAM_ROOT}"
-cd ~/AI-agent-talkshow
-bash deploy/download-dystream-weights.sh   # checkpoints/ + tools/ into DYSTREAM_ROOT
-```
-
-**5b. Create + install env `dystream`:**
-
-```bash
-conda create -n dystream python=3.11 -y
-
-srun -p preempt --gres=gpu:1 --mem=32G --time=02:00:00 --pty bash
-cd ~/AI-agent-talkshow
-export DYSTREAM_ROOT=/data/user_data/$USER/dystream
-export DYSTREAM_CONDA_ENV=dystream
-bash deploy/install-dystream-env.sh        # curated deps, not upstream requirements.txt
-```
-
-```bash
-conda activate dystream
-python --version                           # 3.11.x
-python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
-which python
-# → DYSTREAM_PYTHON=.../envs/dystream/bin/python
-```
-
-### 6. Babel `.env` (minimum for `slurm-talkshow-3gpu.sh`)
-
-Point `*_PYTHON` at the interpreters you just created (`conda activate … && which python`).
-
-```
-LIVEKIT_URL=wss://….
-LIVEKIT_API_KEY=…
-LIVEKIT_API_SECRET=…
-
-VLLM_BASE_URL=http://127.0.0.1:8000/v1
-VLLM_MODEL=google/gemma-4-E4B-it
-# VLLM_MODEL_PATH=/data/user_data/$USER/models/gemma-4-E4B-it
-
-TALKSHOW_TTS_ENGINE=cosyvoice
-COSYVOICE_MODE=instruct2
-COSYVOICE_SIDECAR_URL=http://127.0.0.1:8767
-COSYVOICE_ROOT=/data/user_data/$USER/CosyVoice
-COSYVOICE_MODEL_DIR=/data/user_data/$USER/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B
-COSYVOICE_PYTHON=/data/user_data/$USER/miniconda3/envs/cosyvoice_vllm/bin/python
-COSYVOICE_CUDA_DEVICE=2
-COSYVOICE_CONDA_ENV=cosyvoice_vllm
-
-DYSTREAM_ROOT=/data/user_data/$USER/dystream
-DYSTREAM_PYTHON=/data/user_data/$USER/miniconda3/envs/dystream/bin/python
-DYSTREAM_CUDA_DEVICE=1
-DYSTREAM_SIDECAR_URL=http://127.0.0.1:8766
-DYSTREAM_CONDA_ENV=dystream
-TALKSHOW_AVATAR_ENABLED=1
-TALKSHOW_AVATAR_LK_VIDEO=1
-NEXT_PUBLIC_DYSTREAM_ENABLED=1
-
-TALKSHOW_TURN_DETECTOR_CACHE=/data/user_data/$USER/livekit-turn-detector/hub
-TALKSHOW_ORT_NUM_THREADS=1
-```
-
-The job fails if the three GPU slots or three Python paths collide. Extra sidecar knobs: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
-
-### 7. Babel checklist
-
-- [ ] `talkshow` **Python 3.11** + `pip install -r requirements.txt` (or `slurm-install-deps.sh`)
-- [ ] LiveKit ONNX in `TALKSHOW_TURN_DETECTOR_CACHE`
-- [ ] CosyVoice clone + Fun-CosyVoice3 weights + env `cosyvoice_vllm`
-- [ ] DyStream clone + weights + env `dystream`
-- [ ] `.env` LiveKit keys match the laptop; `TALKSHOW_TTS_ENGINE=cosyvoice`
-- [ ] `sbatch deploy/slurm-talkshow-3gpu.sh` — health on `:8000`, `:8766`, `:8767`, then agent log
-
----
-
-## Daily dev workflow
-
-| Task | Where | Command |
-|------|--------|---------|
-| Start the show stack | Babel login | `sbatch deploy/slurm-talkshow-3gpu.sh` |
-| UI / panel / transcript | Laptop | `cd talkshow-web && pnpm dev` |
-| Mint token | Laptop | `python api/tokens.py --room talkshow-dev --identity <you>` |
-| Edit agent logic | Git + Babel | edit `agent/`, push, `git pull` on Babel, `deploy/talkshow-ctl.sh restart agent` |
-| Ghost session (no mic) | Babel | `python -m eval.ghost_session` |
-| Record ghost frontend | Laptop | `python -m eval.ghost_session --record` |
-| Change persona text | Git | `config/personas/*.yaml` |
-| Change turn order / mode | Git | `config/scenarios/*.yaml` |
-
----
-
-## Configuration reference
-
-| Path | Purpose |
-|------|---------|
-| `.env` (repo root) | Secrets + Babel paths; shared by token script and `talkshow-web` |
-| `config/multimodal.yaml` | Default vLLM URL |
-| `config/personas/host.yaml` | Lessac — CosyVoice prompt wav under `tts.cosyvoice` |
-| `config/personas/guest.yaml` | Amy |
-| `config/personas/commentator.yaml` | Ryan |
-| `config/scenarios/default.yaml` | `host_moderated` (default) |
-
-Turn modes: **`host_moderated`** (Think & Action floor control in `agent/interaction`: the interaction *generates* each agent line and discloses it interval by interval to the other agents, who think and may request an interrupt, speak, or backchannel; a controller arbitrates. Speech is *consumed* separately — printed in text-only mode, TTS + avatar video live — and a human can speak at any time, cutting the current line. The `agent/show_graph` LangGraph runs each show beat — human turn, moderation, panel lines, and listeners' PAD appraisals; side effects via `agent/show_graph/actuators.py`), **`rotate_after_user`**, **`manual_only`**.
-
----
-
-## UI data channels
-
-Agent → browser (`talkshow/ui`): `panel_roster`, `role_active`, `transcript`, `floor_grant`
-
-Browser → agent (`talkshow/control`): `set_locale`. There is no Raise hand button: with Think & Action floor control a human takes the floor by speaking. The agent still accepts a legacy `hand_raise` message (the ghost test client sends it).
-
-See [talkshow-web/README.md](talkshow-web/README.md).
-
----
-
-## Architecture (short)
-
-Single LiveKit participant; roles hand off in-process with per-role TTS. Gemma audio-in per human utterance; panel lines via text API. Shared `show_history` for all roles. DyStream streams lip-synced video on the agent LiveKit track.
-
-```
-User audio → GemmaAudioSTT → speak_panel_line → CosyVoice sidecar
-          → optional DyStream RGBA stream → LiveKit audio + video
-          → host-moderated panel → UI events → talkshow-web
-```
-
-Full sidecar / SLURM notes: [deploy/RUN-BABEL.md](deploy/RUN-BABEL.md).
-
----
-
-## Repo layout
-
-```
-agent/              LiveKit worker, host_floor, ui_events
-talkshow-web/       Next.js frontend
-config/             personas/, scenarios/, multimodal.yaml
-deploy/             SLURM 3-GPU job, vLLM, CosyVoice / DyStream sidecars
-api/tokens.py       Laptop token helper
-requirements-laptop.txt   ← laptop pip install
-requirements.txt          ← Babel GPU pip install (talkshow env)
-```
-
-Not in git: `.env`, `.cursor/`, `docs/` (local notes, knowledge base, Cursor rules/skills)
-
----
-
-## Troubleshooting (Babel)
-
-| Log / symptom | Fix |
-|---------------|-----|
-| Job wants 3 GPUs / slots collide | Check `VLLM_CUDA_DEVICE` / `DYSTREAM_CUDA_DEVICE` / `COSYVOICE_CUDA_DEVICE` are 0/1/2 and distinct |
-| CosyVoice / DyStream / talkshow share one Python | Set `COSYVOICE_PYTHON` and `DYSTREAM_PYTHON` to their conda envs |
-| `pthread_setaffinity_np failed` | `TALKSHOW_ORT_NUM_THREADS=1` in `.env` |
-| Turn detector / ONNX missing | `bash deploy/download-livekit-agent-models.sh` |
-| Agent never joins room | LiveKit keys match laptop; room name matches |
-| CosyVoice health never comes up | `logs/slurm-<jobid>/cosyvoice.log`; `TALKSHOW_TTS_ENGINE=cosyvoice` + sidecar URL |
-| `memory usage is high` | Normal with vLLM + sidecars; or `TALKSHOW_STAGGER_START=1` |
-| `Invalid qos specification` | Script uses `--qos=preempt_qos` with `partition=preempt` |
-
----
-
-## Smoke-test vLLM audio (Babel only)
-
-```bash
-python -c "
-import base64, httpx, sys
-wav = open(sys.argv[1],'rb').read()
-b64 = base64.standard_b64encode(wav).decode()
-r = httpx.post('http://127.0.0.1:8000/v1/chat/completions', json={
-  'model': 'google/gemma-4-E4B-it',
-  'messages': [{'role':'user','content':[
-    {'type':'audio_url','audio_url':{'url': f'data:audio/wav;base64,{b64}'}},
-    {'type':'text','text': 'Respond with [heard]: ... and [reply]: ...'}
-  ]}],
-  'max_tokens': 512
-}, headers={'Authorization':'Bearer EMPTY'}, timeout=120)
-print(r.json()['choices'][0]['message']['content'])
-" sample.wav
-```
+<div align="center">
+CMU capstone project · all tracked files are in English, see <a href="CONTRIBUTING.md">CONTRIBUTING</a>
+</div>
