@@ -14,8 +14,6 @@ Order follows the worker prompt:
   instruction, because the think JSON has no place for the hidden [engages] line).
 - TALKSHOW_DIALOGUE_LIBRARY: one move example from that library, rotating per spoken line of this
   panelist (the worker injects the catalog; the think prompt is long already).
-- TALKSHOW_MAX_SENTENCES: the length rule (agent.panel.line_length); the content itself is also cut at parse
-  time (agent.interaction.think_action.parse_think_action).
 - TALKSHOW_OPENER_VARIETY: the first words of this panelist's last 3 lines, and "open this one differently"
   (opener_block; nothing before the panelist has spoken).
 - TALKSHOW_FACT_PACK: the checked-facts block and its "only from these facts" rule (agent.panel.fact_pack.pack_block,
@@ -205,10 +203,7 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     concrete = concrete_instruction_enabled()
     facts = fact_pack_enabled()
     opener = opener_variety_enabled()
-    from agent.panel.line_length import length_rule
-
-    rule = length_rule()
-    if not (scaffold or planner or library or concrete or facts or opener or rule):
+    if not (scaffold or planner or library or concrete or facts or opener):
         return "", {}
 
     parts: list[str] = []
@@ -240,9 +235,6 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     if concrete:
         parts.append(CONCRETE_WITH_PACK if block else CONCRETE)
         info["concrete_instruction"] = True
-    if rule:
-        parts.append(rule)
-        info["max_sentences"] = True
     if opener:
         ob = opener_block(history, role)
         if ob:
