@@ -120,7 +120,9 @@ def parse_think_action(
     if isinstance(content, str):
         from agent.panel.line_length import cap_sentences
 
-        content = cap_sentences(content.strip()) or None
+        from agent.show.show_history import scrub_human_label
+
+        content = scrub_human_label(cap_sentences(content.strip())) or None
 
     backchannels: list[Backchannel] = []
     raw_backchannels = action_data.get("backchannels", [])

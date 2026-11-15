@@ -105,3 +105,16 @@ class FreshShowFallbackTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_once_others_spoke_the_note_is_gone(self) -> None:
         self.assertNotIn("nobody but you", await self.fallback_prompt(["host", "human"]))
+
+
+def test_scrub_human_label():
+    from agent.show.show_history import scrub_human_label
+
+    set_human_name(None)
+    assert scrub_human_label("[Human guest], does that work?") == "Does that work?"
+    assert scrub_human_label("Nice point. Human Guest: what do you think?") == "Nice point. What do you think?"
+    assert scrub_human_label("As the human guest said, rent is up.") == "As our guest said, rent is up."
+    assert scrub_human_label("No label here.") == "No label here."
+    set_human_name("Maria")
+    assert scrub_human_label("Human guest, hi.") == "Human guest, hi."
+    set_human_name(None)

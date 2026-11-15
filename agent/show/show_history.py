@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import logging
 import os
 from dataclasses import dataclass, field
@@ -62,6 +64,21 @@ def asks_human(text: str) -> bool:
     if not _human_name or not text.rstrip().endswith("?"):
         return False
     return re.search(rf"\b{re.escape(_human_name)}\b", text) is not None
+
+
+_LABEL_VOCATIVE = re.compile(r"(^|(?<=[.!?]\s))\[?\s*(?:the\s+)?human\s+guest\s*\]?\s*[,:\u2014-]\s*(\w)",
+                             re.IGNORECASE)
+_LABEL_ANY = re.compile(r"\[\s*(?:the\s+)?human\s+guest\s*\]|\b(?:the\s+)?human\s+guest\b", re.IGNORECASE)
+
+
+def scrub_human_label(text: str | None) -> str | None:
+    """A spoken line never says the internal label "Human guest" when the guest has no name: "Human guest, does
+    that work?" becomes "Does that work?" and any other mention becomes "our guest". Unchanged when the guest has a
+    name (the prompt then asks for the name)."""
+    if not text or _human_name:
+        return text
+    text = _LABEL_VOCATIVE.sub(lambda m: m.group(1) + m.group(2).upper(), text)
+    return _LABEL_ANY.sub("our guest", text)
 
 
 def human_label() -> str:
