@@ -14,6 +14,8 @@ Order follows the worker prompt:
   instruction, because the think JSON has no place for the hidden [engages] line).
 - TALKSHOW_DIALOGUE_LIBRARY: one move example from that library, rotating per spoken line of this
   panelist (the worker injects the catalog; the think prompt is long already).
+- TALKSHOW_OPENER_VARIETY: the first words of this panelist's last 3 lines, and "open this one differently"
+  (opener_block; nothing before the panelist has spoken).
 - TALKSHOW_FACT_PACK: the checked-facts block and its "only from these facts" rule (agent.panel.fact_pack.pack_block,
   the worker's function, on the transcript this think call sees).
 - TALKSHOW_PANEL_CONCRETE: the one-fact instruction (same text as the worker; pointing at the facts when a fact
@@ -147,6 +149,22 @@ def _is_panelist(data: Any, role: str) -> bool:
     return role not in {"human", data.scenario.turn_control.listen_role}
 
 
+def opener_variety_enabled() -> bool:
+    return _flag("TALKSHOW_OPENER_VARIETY")
+
+
+def opener_block(history: Any, role: str, last_n: int = 3) -> str:
+    """The first words of ``role``'s last ``last_n`` lines, so the next one opens differently ("" if none yet).
+
+    A hard rule against restating the other side ("So, you're saying ...") cut those openers from 24% to 5% on the
+    test split but cost 1.3 overall points, so only this soft version is kept (eval/DIALOGUE_QUALITY.md)."""
+    mine = [line.text.strip() for line in history.lines if line.role_id == role and line.text.strip()][-last_n:]
+    if not mine:
+        return ""
+    heads = ['"' + " ".join(t.split()[:3]) + '..."' for t in mine]
+    return "Your recent lines opened with " + ", ".join(heads) + "; open this one differently."
+
+
 def library_example(library_id: str, role: str, index: int) -> str:
     """One move example of ``library_id`` for ``role`` ("" if the library is missing or empty)."""
     from agent.panel.dialogue_library import _moves_for_role, load_dialogue_library
@@ -184,7 +202,8 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     library = dialogue_library_override()
     concrete = concrete_instruction_enabled()
     facts = fact_pack_enabled()
-    if not (scaffold or planner or library or concrete or facts):
+    opener = opener_variety_enabled()
+    if not (scaffold or planner or library or concrete or facts or opener):
         return "", {}
 
     parts: list[str] = []
@@ -216,6 +235,11 @@ async def think_prompt_additions(data: Any, role: str, history: Any) -> tuple[st
     if concrete:
         parts.append(CONCRETE_WITH_PACK if block else CONCRETE)
         info["concrete_instruction"] = True
+    if opener:
+        ob = opener_block(history, role)
+        if ob:
+            parts.append(ob)
+            info["opener_variety"] = True
     if not parts:
         return "", info
     return "\n\n" + HEADER + "\n" + "\n\n".join(parts), info

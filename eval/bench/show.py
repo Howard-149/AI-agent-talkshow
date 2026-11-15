@@ -62,7 +62,7 @@ PANEL = ("commentator", "guest")
 HOST = "host"
 FLOOR_ROLES = (HOST, *PANEL)
 AUDIENCE = "Audience member"
-OPENER_MARK = "open this one differently"  # a think-prompt variant that varies openers, if a run uses one
+OPENER_MARK = "open this one differently"  # agent/panel/think_prompt.opener_block (TALKSHOW_OPENER_VARIETY)
 PERTURBATIONS = ("generic_swap", "duplicate_argument", "same_opener", "turn_shuffle")
 
 PAIRWISE_SYSTEM = ("You are a careful annotator of talk-show transcripts. Answer exactly what is asked, using only the "
@@ -319,6 +319,8 @@ def generate(args: argparse.Namespace) -> Path:
         model = args.model
     system = make_system(args.system, backend, args.arm)
     label = args.system if args.system == "plain" else f"{args.system}-{args.arm}"
+    if args.model and "gemma-4-E4B" not in args.model:  # the same arm on another panel model stays a separate system
+        label += "@" + args.model.rstrip("/").split("/")[-1]
     reruns = 1 if args.dry_run else args.reruns
     eps = [new_episode(s, label, k) for k in range(reruns) for s in scripts]
     t0 = time.time()

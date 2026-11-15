@@ -436,6 +436,24 @@ class ThinkActionInteraction(TextOnlyInteraction):
         returned = self._return_after_moderation(data, history, candidate_payload, interval)
         if returned is not None:
             return returned
+        from agent.floor.jev_floor import jev_enabled, jev_pick, min_confidence
+
+        if jev_enabled() and candidate_payload:
+            names = {role: load_persona_name(role) for role in dict.fromkeys([host_role, *candidate_roles])}
+            pick, conf, info = await jev_pick(self._recent_public_text(history), candidate_payload,
+                                              dict(self.actual_floor_counts), names, host_role)
+            self.last_jev_info = info
+            if pick in candidate_roles and conf >= min_confidence():
+                self.host_fallback_streak = 0
+                self.host_fallback_instruction = None
+                self.host_fallback_strategy = None
+                self.host_fallback_target = None
+                return FloorOutcome(
+                    "speak",
+                    selected_role=pick,
+                    reason=f"Decision model pick (confidence {conf:.2f}).",
+                    reason_code="jev_select",
+                )
         invited_role = self.pending_invitation_target
         recent_fallbacks = self.fallback_history[-4:]
         participant_counts = {

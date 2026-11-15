@@ -43,6 +43,8 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Answer the audience | Lists the audience member's figures, names and stance, and asks the panelist to answer that point | Think prompt; extraction starts when the audience turn is committed | `TALKSHOW_UPTAKE_PLANNER=lite`, `TALKSHOW_PANEL_SCAFFOLD_FIX=1` |
 | Concrete lines | Style examples that carry facts, and a one-concrete-fact rule | Think prompt and worker fallback | `TALKSHOW_DIALOGUE_LIBRARY=panel_concrete`, `TALKSHOW_PANEL_CONCRETE=1` |
 | Fact pack | The 6 most relevant checked facts for the topic; specifics may come only from them or from what was said in the show | Think prompt and worker fallback | `TALKSHOW_FACT_PACK=<json>` |
+| Varied openers | The first words of the panelist's own last 3 lines, and "open this one differently" | Panelist think prompt | `TALKSHOW_OPENER_VARIETY=1` |
+| Decision-model floor pick | On a free floor, a decision model (Jev) picks among the speak candidates or the host; a candidate picked with confidence ≥ `TALKSHOW_FLOOR_JEV_MIN_CONF` gets the floor, anything else goes to the LLM controller as before. Needs `TYPESAFE_API_KEY` (a paid API; transcripts are sent to it); without it nothing changes | `ThinkActionInteraction.arbitrate_free`, `agent/floor/jev_floor.py` | `TALKSHOW_FLOOR_JEV=1` |
 | Lean think prompt | On a free floor: no repeat of the line the transcript ends with, no interrupt or backchannel guidance, no canned host lines in the transcript | Panelist think prompt, `agent/panel/think_prompt.py` | `TALKSHOW_THINK_LEAN=1` |
 | Persona near the line | "Write the content as Ryan: ..." from the persona card, right before the line is written | Panelist think prompt | `TALKSHOW_THINK_PERSONA_NEAR=1` |
 | Respond to now | Who spoke last, whom they named, the planner's points, and a rule to stay silent when someone else was named | Panelist think prompt | `TALKSHOW_THINK_FOCUS=1` |
@@ -210,6 +212,72 @@ audience-uptake judge item is near its ceiling for every system except productio
 words; Amy once tells the audience member's story as her own ("my friend ..."); when the host asks Ryan, Amy sometimes
 answers; lines run near 40 words where the persona asks for 1 to 2 sentences.
 
+### Panel model
+
+The same best arm on a stronger open panel model, Qwen3.6-35B-A3B (a mixture of experts with about 3B active
+parameters, FP8, 2 GPUs), against Gemma-4 E4B. Test split, both judges.
+
+| Panel model, arm | Overall | T1 | T2 | T3a | T3b | T4 | Lines with an unsupported specific (T1) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3.6-35B-A3B, best arm | 45.0 | 27.4 | 2.7 | 54.0 | 54.6 | 86.5 | 20% |
+| Qwen3.6-35B-A3B, best arm + fact pack | 43.8 | 21.8 | 2.8 | 54.5 | 56.7 | 83.2 | 8.4% |
+| Gemma-4 E4B, best arm | 40.4 | 19.6 | 2.6 | 46.0 | 47.6 | 86.3 | 4.8% |
+
+- **Larger gain than any prompt change.** +4.6 overall, mostly listening and grounding.
+- **T6 (5 dev topics, 15 episodes each).** The Qwen episodes win 92.5% of pairwise comparisons against the Gemma ones
+  (Bradley–Terry 1.22 [0.71, 2.34]). The same winner comes out in both orders in 87% of pairs. Audience turns are
+  answered more often (0.93 vs 0.82, lexical), and the panelists link to each other's lines more (0.51 vs 0.37).
+- **Costs.**
+  - Qwen invents more specifics. In T6 one example is "she raised her rates by 20%". The fact pack brings this from
+    20% to 8.4%, at the usual cost in T1 and persona.
+  - Lines are longer: median 49 words on T1, 59 in T6.
+- **Latency, one think call at a time** (6 real think prompts, about 1,170 prompt tokens):
+
+  | | Gemma-4 E4B (1 GPU) | Qwen3.6-35B-A3B (2 GPUs) |
+  | --- | --- | --- |
+  | Whole think call (median) | 3.7 s | 3.1 s |
+  | Time to first token | 0.10 s | 0.26 s |
+  | Output tokens | 244 | 437 |
+  | Decode speed | 66 tokens/s | 136 tokens/s |
+
+  Qwen writes more but decodes twice as fast, so a think call is not slower.
+
+### Decision-model floor pick
+
+Jev answers a typed choice ("who speaks next: Ryan, Amy, or the host?") with a probability per option and generates no
+text. Its median latency is 0.12 s.
+
+**Offline replay** of the 374 production floor decisions on T2f:
+- When both panelists bid and the audience named one, Jev picks the named one 100% of the time. The LLM controller
+  picks them 58% of the time. Addressee priority already handles this case, though.
+- In the unnamed case, Jev agrees with the controller 74% of the time.
+- As an addressee detector, Jev is weaker than the name rule: on named items it says "nobody" 25% of the time.
+
+**T6** (5 dev topics, Gemma-4 E4B, varied openers on):
+
+| Floor | LLM controller calls (share of slots) | Pairwise win rate (Qwen judge) | Audience answered (judge) |
+| --- | --- | --- | --- |
+| LLM controller only | 78% | 44% | 1.00 |
+| Jev first, threshold 0.7 | 60% | 52% | 0.98 |
+| Jev first, threshold 0.5 | 47% | 54% | 1.00 |
+
+At threshold 0.5, about 40% of the controller calls are replaced, and episode quality does not drop. The pairwise
+differences are within noise.
+
+### Demo configuration
+
+- **Flags.** `DEMO` in `deploy/arms/dialogue-quality.arms`, or the `demo` arm in `eval/quality_ruler/arms.py`. It is
+  the best arm plus:
+  - varied openers;
+  - the Jev floor pick at threshold 0.5;
+  - the fact pack (`TALKSHOW_FACT_PACK`).
+- **Floor pick.** Set `TYPESAFE_API_KEY` in the environment of the agent process, never in the repo. Without it, the
+  LLM controller decides as before.
+- **Panel model.** Qwen3.6-35B-A3B is recommended. The live stack currently sends audio transcription to the same
+  vLLM server as the panel (Gemma-4 E4B), and Qwen has no audio input. Running Qwen for the panel therefore needs a
+  second vLLM server with its own base URL for the panel calls. That part is not in this change and has not been
+  tested live.
+
 ### Dev split (pilot)
 
 These are pilot numbers on the dev split, averaged over both judges, on a 0 to 100 scale.
@@ -287,6 +355,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-15 | Varied openers (`TALKSHOW_OPENER_VARIETY`); decision-model floor pick (`TALKSHOW_FLOOR_JEV`); demo preset; Qwen3.6-35B-A3B as panel model on the test split and T6; latency per think call |
 | 2026-11-14 | T6 full show pilot (5 dev topics, 4 systems, 2 judges); opener-variety metric; test that every arm flag is applied; test-split follow-ups (fact pack, persona split, style examples, opener rule) recorded, none merged |
 | 2026-11-12 | Test split (final): the best arm (fast_v2 + persona library + forced addressee) scores 40.4 overall vs 33.5 for production and 34.4 for plain Gemma-4 E4B |
 | 2026-11-12 | v2 dev results (fast_v2, without addressee priority, with the persona library); `TALKSHOW_ADDRESSEE_FLOOR=force` for named panelists who chose silent, arm `fast_v2_lib_force` |
