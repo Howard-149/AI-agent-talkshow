@@ -140,7 +140,24 @@ def _parse(raw: str, interval_text: str) -> Any:
 
 
 def run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = SLOTS) -> None:
-    """Every episode in lockstep: per slot one batch of think calls, one of controller calls, one of fallbacks."""
+    """Every episode in lockstep: per slot one batch of think calls, one of controller calls, one of fallbacks.
+
+    A fact-pack arm's pack is set for the whole run (the show system clears TALKSHOW_FACT_PACK when it is built, and
+    single-item tasks set it per request; T6 episodes use the show's own pack, keyed by the episode's topic)."""
+    own_pack = getattr(system, "own_pack", "") or ""
+    saved = os.environ.get("TALKSHOW_FACT_PACK")
+    if own_pack:
+        os.environ["TALKSHOW_FACT_PACK"] = own_pack
+    try:
+        _run_think_action(system, backend, eps, slots)
+    finally:
+        if saved is None:
+            os.environ.pop("TALKSHOW_FACT_PACK", None)
+        else:
+            os.environ["TALKSHOW_FACT_PACK"] = saved
+
+
+def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = SLOTS) -> None:
     from agent.floor.floor_parser import strip_speech_control_tags
     from eval.bench.floor import arbitrate, host_fallback, record_grant
     from eval.bench.systems import Request, strip_think
