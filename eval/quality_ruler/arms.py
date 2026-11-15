@@ -163,6 +163,21 @@ ARMS: dict[str, dict] = {
              "best_of": 1, "fact_pack": True},
 }
 
+ARMS.update({
+    # The demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
+    "demo_guest_theo": {"live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
+                                 "TALKSHOW_PERSONA_GUEST": "theo_comedian"},
+                 "best_of": 1, "fact_pack": True},
+    # The demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
+    "demo_comm_theo": {"live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": "theo_comedian",
+                                 "TALKSHOW_PERSONA_GUEST": "amy_warm"},
+                 "best_of": 1, "fact_pack": True},
+    # The demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
+    "demo_dana_theo": {"live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": "dana_economist",
+                                 "TALKSHOW_PERSONA_GUEST": "theo_comedian"},
+                 "best_of": 1, "fact_pack": True},
+})
+
 
 def apply_env(arm: dict) -> None:
     """Set this process's panel flags for one arm: the arm's live_flags, every other panel flag off, and the fact pack
