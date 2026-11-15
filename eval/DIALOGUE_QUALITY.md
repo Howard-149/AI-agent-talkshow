@@ -45,6 +45,7 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Fact pack | The 6 most relevant checked facts for the topic; specifics may come only from them or from what was said in the show | Think prompt and worker fallback | `TALKSHOW_FACT_PACK=<json>` |
 | Varied openers | The first words of the panelist's own last 3 lines, and "open this one differently" | Panelist think prompt | `TALKSHOW_OPENER_VARIETY=1` |
 | Decision-model floor pick | On a free floor, a decision model (Jev) picks among the speak candidates or the host; a candidate picked with confidence ≥ `TALKSHOW_FLOOR_JEV_MIN_CONF` gets the floor, anything else goes to the LLM controller as before. Needs `TYPESAFE_API_KEY` (a paid API; transcripts are sent to it); without it nothing changes | `ThinkActionInteraction.arbitrate_free`, `agent/floor/jev_floor.py` | `TALKSHOW_FLOOR_JEV=1` |
+| Line length | Panelists are told to keep the content to at most N short sentences, and any longer content is cut after the N-th sentence when the think output is parsed | Panelist think prompt; `agent/interaction/think_action.parse_think_action` | `TALKSHOW_MAX_SENTENCES=<n>` |
 | Lean think prompt | On a free floor: no repeat of the line the transcript ends with, no interrupt or backchannel guidance, no canned host lines in the transcript | Panelist think prompt, `agent/panel/think_prompt.py` | `TALKSHOW_THINK_LEAN=1` |
 | Persona near the line | "Write the content as Ryan: ..." from the persona card, right before the line is written | Panelist think prompt | `TALKSHOW_THINK_PERSONA_NEAR=1` |
 | Respond to now | Who spoke last, whom they named, the planner's points, and a rule to stay silent when someone else was named | Panelist think prompt | `TALKSHOW_THINK_FOCUS=1` |
@@ -270,13 +271,69 @@ differences are within noise.
   the best arm plus:
   - varied openers;
   - the Jev floor pick at threshold 0.5;
+  - lines of at most 2 sentences (`TALKSHOW_MAX_SENTENCES=2`);
   - the fact pack (`TALKSHOW_FACT_PACK`).
+- **Unnamed guest.** When the guest joins without a name, prompts ask the show to call them "you", and a spoken
+  line never contains the internal label "Human guest" (it is rewritten before speech).
 - **Floor pick.** Set `TYPESAFE_API_KEY` in the environment of the agent process, never in the repo. Without it, the
   LLM controller decides as before.
 - **Panel model.** Qwen3.6-35B-A3B is recommended. The live stack currently sends audio transcription to the same
   vLLM server as the panel (Gemma-4 E4B), and Qwen has no audio input. Running Qwen for the panel therefore needs a
   second vLLM server with its own base URL for the panel calls. That part is not in this change and has not been
   tested live.
+
+### Judging T6: what the pairwise judge can and cannot tell
+
+The first T6 judge (Qwen2.5-72B, one question: "which episode is the better talk show") turned out to be unreliable for
+style. We re-judged three comparisons on seven separate dimensions (answers the audience, speakers react to each
+other, new points, distinct characters, entertainment, natural live speech, overall). Each pair was judged in both
+orders, and every judge was told that length is not a criterion (`eval/bench/t6_dims.py`). A sample of 63 pairs also
+went to two strong reference judges, GPT-5.5 and Claude Opus.
+
+- **The two reference judges agree.**
+  - Each gives the same verdict in both orders on 80 to 95% of pairs for most dimensions.
+  - When both give a stable verdict, they agree on 85 to 100% of pairs.
+  - The longer episode wins only 20 to 50% of their verdicts.
+- **The open judge does not.**
+  - Even when told to ignore length, it picks the longer episode 63 to 93% of the time.
+  - It gives nearly the same ranking on every dimension.
+  - On style comparisons it agrees with the reference judges on 10 to 56% of pairs, which is at or below chance.
+  - It agrees on "answers the audience" (76%) and on large gaps such as Qwen vs Gemma (70 to 90%).
+- **Use.** Use a strong API judge for T6 style comparisons. The open judge is fit only for clear-cut dimensions.
+
+What the reference judges say (wins / comparisons, GPT-5.5 · Claude):
+
+| Panel personas (all with the demo flags) | Answers audience | Entertainment | Natural speech | Overall |
+| --- | --- | --- | --- | --- |
+| Ryan (skeptic) + Amy (warm) | **11/12 · 10/14** | 0/14 · 0/14 | 4/11 · 2/11 | 8/14 · 7/13 |
+| Theo (comedian) + Amy | 4/14 · 6/15 | 5/13 · 5/13 | 4/12 · 4/14 | 4/15 · 4/15 |
+| Dana (economist) + Theo | 8/12 · 11/15 | 10/14 · 11/14 | 5/11 · 7/14 | **11/15 · 10/14** |
+| Ryan + Theo | 2/12 · 2/14 | **12/13 · 11/13** | **9/10 · 13/13** | 5/12 · 7/14 |
+
+| Line length (Qwen panel) | Answers audience | Entertainment | Natural speech | Overall |
+| --- | --- | --- | --- | --- |
+| Told "at most 2 short sentences", and cut (40 words) | 2/8 · 2/7 | **7/9 · 7/11** | **9/12 · 10/11** | 4/9 · 4/9 |
+| Cut to 2 sentences only (52 words) | 5/9 · 5/8 | 3/9 · 2/10 | 5/11 · 3/9 | 2/6 · 2/7 |
+| No limit (61 words) | 5/7 · 4/7 | 3/8 · 6/9 | 3/11 · 1/8 | 5/7 · 6/8 |
+
+- **Panel model.** Qwen3.6-35B-A3B beats Gemma-4 E4B on every dimension except natural speech.
+- **Personas.** The skeptic and warm pair answers the audience best but is the least entertaining. Pairing the
+  economist with the comedian is the best overall.
+- **Length.** Short, prompted lines sound the most natural and are the most entertaining. Longer lines answer the
+  audience and each other a little more. The samples are small (6 to 15 pairs per comparison).
+
+**Tried and not kept.** All four were measured with the open judge, so the "no gain" verdicts carry its limits.
+
+| Change | Result |
+| --- | --- |
+| Three samples per panelist think and a decision-model pick | No gain; unsupported specifics up, because the pick favours lines with more specifics |
+| A punch-up rewrite of the chosen line | No gain; 40% of rewrites unchanged or rejected |
+| A run-of-show plan with a per-segment angle per panelist | No gain; idea repetition slightly up |
+| A list of the panelist's earlier points in its prompt | No measurable effect |
+
+**Fix.** Fact-pack arms in T6 had no fact pack before this change: the show system cleared `TALKSHOW_FACT_PACK` and
+the episode runner never set it. T6 results for `demo` arms from before 2026-11-15 ran without facts. Single-item
+tasks (T1 to T4) were not affected.
 
 ### Dev split (pilot)
 
@@ -355,6 +412,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-15 | Line length cap (`TALKSHOW_MAX_SENTENCES`); no "Human guest" on air; T6 fact-pack fix; T6 judged by dimension with reference judges (GPT-5.5, Claude), open judge found unreliable for style; persona pairings; four variants tried and not kept |
 | 2026-11-15 | Varied openers (`TALKSHOW_OPENER_VARIETY`); decision-model floor pick (`TALKSHOW_FLOOR_JEV`); demo preset; Qwen3.6-35B-A3B as panel model on the test split and T6; latency per think call |
 | 2026-11-14 | T6 full show pilot (5 dev topics, 4 systems, 2 judges); opener-variety metric; test that every arm flag is applied; test-split follow-ups (fact pack, persona split, style examples, opener rule) recorded, none merged |
 | 2026-11-12 | Test split (final): the best arm (fast_v2 + persona library + forced addressee) scores 40.4 overall vs 33.5 for production and 34.4 for plain Gemma-4 E4B |
