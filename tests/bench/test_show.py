@@ -203,3 +203,33 @@ class CompareTests(_Env):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class T6FactPackTests(unittest.TestCase):
+    def test_pack_arm_think_prompts_carry_the_facts(self) -> None:
+        """A fact-pack arm's T6 think prompts include the checked-facts block (it was missing before)."""
+        import os
+        import tempfile
+
+        from agent.panel import fact_pack
+
+        with tempfile.TemporaryDirectory() as d:
+            pack = Path(d) / "pack.json"
+            slug = show.load_scripts()[0]["slug"]
+            pack.write_text(json.dumps({slug: {"topic": "t", "facts": [
+                {"fact": "Zebra crossings were introduced in 1951 in Slough."}]}}))
+            out = Path(d) / "run"
+            env = dict(os.environ, TALKSHOW_FACT_PACK=str(pack))
+            old = dict(os.environ)
+            os.environ.update(env)
+            try:
+                show.main(["generate", "--system", "think_action", "--arm", "fast_v2_lib_force_pack",
+                           "--topics", slug, "--dry-run", "--out", str(out)])
+            finally:
+                os.environ.clear()
+                os.environ.update(old)
+            rows = [json.loads(l) for l in (out / "prompts.jsonl").read_text().splitlines()]
+            panel = [r for r in rows if r["kind"] in ("think:commentator", "think:guest")]
+            self.assertTrue(panel)
+            self.assertTrue(any("Slough" in r["messages"][-1]["content"] for r in panel))
+            del fact_pack
