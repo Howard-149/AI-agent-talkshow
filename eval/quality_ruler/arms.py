@@ -101,7 +101,7 @@ LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TA
                    "TALKSHOW_THINK_LEAN", "TALKSHOW_THINK_PERSONA_NEAR", "TALKSHOW_THINK_FOCUS",
                    "TALKSHOW_PERSONA_LIBRARY", "TALKSHOW_PERSONA_LIBRARY_NAMES", "TALKSHOW_PERSONA_COMMENTATOR",
                    "TALKSHOW_PERSONA_GUEST", "TALKSHOW_OPENER_VARIETY", "TALKSHOW_FLOOR_JEV",
-                   "TALKSHOW_FLOOR_JEV_MIN_CONF")
+                   "TALKSHOW_FLOOR_JEV_MIN_CONF", "TALKSHOW_MAX_SENTENCES")
 # Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
 CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
                  "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
@@ -109,7 +109,8 @@ CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THI
 FAST_V2_FLAGS = {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona"]}
 
 DEMO_EXTRA_FLAGS = {"opener": {"TALKSHOW_OPENER_VARIETY": "1"},
-                    "jev": {"TALKSHOW_FLOOR_JEV": "1", "TALKSHOW_FLOOR_JEV_MIN_CONF": "0.5"}}
+                    "jev": {"TALKSHOW_FLOOR_JEV": "1", "TALKSHOW_FLOOR_JEV_MIN_CONF": "0.5"},
+                    "short": {"TALKSHOW_MAX_SENTENCES": "2"}}
 
 ARMS: dict[str, dict] = {
     "production": {},
@@ -156,6 +157,7 @@ ARMS: dict[str, dict] = {
     # The demo set: the best arm, varied openers, the decision-model floor pick (needs TYPESAFE_API_KEY; without it
     # the LLM controller decides as before) and the fact pack. Recommended panel model: Qwen3.6-35B-A3B.
     "demo": {"live_flags": {**FAST_V2_FLAGS, **DEMO_EXTRA_FLAGS["opener"], **DEMO_EXTRA_FLAGS["jev"],
+                            **DEMO_EXTRA_FLAGS["short"],
                             "TALKSHOW_PERSONA_LIBRARY": "1", "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic",
                             "TALKSHOW_PERSONA_GUEST": "amy_warm", "TALKSHOW_ADDRESSEE_FLOOR": "force"},
              "best_of": 1, "fact_pack": True},

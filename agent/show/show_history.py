@@ -50,7 +50,8 @@ def human_name() -> str:
 def human_name_note() -> str:
     """Prompt line naming the human, so a line can address them before they spoke."""
     if not _human_name:
-        return ""
+        return ("The human guest has not given a name: address them as \"you\" (or \"our guest\"), never as "
+                "\"Human guest\".\n")
     return f"The human guest is {_human_name}; address them as {_human_name}, never as 'Guest'.\n"
 
 

@@ -118,7 +118,9 @@ def parse_think_action(
     if content is not None and not isinstance(content, str):
         content = None
     if isinstance(content, str):
-        content = content.strip() or None
+        from agent.panel.line_length import cap_sentences
+
+        content = cap_sentences(content.strip()) or None
 
     backchannels: list[Backchannel] = []
     raw_backchannels = action_data.get("backchannels", [])

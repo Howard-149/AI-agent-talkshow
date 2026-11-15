@@ -48,7 +48,7 @@ class HumanNameTests(unittest.TestCase):
             self.assertIsNone(name_room_human(_room(participant)))
             self.assertEqual(human_name(), "Human guest")
             self.assertEqual(human_label(), "Human guest")
-            self.assertEqual(human_name_note(), "")
+            self.assertIn("never as", human_name_note())  # an unnamed guest is "you" on air, not "Human guest"
 
 
 if __name__ == "__main__":
