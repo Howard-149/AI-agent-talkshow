@@ -1,4 +1,4 @@
-from agent.panel.line_length import cap_sentences, split_sentences
+from agent.panel.line_length import cap_sentences, length_rule, split_sentences
 
 
 def test_split_keeps_abbreviations_and_numbers():
@@ -16,8 +16,9 @@ def test_cap():
 
 def test_flag(monkeypatch):
     monkeypatch.delenv("TALKSHOW_MAX_SENTENCES", raising=False)
-    assert cap_sentences("A. B. C.") == "A. B. C."
+    assert length_rule() == "" and cap_sentences("A. B. C.") == "A. B. C."
     monkeypatch.setenv("TALKSHOW_MAX_SENTENCES", "2")
+    assert "at most 2" in length_rule()
     assert cap_sentences("Alpha one. Beta two. Gamma three.") == "Alpha one. Beta two."
 
 

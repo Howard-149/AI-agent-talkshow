@@ -1,9 +1,8 @@
 """Cap spoken lines at a number of sentences (TALKSHOW_MAX_SENTENCES=<n>, default off).
 
 Larger panel models write long turns (median 57 words with Qwen3.6-35B-A3B in T6), which run 20+ s on air. With the
-flag set, every Think & Action ``content`` is cut after the n-th sentence when the think output is parsed. The model is
-not told the limit: in T6 a prompt rule ("at most 2 short sentences, one point") made lines thinner, and the plain
-lines cut to their first 2 sentences won 80% of pairwise comparisons against them (eval/DIALOGUE_QUALITY.md).
+flag set, panelists are told the limit in the think prompt, and every Think & Action ``content`` is cut after the
+n-th sentence when the think output is parsed, so the cap holds even when the model ignores the instruction.
 """
 
 from __future__ import annotations
@@ -48,3 +47,10 @@ def cap_sentences(text: str | None, n: int | None = None) -> str | None:
     parts = split_sentences(text)
     return text if len(parts) <= n else " ".join(parts[:n])
 
+
+def length_rule(n: int | None = None) -> str:
+    n = max_sentences() if n is None else n
+    if n <= 0:
+        return ""
+    return (f"Keep your content to at most {n} short sentence{'s' if n > 1 else ''}, as said live on air: "
+            "one point, then stop. Anything longer is cut off.")
