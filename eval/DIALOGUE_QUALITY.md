@@ -91,7 +91,8 @@ flowchart LR
 | T3a Grounding, unprompted | The number in one fact of the pack; the audience asks about that fact | The reply uses the new value and adds no unsupported specifics | 92 / 116 |
 | T3b Grounding, instructed | Same as T3a, plus "Use these facts when they are relevant to your reply." | Same | 92 / 116 |
 | T4 Persona | The two persona cards are swapped | The style follows the card | 120 / 168 |
-| T5 Hosting, T6 Full show | Not built yet | | |
+| T6 Full show (pilot) | Nothing is edited: a fixed audience script of 3 turns, and the system runs the whole episode | See [T6 full show](#t6-full-show-pilot) | 5 of 30 / none yet |
+| T5 Hosting | Not built yet | | |
 
 **Splits.**
 - Dev is 30 hand-written topics, used for tuning.
@@ -141,6 +142,73 @@ Overall is the mean of T1, T2, T3a, T3b and T4; T2f is reported separately.
 - **Persona.** With the persona library, Think & Action reaches 86 on T4, level with the plain prompt (85).
 - **Cost.** Lines with an unsupported specific rise on T1 from 0.5% (production) to 4.8% (best arm), because the
   concrete style is on without the fact pack. The next step is the best arm plus the fact pack.
+
+### Test split: follow-up experiments
+
+Same items, judges and scale as the table above. The variants below were tried on a local branch and are **not** in
+`main`; only their results are recorded here.
+
+| System | Overall | T1 | T2 | T3a | T3b | T4 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Best arm (from the table above) | 40.4 | 19.6 | 2.6 | 46.0 | 47.6 | 86.3 |
+| Best arm, second run of the same configuration | 40.7 | 19.8 | 2.9 | 46.3 | 47.2 | 87.5 |
+| + fact pack | 39.1 | 18.2 | 3.4 | 44.4 | 45.9 | 83.5 |
+| + fact pack split by persona domain | 39.0 | 17.6 | 2.2 | 45.6 | 45.8 | 83.6 |
+| + talk-show style examples (2 moves picked by situation and persona) | 40.5 | 20.0 | 4.6 | 45.6 | 47.0 | 85.2 |
+| + style examples + fact pack | 38.6 | 15.8 | 2.7 | 45.5 | 46.2 | 82.7 |
+| + "do not open by restating the other side" | 39.1 | 18.0 | 3.6 | 44.4 | 44.6 | 85.0 |
+| + that rule + fact pack | 37.7 | 16.4 | 3.0 | 45.8 | 43.7 | 79.5 |
+
+- **Run-to-run noise.** Two runs of the same configuration differ by 0.3 overall and 1.2 on T4. Differences of that
+  size are noise.
+- **Fact pack.** Lines with an unsupported specific fall from 4.8% to 2.2% (T1), at a cost of about 3 points of
+  persona. Panelists mostly paraphrase the facts: 20% of lines share a 5-word run with a fact, and on average 6% of a
+  line's words are copied.
+- **Splitting the pack by persona** halves the share of facts both panelists cite (18% to 9%), but persona does not
+  recover.
+- **Style examples** change little: more lines end on a question (60% to 81%), and length and persona stay the same.
+  The 4B panel model mostly ignores the examples.
+- **Openers.** In the best arm, 84% of Ryan's T1 lines open with "So" and 24% restate the audience ("So, you're
+  saying ..."); production has 5%. This comes from long test audience turns once the lean prompt stops repeating
+  them. Forbidding the restatement cuts it to 5%, but T1 drops: echoing the audience's words helps the identification
+  judge see which version was answered. **This is a known bias of T1: it rewards restating the input.**
+- New counted metrics in `score`: opener variety per panelist (most common first word, share of restating openers)
+  and `fact_overlap` (with `--pack`).
+- A test now checks that every arm's flags are actually applied (`tests/bench/test_arms.py`): one experiment above had
+  to be rerun because a new flag was silently dropped.
+
+### T6 full show (pilot)
+
+Single-reply items cannot see what a viewer notices across a show: repeated ideas, the same opener every line, who
+answers the host. T6 runs whole episodes (`eval/bench/show.py`).
+
+**Episode.** The host's two opening lines, then 3 audience turns from a fixed script (`eval/data/bench/t6_dev_scripts.yaml`;
+turn 1 addresses nobody, turn 2 Ryan, turn 3 Amy), each followed by 3 show lines. For Think & Action the episode runs the
+production free floor slot by slot: every floor role but the last speaker thinks, addressee priority and the LLM floor
+controller pick the speaker, and the host speaks its fallback line when directed. Not modelled: interrupts,
+backchannels, speech timing. Plain models get the T2f floor question each slot and have no host.
+
+**Pilot:** 5 dev topics, 3 reruns, Gemma-4 E4B, 15 episodes per system.
+
+| Measure (mean per episode) | Best arm | + vary openers vs own last lines | Production | Plain |
+| --- | --- | --- | --- | --- |
+| Same first word as own previous line | 0.26 | 0.17 | 0.45 | 0.11 |
+| Most common first word, share per panelist | 0.55 | 0.49 | 0.68 | 0.38 |
+| Audience turn answered (lexical) | 0.84 | 0.82 | 0.56 | 0.89 |
+| Words per line | 39 | 39 | 25 | 39 |
+| Lines with an unsupported specific | 4.9% | 3.9% | 1.1% | 3.0% |
+| Host lines per episode (of 9) | 2.1 | 2.2 | 3.1 | 0 |
+
+**Pairwise judge** ("which episode is more like a good talk show panel"), Bradley–Terry with a bootstrap over topics:
+the two best-arm variants (0.38 and 0.32) lead production and plain (both −0.35). Qwen2.5-72B nearly passes the
+perturbation gate (an episode beats its damaged copy: duplicated argument 1.0, generic swap 1.0, same opener 0.93,
+shuffled turns 0.87; target 0.9). Llama-3.3-70B does not: it picks the first episode shown 89% of the time, so the two
+judges do not agree (alpha −0.16). The next version scores both orders and keeps only consistent pairs. The
+audience-uptake judge item is near its ceiling for every system except production.
+
+**What reading the episodes shows** (not yet measured): a panelist returns to the same idea in every segment in new
+words; Amy once tells the audience member's story as her own ("my friend ..."); when the host asks Ryan, Amy sometimes
+answers; lines run near 40 words where the persona asks for 1 to 2 sentences.
 
 ### Dev split (pilot)
 
@@ -208,17 +276,18 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 ## Next steps
 
-- [ ] Run the best arm (fast_v2 + persona library + forced addressee) with the fact pack, to bring unsupported specifics back down.
-- [ ] Open the PR for the context variants, T2f, the persona library and forced addressee, with the test-split results attached.
 - [ ] Run the 11 open models on the test split against the best arm.
 - [ ] Generate persona checks from the library fields and extend T4 to library personas.
 - [ ] Validate the judge prompts that have not passed the gates yet: fact-edit identification, and interrupt and backchannel scoring.
-- [ ] Build T5 (hosting, with a fixed reference panel) and T6 (full show).
+- [ ] T6: fix the pairwise position bias (both orders), add an idea-level repetition measure, build test scripts from IQ2 audience Q&A, and run the human-anchor gate.
+- [ ] T1: add a check that does not reward restating the audience turn.
+- [ ] Build T5 (hosting, with a fixed reference panel).
 
 ## Changelog
 
 | Date | Change |
 | --- | --- |
+| 2026-11-14 | T6 full show pilot (5 dev topics, 4 systems, 2 judges); opener-variety metric; test that every arm flag is applied; test-split follow-ups (fact pack, persona split, style examples, opener rule) recorded, none merged |
 | 2026-11-12 | Test split (final): the best arm (fast_v2 + persona library + forced addressee) scores 40.4 overall vs 33.5 for production and 34.4 for plain Gemma-4 E4B |
 | 2026-11-12 | v2 dev results (fast_v2, without addressee priority, with the persona library); `TALKSHOW_ADDRESSEE_FLOOR=force` for named panelists who chose silent, arm `fast_v2_lib_force` |
 | 2026-11-12 | T2f floor items (both panelists bid, the show's floor picks); persona library behind a flag with five personas (Ryan, Amy, Lessac, Dana, Theo) |

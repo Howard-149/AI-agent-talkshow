@@ -3,6 +3,8 @@
     python -m eval.bench.score RUN_DIR [--items ITEMS.jsonl] [--pack FACTS.json] [--out RUN_DIR/score]
 
 Rules, no model:
+  fact overlap         with --pack, on states both panelists answered (T2, T4): the share of cited pack facts that
+                       both panelists cite (fact_overlap)
   T2 right floor       systems that decide the floor (floor_action set): per panelist per rerun, speak when
                        addressed, yield when not; accuracy for each case and balanced (always-speak = 0.5)
   T2f floor            both panelists bid, the system's floor selection picks: the named panelist got the floor
@@ -33,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from argparse import Namespace
 from collections import Counter, defaultdict
@@ -145,6 +148,69 @@ def floor_score(rows: list[dict], items: dict[str, Item]) -> dict:
     if ctrl:
         res["controller_called"] = round(sum(bool(r["controller_called"]) for r in ctrl) / len(ctrl), 3)
     return res
+
+
+def cited_facts(text: str, facts: list[dict]) -> set[int]:
+    """Indices of the pack facts a reply cites: it states one of the fact's numbers, or one of its multi-word names
+    (the unsupported-specifics extractor's keys)."""
+    from eval.quality_ruler.specifics import extract
+
+    keys = {s["key"] for s in extract(text)}
+    return {i for i, f in enumerate(facts) if keys & {s["key"] for s in extract(f.get("fact", ""))}}
+
+
+def fact_overlap(rows: list[dict], items: dict[str, Item], pack: dict) -> dict:
+    """Do the two panelists cite the same facts? For every state both panelists replied to (same task, topic, version
+    and rerun: T2 and T4 test both panelists on one state), the facts of the topic's pack each reply cites; reported
+    per task: the share of cited facts that both cite (pooled over states) and how many states had any citation."""
+    groups: dict[tuple, dict[str, str]] = defaultdict(dict)
+    for r in rows:
+        it = items[r["item_id"]]
+        if r["text"] and it.role_under_test in PANEL and it.topic_id in pack:
+            groups[(it.task, it.topic_id, it.version, r["rerun"])][it.role_under_test] = r["text"]
+    out: dict[str, Any] = {}
+    for task in sorted({k[0] for k in groups}):
+        both = union = states = cited_states = 0
+        for (t, topic, _v, _k), texts in groups.items():
+            if t != task or set(texts) != set(PANEL):
+                continue
+            states += 1
+            facts = pack[topic].get("facts", [])
+            a, b = (cited_facts(texts[r], facts) for r in PANEL)
+            if a | b:
+                cited_states += 1
+            both += len(a & b)
+            union += len(a | b)
+        if states:
+            out[task] = {"states": states, "states_with_citations": cited_states,
+                         "share_cited_by_both": round(both / union, 3) if union else None}
+    return out
+
+
+RESTATE = re.compile(r"(?i)^(so|okay|ok|wait|hold on)?[,\s]*(so )?(you're|you are|we're|we are) "
+                     r"(saying|suggesting|telling|arguing|claiming)")
+
+
+def opener_word(text: str) -> str:
+    """The first word of a line, lower case, punctuation stripped ("" if none)."""
+    m = re.search(r"[A-Za-z']+", text or "")
+    return m.group(0).lower() if m else ""
+
+
+def openers(rows: list[dict], items: dict[str, Item]) -> dict:
+    """How varied are the panelists' openings? Per panelist, over first-rerun replies: the most common first word and
+    its share, and the share of lines that open by restating the other side ("So, you're saying ...")."""
+    out: dict[str, Any] = {}
+    for role in PANEL:
+        texts = [r["text"] for r in rows
+                 if r["text"] and r["rerun"] == 0 and items[r["item_id"]].role_under_test == role]
+        if not texts:
+            continue
+        word, n = Counter(opener_word(t) for t in texts).most_common(1)[0]
+        restate = sum(bool(RESTATE.match(t.strip())) for t in texts)
+        out[role] = {"lines": len(texts), "top_first_word": word, "top_share": round(n / len(texts), 3),
+                     "restate_share": round(restate / len(texts), 3)}
+    return out
 
 
 def follows_fact(rows: list[dict], items: dict[str, Item], task: str = "T3a") -> dict:
@@ -462,6 +528,13 @@ def markdown_report(rep: dict) -> str:
         if u:
             lines.append(f"Unsupported specifics: share supported {u['share_supported']}, lines with one unsupported "
                          f"{u['share_lines_unsupported']}.")
+        fo = v.get("fact_overlap")
+        if fo:
+            lines.append(f"Fact overlap: of the pack facts cited, {fo['share_cited_by_both']} are cited by both "
+                         f"panelists ({fo['states_with_citations']} of {fo['states']} shared states cite any).")
+        for role, o in (v.get("openers") or {}).items():
+            lines.append(f"Openers ({role}): most common first word \"{o['top_first_word']}\" in {o['top_share']} of "
+                         f"{o['lines']} lines; restating the other side in {o['restate_share']}.")
         rs = v.get("response_shift_R", {})
         if rs and "todo" not in rs:
             lines.append("Response shift R: " + "; ".join(f"{k} {x['R']} {x['ci95']}" for k, x in rs.items()) + ".")
@@ -515,6 +588,13 @@ def score(run: Path, items_path: str = "", pack_path: str = "", out: Path | None
     spec = unsupported(rows, items, pack)
     for task, v in spec.items():
         per_task[task]["unsupported_specifics"] = v
+    if pack is not None:  # needs the show's pack (--pack)
+        for task, v in fact_overlap(rows, items, pack).items():
+            per_task[task]["fact_overlap"] = v
+    for task in per_task:
+        op = openers([r for r in rows if items[r["item_id"]].task == task], items)
+        if op:
+            per_task[task]["openers"] = op
     if "T2" in per_task:
         per_task["T2"]["right_floor"] = right_floor(rows, items)
     if "T2f" in per_task:

@@ -2,7 +2,8 @@
 
     python -m eval.bench.judge --requests RUN/score[,RUN2/score,...] --model Qwen/Qwen2.5-72B-Instruct-AWQ --tag qwen72 --tp 2
 
-Reads <dir>/judge/identification.jsonl and <dir>/judge/rubric.jsonl, writes <dir>/judge/answers_<tag>.jsonl (one row per
+Reads <dir>/judge/identification.jsonl and <dir>/judge/rubric.jsonl (or a full-show dir's pairwise.jsonl and
+uptake.jsonl, eval/bench/show.py), writes <dir>/judge/answers_<tag>.jsonl (one row per
 request id). Every answer is read from the first generated token's top-20 logprobs, no sampling, as the existing judges
 do: identification A/B with eval/judge_context.p_answer_a (T4 persona attribution with the quality ruler's A/B reader),
 rubric yes/no with the quality ruler's reader (eval/quality_ruler/jury._probs). Prompts are the request messages as
@@ -34,6 +35,9 @@ if str(ROOT) not in sys.path:
 
 CHUNK = 6000
 MAX_MODEL_LEN = 6144  # as the quality ruler's jury; the longest request (dev transcript + question) is ~2.5k tokens
+# Request files a score dir may hold: the item benchmark's (score.py) and the full show's (show.py): pairwise A/B
+# preferences and yes/no audience uptake items.
+REQUEST_FILES = ("identification", "rubric", "pairwise", "uptake")
 
 
 def parse_reruns(spec: str) -> set[int] | None:
@@ -45,7 +49,7 @@ def parse_reruns(spec: str) -> set[int] | None:
 def load_requests(dirs: list[Path], rubric_reruns: set[int] | None) -> list[tuple[Path, dict]]:
     out = []
     for d in dirs:
-        for name in ("identification", "rubric"):
+        for name in REQUEST_FILES:
             path = d / "judge" / f"{name}.jsonl"
             if not path.is_file():
                 continue
@@ -65,8 +69,10 @@ def read_answer(req: dict, out: Any) -> dict:
     from eval.judge_context import p_answer_a
     from eval.quality_ruler.jury import _probs
 
-    if req["request"] == "rubric":
+    if req["request"] in ("rubric", "uptake"):
         return {"p_yes": round(_probs(out, ["yes", "no"])[0], 4)}
+    if req["request"] == "pairwise":  # no right answer: the preference for the episode shown as A
+        return {"p_a": round(p_answer_a(out), 4)}
     p_a = _probs(out, ["a", "b"])[0] if req["task"] == "T4" else p_answer_a(out)
     p_true = p_a if req["true"] == "A" else 1.0 - p_a
     return {"p_a": round(p_a, 4), "p_true": round(p_true, 4), "hit": int(p_true > 0.5)}
@@ -75,7 +81,7 @@ def read_answer(req: dict, out: Any) -> dict:
 def fake_output(req: dict) -> Any:
     """A stand-in vLLM output: a fixed pseudo-random first-token distribution per request id."""
     h = int(hashlib.sha256(req["id"].encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
-    toks = ("Yes", "No") if req["request"] == "rubric" else ("A", "B")
+    toks = ("Yes", "No") if req["request"] in ("rubric", "uptake") else ("A", "B")
     lp = {0: SimpleNamespace(decoded_token=toks[0], logprob=math.log(max(h, 1e-6))),
           1: SimpleNamespace(decoded_token=toks[1], logprob=math.log(max(1 - h, 1e-6)))}
     return SimpleNamespace(outputs=[SimpleNamespace(logprobs=[lp])])
@@ -124,12 +130,12 @@ def run(dirs: list[Path], tag: str, generate: Callable[[list[dict]], list[Any]],
     return counts
 
 
-def vllm_generate(model: str, tp: int) -> Callable[[list[dict]], list[Any]]:
+def vllm_generate(model: str, tp: int, max_model_len: int = MAX_MODEL_LEN) -> Callable[[list[dict]], list[Any]]:
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
 
     tok = AutoTokenizer.from_pretrained(model)
-    llm = LLM(model=model, tensor_parallel_size=tp, max_model_len=MAX_MODEL_LEN, gpu_memory_utilization=0.9,
+    llm = LLM(model=model, tensor_parallel_size=tp, max_model_len=max_model_len, gpu_memory_utilization=0.9,
               enable_prefix_caching=True, disable_custom_all_reduce=tp > 1)
     sp = SamplingParams(max_tokens=1, temperature=0.0, logprobs=20)
 
@@ -148,11 +154,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tp", type=int, default=2)
     ap.add_argument("--rubric-reruns", default="0", help='rubric items for these reruns only (comma list or "all")')
     ap.add_argument("--chunk", type=int, default=CHUNK)
+    ap.add_argument("--max-model-len", type=int, default=MAX_MODEL_LEN,
+                    help="judge context (full-show pairwise requests hold two episodes: use 8192)")
     ap.add_argument("--fake", action="store_true", help="no model: deterministic stand-in answers")
     args = ap.parse_args(argv)
     dirs = []
     for d in (Path(x) for x in args.requests.split(",") if x):
-        if any((d / "judge" / f"{n}.jsonl").is_file() for n in ("identification", "rubric")):
+        if any((d / "judge" / f"{n}.jsonl").is_file() for n in REQUEST_FILES):
             dirs.append(d)
         else:
             print(f"skip {d}: no judge requests there (write them with python -m eval.bench.score <run>)", flush=True)
@@ -166,7 +174,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         if not args.model:
             sys.exit("--model is required (or --fake)")
-        gen = vllm_generate(args.model, args.tp)
+        gen = vllm_generate(args.model, args.tp, args.max_model_len)
     for d, n in run(dirs, args.tag, gen, reruns, args.chunk).items():
         print(f"{n} answers -> {d}/judge/answers_{args.tag}.jsonl")
 
