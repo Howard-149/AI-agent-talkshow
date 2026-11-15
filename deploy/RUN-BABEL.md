@@ -261,5 +261,5 @@ Room 名须与 Babel agent 一致（默认 `talkshow-dev`）。
 | [slurm-download-assets.sh](slurm-download-assets.sh) | preempt：Piper / LiveKit / DyStream 下载 |
 | [slurm-build-msp-anchors.sh](slurm-build-msp-anchors.sh) | preempt：从 MSP-PODCAST labels 构建 PAD→emotion KNN 锚点 |
 | [slurm_common.sh](slurm_common.sh) | 上述 job 共用 conda/ROOT helpers |
-| [README.md](../README.md) | 团队 onboarding |
+| [SETUP.md](../SETUP.md) | 团队 onboarding |
 | [avatar/README.md](../avatar/README.md) | Avatar assets, env, latency JSONL events |
