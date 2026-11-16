@@ -163,8 +163,10 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
     from eval.bench.systems import Request, strip_think
     from eval.model_only import TEMPERATURE, build_request, planner_messages, postprocess
     from eval.think_action_prompt import think_request
+    from agent.panel.select import SAMPLE_TEMPERATURE, select_n
 
     names = _names()
+    n_sel = select_n()  # TALKSHOW_PANEL_SELECT: extra think samples per panelist (agent/panel/select.py)
     for beat in range(3):
         for e in eps:
             add_audience(e, e["audience"][beat])
@@ -183,13 +185,22 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
                         continue
                     tr = think_request(prefix_of(e), role, plan=plans.get(e["audience"][beat], ""),
                                        topic_id=e["topic_id"])
-                    thinks.append((e, role, tr))
+                    thinks.append((e, role, tr, 0))
                     reqs.append(Request(f"think:{role}", tr["messages"], tr["temperature"], tr["max_tokens"],
                                         seed_of(e["topic_id"], e["k"], beat, slot, role), e["id"]))
+                    for j in range(1, n_sel if role in PANEL else 1):  # same prompt, the selection temperature
+                        thinks.append((e, role, tr, j))
+                        reqs.append(Request(f"think_extra:{role}", tr["messages"], SAMPLE_TEMPERATURE,
+                                            tr["max_tokens"], seed_of(e["topic_id"], e["k"], beat, slot, role, j),
+                                            e["id"]))
             outs = backend.generate(reqs)
             actions: dict[str, dict] = defaultdict(dict)
+            extras: dict[str, dict] = defaultdict(lambda: defaultdict(list))
             prompts: dict[str, dict] = defaultdict(dict)
-            for (e, role, tr), raw in zip(thinks, outs):
+            for (e, role, tr, j), raw in zip(thinks, outs):
+                if j:
+                    extras[e["id"]][role].append(_parse(raw, tr["interval_text"]))
+                    continue
                 actions[e["id"]][role] = _parse(raw, tr["interval_text"])
                 prompts[e["id"]][role] = tr["messages"][-1]["content"]
                 e.setdefault("think_prompts", 0)
@@ -211,7 +222,7 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
                                          state=e["floor_state"])
                 got[e["id"]]["controller_raw"] = raw
             # 3. the selected role's line: its think content, the worker draft, or the host fallback line
-            work, host = [], []
+            work, host, spoken = [], [], []
             for e in eps:
                 g = got[e["id"]]
                 out = g["outcome"]
@@ -225,12 +236,7 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
                     hf = host_fallback(prefix_of(e), e["floor_state"])
                     host.append((e, info, hf))
                 elif act is not None and act.decision == "speak" and act.content:
-                    text = strip_speech_control_tags(act.content).strip()
-                    line = {"role": role, "speaker": names[role], "text": text or "…", "source": "think", "floor": info}
-                    if role in prompts[e["id"]]:
-                        line["opener_block"] = OPENER_MARK in prompts[e["id"]][role]
-                    e["lines"].append(line)
-                    e["floor_state"] = record_grant(e["floor_state"], role)
+                    spoken.append((e, info, role, act))
                 elif role in PANEL:  # selected without a line of its own: the worker draft, as live
                     r = build_request(prefix_of(e), "", role, False, include_human=False, live_fixes=system.live,
                                       plan=plans.get(e["audience"][beat], "") if system.live else "",
@@ -239,6 +245,16 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
                 else:  # the host selected with no content (not expected): nothing said this slot
                     e["lines"].append({"role": HOST, "speaker": names[HOST], "text": "…", "source": "empty",
                                        "floor": info})
+            # the selected think lines: the decision model's pick among the candidates, the punch-up pass (both off by
+            # default; agent/panel/select.py), then the line is recorded
+            for (e, info, role, _act), (text, extra) in zip(spoken, _finish_think_lines(backend, spoken, extras,
+                                                                                         names, beat, slot)):
+                line = {"role": role, "speaker": names[role], "text": text or "…", "source": "think", "floor": info}
+                if role in prompts[e["id"]]:
+                    line["opener_block"] = OPENER_MARK in prompts[e["id"]][role]
+                line.update(extra)
+                e["lines"].append(line)
+                e["floor_state"] = record_grant(e["floor_state"], role)
             w_out = backend.generate([Request("fallback", r["messages"], TEMPERATURE, 512,
                                               seed_of("fallback", e["topic_id"], e["k"], beat, slot), e["id"])
                                       for e, _i, _role, r in work])
@@ -258,6 +274,47 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
                                    "source": "host_fallback", "floor": info})
             print(f"[think_action] beat {beat} slot {slot}: {len(eps)} episodes, {len(ctl)} controller calls, "
                   f"{len(work)} worker drafts, {len(host)} host fallbacks", flush=True)
+
+
+def _finish_think_lines(backend: Any, spoken: list[tuple], extras: dict, names: dict[str, str], beat: int,
+                        slot: int) -> list[tuple[str, dict]]:
+    """(text, extra line fields) per selected think line, as the live ThinkActionInteraction.finish_proposed_reply:
+    with TALKSHOW_PANEL_SELECT a panelist with several candidates gets the decision model's pick (one Jev call each,
+    run concurrently). With the flag off: the think content, no extra fields."""
+    import asyncio
+
+    from agent.adapters.gemma_mm_client import GemmaMMClient
+    from agent.floor.floor_parser import strip_speech_control_tags
+    from agent.panel.select import candidate_contents, pick_best, recent_transcript, select_n
+    from eval.bench.systems import Request
+    from eval.think_action_prompt import _data_for
+
+    out: list[list] = [[act.content, {}] for _e, _i, _r, act in spoken]
+    data = {}
+
+    def data_of(e: dict) -> Any:
+        if e["id"] not in data:
+            data[e["id"]] = _data_for(prefix_of(e), None, "", e["topic_id"])
+        return data[e["id"]]
+
+    if select_n() > 1:
+        todo = []
+        for n, (e, _i, role, act) in enumerate(spoken):
+            cands = candidate_contents(act, extras[e["id"]].get(role, [])) if role in PANEL else []
+            if role in PANEL:
+                out[n][1]["candidates"] = [strip_speech_control_tags(c).strip() for c in cands]
+            if len(cands) > 1:
+                todo.append((n, cands, pick_best(recent_transcript(data_of(e).show_history), role, cands)))
+
+        async def run() -> list:
+            return list(await asyncio.gather(*(c for _n, _c, c in todo)))
+
+        for (n, cands, _c), (idx, info) in zip(todo, asyncio.run(run()) if todo else []):
+            out[n][0] = cands[idx]
+            out[n][1]["select"] = {k: v for k, v in info.items() if k != "select_probs"}
+    for n in range(len(out)):
+        out[n][0] = strip_speech_control_tags(out[n][0] or "").strip()
+    return [(t, x) for t, x in out]
 
 
 # ------------------------------------------------------------------------------------------------ plain

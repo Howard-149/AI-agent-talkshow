@@ -186,6 +186,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.public_utterance_count = 0
         self.actions: dict[str, Action] = {}
         self.thoughts: dict[str, str] = {}
+        # Candidate lines per panelist from the extra think samples (TALKSHOW_PANEL_SELECT; empty when off).
+        self.speak_candidates: dict[str, list[str]] = {}
         self._interval_backchannels: list[tuple[str, Backchannel]] = []
         self.backchannel_controller = BackchannelController()
         self._speech_line: Any = None
@@ -270,9 +272,30 @@ class ThinkActionInteraction(TextOnlyInteraction):
     def consume_proposed_reply(self, role: str) -> str:
         action = self.actions.pop(role, None)
         self.intents.pop(role, None)
+        self.speak_candidates.pop(role, None)
         if action is None or action.decision not in {"speak", "interrupt"}:
             return ""
         return action.content or ""
+
+    async def finish_proposed_reply(self, data: Any, role: str) -> str:
+        """``consume_proposed_reply``, then for a panelist's free-floor line: the decision model's pick among the
+        think candidates (TALKSHOW_PANEL_SELECT, agent/panel/select.py). With the flag off this is
+        ``consume_proposed_reply``."""
+        from agent.panel.select import pick_best, recent_transcript
+
+        action = self.actions.get(role)
+        candidates = list(self.speak_candidates.get(role) or [])
+        text = self.consume_proposed_reply(role)
+        panelist = role not in {data.scenario.turn_control.listen_role, "human"}
+        if not text or action is None or action.decision != "speak" or not panelist:
+            return text
+        if len(candidates) > 1 and candidates[0] == text:
+            idx, info = await pick_best(recent_transcript(data.show_history), role, candidates)
+            data.runtime.gemma_client.log_text_only_event(
+                role, "line select", candidates=candidates, chosen=idx, **info
+            )
+            text = candidates[idx]
+        return text
 
     def record_floor_grant(self, role: str) -> None:
         if role not in {"human", "close"}:
@@ -1848,7 +1871,13 @@ class ThinkActionInteraction(TextOnlyInteraction):
             if rules and is_host
             else panelist_personality_block(role)
         )
-        raw = await data.runtime.gemma_client.complete_text(
+        from agent.panel.show_frame import with_frame
+
+        system_prompt = with_frame(system_prompt, history)
+        from agent.panel.select import select_n
+
+        samples = select_n() if free_panelist else 1
+        call = data.runtime.gemma_client.complete_text(
             prompt,
             system_prompt=system_prompt,
             history_messages=(tp.lean_history(history) if lean else history).prior_messages(perspective=role),
@@ -1857,6 +1886,16 @@ class ThinkActionInteraction(TextOnlyInteraction):
             temperature=0.2,
             reasoning_effort="low",
         )
+        if samples > 1:  # TALKSHOW_PANEL_SELECT: the usual call plus samples - 1 others, in parallel
+            raw, extra_raws = await asyncio.gather(
+                call,
+                self._extra_think_samples(
+                    data, prompt, samples - 1, system_prompt=system_prompt,
+                    history_messages=(tp.lean_history(history) if lean else history).prior_messages(perspective=role),
+                ),
+            )
+        else:
+            raw = await call
         result = parse_think_action(
             raw,
             floor_state=floor_state,
@@ -1864,6 +1903,19 @@ class ThinkActionInteraction(TextOnlyInteraction):
             allow_backchannels=True,
         )
         action = result.action
+        if samples > 1:
+            from agent.panel.select import candidate_contents
+
+            extras = [
+                parse_think_action(r, floor_state=floor_state, interval_text=interval_text,
+                                   allow_backchannels=True).action
+                for r in extra_raws
+            ]
+            self.speak_candidates[role] = candidate_contents(action, extras)
+            data.runtime.gemma_client.log_text_only_event(
+                role, f"think candidates - interval {checkpoint}",
+                candidates=self.speak_candidates[role], samples=samples,
+            )
         self.actions[role] = action
         self.thoughts[role] = result.think
         self._think_sequence += 1
@@ -1902,6 +1954,24 @@ class ThinkActionInteraction(TextOnlyInteraction):
             ],
         )
         return action
+
+    @staticmethod
+    async def _extra_think_samples(
+        data: Any, prompt: str, n: int, *, system_prompt: str, history_messages: list[dict[str, Any]]
+    ) -> list[str]:
+        """``n`` more samples of a think call at the selection temperature (agent/panel/select.py); [] on failure."""
+        from agent.panel.select import SAMPLE_TEMPERATURE
+
+        client = data.runtime.gemma_client
+        kw = dict(system_prompt=system_prompt, history_messages=history_messages, max_tokens=768,
+                  temperature=SAMPLE_TEMPERATURE, reasoning_effort="low")
+        try:
+            if hasattr(client, "complete_text_n"):
+                return list(await client.complete_text_n(prompt, n, **kw))
+            return list(await asyncio.gather(*(client.complete_text(prompt, raw=True, **kw) for _ in range(n))))
+        except Exception as e:  # noqa: BLE001  (no extra candidates; the usual sample still speaks)
+            logger.warning("extra think samples failed: %s", type(e).__name__)
+            return []
 
     @staticmethod
     def _compat_intent(action: Action, think_id: int):

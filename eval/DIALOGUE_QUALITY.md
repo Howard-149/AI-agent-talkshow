@@ -46,6 +46,8 @@ Every change to the show is behind a flag that is off by default. With the flags
 | Varied openers | The first words of the panelist's own last 3 lines, and "open this one differently" | Panelist think prompt | `TALKSHOW_OPENER_VARIETY=1` |
 | Decision-model floor pick | On a free floor, a decision model (Jev) picks among the speak candidates or the host; a candidate picked with confidence ≥ `TALKSHOW_FLOOR_JEV_MIN_CONF` gets the floor, anything else goes to the LLM controller as before. Needs `TYPESAFE_API_KEY` (a paid API; transcripts are sent to it); without it nothing changes | `ThinkActionInteraction.arbitrate_free`, `agent/floor/jev_floor.py` | `TALKSHOW_FLOOR_JEV=1` |
 | Line length | Panelists are told to keep the content to at most N short sentences, and any longer content is cut after the N-th sentence when the think output is parsed | Panelist think prompt; `agent/interaction/think_action.parse_think_action` | `TALKSHOW_MAX_SENTENCES=<n>` |
+| Show frame | Every think call starts with one shared frame: a live TV talk show in front of an audience, not a debate or a lecture; today's topic; who is on it; how people talk on this show (react, short, playful, a joke or a story over one more argument). Each role's own card follows. The host's card says topic and panelists instead of debate and debaters | Think system prompt, `agent/panel/show_frame.py` | `TALKSHOW_SHOW_FRAME=1` |
+| Candidate selection | A free-floor panelist think call takes n samples (the first decides speak or silent); the decision model picks the best of the speaking candidates in one choice call | `_think_and_act`, `finish_proposed_reply`, `agent/panel/select.py` | `TALKSHOW_PANEL_SELECT=<n>` |
 | Lean think prompt | On a free floor: no repeat of the line the transcript ends with, no interrupt or backchannel guidance, no canned host lines in the transcript | Panelist think prompt, `agent/panel/think_prompt.py` | `TALKSHOW_THINK_LEAN=1` |
 | Persona near the line | "Write the content as Ryan: ..." from the persona card, right before the line is written | Panelist think prompt | `TALKSHOW_THINK_PERSONA_NEAR=1` |
 | Respond to now | Who spoke last, whom they named, the planner's points, and a rule to stay silent when someone else was named | Panelist think prompt | `TALKSHOW_THINK_FOCUS=1` |
@@ -272,6 +274,8 @@ differences are within noise.
   - varied openers;
   - the Jev floor pick at threshold 0.5;
   - lines of at most 2 sentences (`TALKSHOW_MAX_SENTENCES=2`);
+  - 3 candidate lines per panelist turn, the decision model picking one (`TALKSHOW_PANEL_SELECT=3`);
+  - the shared show frame (`TALKSHOW_SHOW_FRAME=1`);
   - the fact pack (`TALKSHOW_FACT_PACK`).
 - **Unnamed guest.** When the guest joins without a name, prompts ask the show to call them "you", and a spoken
   line never contains the internal label "Human guest" (it is rewritten before speech).
@@ -322,14 +326,40 @@ What the reference judges say (wins / comparisons, GPT-5.5 · Claude):
 - **Length.** Short, prompted lines sound the most natural and are the most entertaining. Longer lines answer the
   audience and each other a little more. The samples are small (6 to 15 pairs per comparison).
 
-**Tried and not kept.** All four were measured with the open judge, so the "no gain" verdicts carry its limits.
+**Re-judged with the reference judges.** These four variants were first measured with the open judge. GPT-5.5 and
+Claude re-judged 30 pairs per comparison. Wins are shown as comparisons won out of comparisons made (GPT-5.5 · Claude).
 
-| Change | Result |
-| --- | --- |
-| Three samples per panelist think and a decision-model pick | No gain; unsupported specifics up, because the pick favours lines with more specifics |
-| A punch-up rewrite of the chosen line | No gain; 40% of rewrites unchanged or rejected |
-| A run-of-show plan with a per-segment angle per panelist | No gain; idea repetition slightly up |
-| A list of the panelist's earlier points in its prompt | No measurable effect |
+| Change | Overall | Verdict |
+| --- | --- | --- |
+| Three samples per panelist think and a decision-model pick | 11/11 · 9/14 (baseline 5/13 · 8/15) | **Kept**: also best on interplay and entertainment. The open judge had called it no gain |
+| A punch-up rewrite of the chosen line | 3/10 · 5/12 | Not kept, and removed |
+| A run-of-show plan with a per-segment angle per panelist | 5/13 · 6/13 (baseline 7/11 · 10/13) | Not kept: less entertaining and less natural |
+| A list of the panelist's earlier points in its prompt | 7/13 · 5/11 | Not kept: no gain |
+| Decision-model floor pick at 0.5 vs the LLM controller | 9/15 · 11/21 vs 5/13 · 7/16 | Kept (already in the demo set) |
+
+### Show frame and candidate selection
+
+Both were measured on T6: 5 dev topics × 2 reruns, a Qwen3.6-35B-A3B panel, the demo set with the fact pack working,
+all four arms in one job. Every pair was judged by GPT-5.5 and Claude. They agreed on 87 to 100% of pairs where both
+gave a stable verdict. Words per line were 41 to 43 in every arm, and lines with an unsupported specific were 0 to
+2.8%.
+
+| Dimension | First demo set | + show frame | + selection | + both |
+| --- | --- | --- | --- | --- |
+| Answers audience | 10/25 · 8/22 | 8/24 · 8/27 | 14/25 · 14/23 | **17/24 · 18/24** |
+| Entertainment | 7/21 · 11/21 | 6/21 · 4/24 | 10/22 · 13/24 | **22/26 · 20/27** |
+| Natural speech | 5/26 · 3/21 | 17/25 · 13/23 | 6/24 · 10/24 | **21/23 · 21/26** |
+| Distinct characters | 5/21 · 12/26 | 7/19 · 5/25 | 15/25 · 17/25 | **17/23 · 18/28** |
+| Overall | 7/24 · 10/23 | 11/26 · 5/27 | 14/24 · 18/26 | **17/24 · 18/26** |
+
+- **The frame alone** makes the speech much more natural, but it does not win overall.
+- **Selection alone** helps on most dimensions.
+- **Together** they are best on every dimension. The frame makes the candidates more conversational, and the
+  selection picks the best of them.
+- **Current demo set.** The combined arm is now the `demo` arm and the `DEMO` preset; the first demo set is kept as
+  `demo_v1`.
+- **Topic.** Before the frame, panelists did not see the topic. With the lean prompt, the canned host line that names
+  it is dropped from their transcript.
 
 **Fix.** Fact-pack arms in T6 had no fact pack before this change: the show system cleared `TALKSHOW_FACT_PACK` and
 the episode runner never set it. T6 results for `demo` arms from before 2026-11-15 ran without facts. Single-item
@@ -412,6 +442,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-16 | Shared show frame (`TALKSHOW_SHOW_FRAME`) and candidate selection (`TALKSHOW_PANEL_SELECT`), best on every T6 dimension with the reference judges; both in the demo set; the variants first judged by the open judge re-judged (selection kept, punch-up removed, plan and memory not kept) |
 | 2026-11-15 | Line length cap (`TALKSHOW_MAX_SENTENCES`); no "Human guest" on air; T6 fact-pack fix; T6 judged by dimension with reference judges (GPT-5.5, Claude), open judge found unreliable for style; persona pairings; four variants tried and not kept |
 | 2026-11-15 | Varied openers (`TALKSHOW_OPENER_VARIETY`); decision-model floor pick (`TALKSHOW_FLOOR_JEV`); demo preset; Qwen3.6-35B-A3B as panel model on the test split and T6; latency per think call |
 | 2026-11-14 | T6 full show pilot (5 dev topics, 4 systems, 2 judges); opener-variety metric; test that every arm flag is applied; test-split follow-ups (fact pack, persona split, style examples, opener rule) recorded, none merged |
