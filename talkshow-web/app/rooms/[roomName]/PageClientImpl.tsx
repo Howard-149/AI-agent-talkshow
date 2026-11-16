@@ -64,6 +64,8 @@ export function PageClientImpl(props: {
         <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}>
           <PreJoin
             defaults={preJoinDefaults}
+            // Visitors take turns at one laptop: never prefill the last visitor's name.
+            persistUserChoices={false}
             onSubmit={handlePreJoinSubmit}
             onError={handlePreJoinError}
           />
