@@ -88,6 +88,21 @@ class LocaleLLMConfig:
     max_tokens: int
     reply_language: str
     include_heard_summary: bool
+    # Mode 2: text turns (think, lines, floor decisions) on another OpenAI-compatible
+    # endpoint, e.g. the OpenAI API. The visitor's audio stays on the vLLM model above,
+    # since only it takes audio_url input. Unset means text uses the same endpoint.
+    text_model: str | None = None
+    text_base_url: str | None = None
+    text_api_key: str | None = None
+
+    @property
+    def text_endpoint(self) -> tuple[str, str, str]:
+        """(base_url, model, api_key) for text-only calls."""
+        return (
+            self.text_base_url or self.base_url,
+            self.text_model or self.model,
+            self.text_api_key or self.api_key,
+        )
 
 
 @dataclass(frozen=True)
@@ -413,6 +428,9 @@ def load_config(path: Path | None = None) -> AppConfig:
                 max_tokens=int(llm.get("max_tokens", 512)),
                 reply_language=llm.get("reply_language", "English"),
                 include_heard_summary=bool(llm.get("include_heard_summary", True)),
+                text_model=os.environ.get("TALKSHOW_TEXT_LLM_MODEL", "").strip() or None,
+                text_base_url=os.environ.get("TALKSHOW_TEXT_LLM_BASE_URL", "").strip() or None,
+                text_api_key=os.environ.get("TALKSHOW_TEXT_LLM_API_KEY", "").strip() or None,
             ),
             tts=LocaleTTSConfig(
                 engine=tts.get("engine", "piper"),
