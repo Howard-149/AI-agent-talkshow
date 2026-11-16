@@ -214,6 +214,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self.rule_last_ai_cut_s: float | None = None  # speech clock at the last panelist cut
         self.rule_chain_cuts = 0  # approved cuts since a line last finished uncut
         self.rule_return_to: str | None = None  # speaker a host moderation cut stopped
+        self.rule_last_host_cut_s: float | None = None  # speech clock at the last host cut
+        self.rule_returned_role: str | None = None  # speaking on the floor a host cut handed back
         # Set when a human starts speaking; cleared once the transcript is handled.
         self.human_floor_pending = False
         self._barge_in_cut_beat = False
@@ -429,6 +431,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         ]
         candidate_roles = {item["role"] for item in candidate_payload}
         roster = _roster(self._floor_roles(data), host_role)
+        self.rule_returned_role = None  # protection lasts for the handed-back line only
         directed = self._addressee_pick(data, history, candidate_payload, interval)
         if directed is not None:
             self.rule_return_to = None
@@ -1542,6 +1545,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
                 interval=checkpoint,
             )
             if gate.granted is not None:
+                self.rule_last_host_cut_s = self._speech_clock_s(interval_text)
                 return self._grant_moderator_cut(
                     data, host=gate.granted, speaker=speaker, interval=checkpoint
                 )
@@ -1587,6 +1591,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
             now_s=self._speech_clock_s(interval_text),
             last_ai_cut_s=self.rule_last_ai_cut_s,
             chain_cuts=self.rule_chain_cuts,
+            last_host_cut_s=self.rule_last_host_cut_s,
+            returned_line=speaker == self.rule_returned_role,
         )
         data.runtime.gemma_client.log_text_only_event(
             "floor",
@@ -1682,6 +1688,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         )
         if not picked:
             return None
+        self.rule_returned_role = returned
         return self._direct_free_pick(
             data,
             FloorOutcome(

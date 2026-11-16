@@ -8,6 +8,7 @@ import { ControlBar } from '@livekit/components-react';
 import { CameraSettings } from '@/lib/CameraSettings';
 import { MicrophoneSettings } from '@/lib/MicrophoneSettings';
 import type { TalkshowLocale } from '@/lib/talkshow/locale';
+import { PushToTalk } from '@/lib/talkshow/PushToTalk';
 import styles from '@/styles/TalkshowStage.module.css';
 
 type Props = {
@@ -78,6 +79,7 @@ export function TalkshowMediaControls({
         />
 
         <div className={styles.extraControls}>
+          <PushToTalk />
           <button
             type="button"
             className={`${styles.transcriptToggle} ${showTranscript ? styles.transcriptToggleOn : ''}`}

@@ -42,44 +42,50 @@ function Tabs(props: React.PropsWithChildren<{}>) {
   );
 }
 
+const AGENT_KEY = 'talkshow.agentName';
+
+/** One click per visitor: every show gets a fresh room, so a new visitor never lands in
+ * the last visitor's show and never waits for it to close. */
 function DemoMeetingTab(props: { label: string }) {
   const router = useRouter();
-  const [e2ee, setE2ee] = useState(false);
-  const [sharedPassphrase, setSharedPassphrase] = useState(randomString(64));
-  const startMeeting = () => {
-    if (e2ee) {
-      router.push(`/rooms/${generateRoomId()}#${encodePassphrase(sharedPassphrase)}`);
-    } else {
-      router.push(`/rooms/${generateRoomId()}`);
+  const [agent, setAgent] = useState('');
+
+  useEffect(() => {
+    try {
+      setAgent(window.localStorage.getItem(AGENT_KEY) ?? '');
+    } catch {
+      /* ignore */
     }
+  }, []);
+
+  const startShow = () => {
+    const name = agent.trim();
+    try {
+      window.localStorage.setItem(AGENT_KEY, name);
+    } catch {
+      /* ignore */
+    }
+    const query = name ? `?agent=${encodeURIComponent(name)}` : '';
+    router.push(`/rooms/${generateRoomId()}${query}`);
   };
   return (
     <div className={styles.tabContent}>
-      <p style={{ margin: 0 }}>Try LiveKit Meet for free with our live demo project.</p>
-      <button style={{ marginTop: '1rem' }} className="lk-button" onClick={startMeeting}>
-        Start Meeting
+      <p style={{ margin: 0 }}>
+        Each click starts a new show in its own room. When a visitor leaves, the next one just
+        clicks again.
+      </p>
+      <button style={{ marginTop: '1rem' }} className="lk-button" onClick={startShow}>
+        Start a new show
       </button>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem' }}>
-          <input
-            id="use-e2ee"
-            type="checkbox"
-            checked={e2ee}
-            onChange={(ev) => setE2ee(ev.target.checked)}
-          ></input>
-          <label htmlFor="use-e2ee">Enable end-to-end encryption</label>
-        </div>
-        {e2ee && (
-          <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem' }}>
-            <label htmlFor="passphrase">Passphrase</label>
-            <input
-              id="passphrase"
-              type="password"
-              value={sharedPassphrase}
-              onChange={(ev) => setSharedPassphrase(ev.target.value)}
-            />
-          </div>
-        )}
+      <div style={{ display: 'flex', flexDirection: 'row', gap: '1rem', alignItems: 'center' }}>
+        <label htmlFor="agent-name">Agent worker</label>
+        <input
+          id="agent-name"
+          type="text"
+          placeholder="server default"
+          value={agent}
+          onChange={(ev) => setAgent(ev.target.value)}
+        />
       </div>
     </div>
   );
@@ -233,7 +239,7 @@ export default function Page() {
         <Suspense fallback="Loading">
           <Tabs>
             <CustomConnectionTab label="Talkshow (token)" />
-            <DemoMeetingTab label="Meet demo" />
+            <DemoMeetingTab label="New show" />
           </Tabs>
         </Suspense>
       </main>

@@ -17,6 +17,8 @@ const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const AGENT_NAME = (process.env.TALKSHOW_AGENT_NAME ?? '').trim();
 
 const COOKIE_KEY = 'random-participant-postfix';
+// A worker name from the New show tab (e.g. talkshow-ta or talkshow-a100) overrides the default.
+const AGENT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,6 +28,11 @@ export async function GET(request: NextRequest) {
     const metadataParam = request.nextUrl.searchParams.get('metadata') ?? '';
     const localeParam = request.nextUrl.searchParams.get('locale');
     const region = request.nextUrl.searchParams.get('region');
+    const agentParam = (request.nextUrl.searchParams.get('agentName') ?? '').trim();
+    if (agentParam && !AGENT_NAME_RE.test(agentParam)) {
+      return new NextResponse('Invalid agentName', { status: 400 });
+    }
+    const agentName = agentParam || AGENT_NAME;
     if (!LIVEKIT_URL) {
       throw new Error('LIVEKIT_URL is not defined');
     }
@@ -71,6 +78,7 @@ export async function GET(request: NextRequest) {
         metadata,
       },
       roomName,
+      agentName,
     );
 
     // Return connection details
@@ -93,7 +101,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function createParticipantToken(userInfo: AccessTokenOptions, roomName: string) {
+function createParticipantToken(
+  userInfo: AccessTokenOptions,
+  roomName: string,
+  agentName: string,
+) {
   const at = new AccessToken(API_KEY, API_SECRET, userInfo);
   at.ttl = '5m';
   const grant: VideoGrant = {
@@ -104,9 +116,9 @@ function createParticipantToken(userInfo: AccessTokenOptions, roomName: string) 
     canSubscribe: true,
   };
   at.addGrant(grant);
-  if (AGENT_NAME) {
+  if (agentName) {
     at.roomConfig = new RoomConfiguration({
-      agents: [new RoomAgentDispatch({ agentName: AGENT_NAME })],
+      agents: [new RoomAgentDispatch({ agentName })],
     });
   }
   return at.toJwt();
