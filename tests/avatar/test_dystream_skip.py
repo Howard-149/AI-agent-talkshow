@@ -95,8 +95,19 @@ class RequestTests(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {"TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC": "1"}):
             self.assertTrue(avatar_skip_unused_wav2vec())
-        with mock.patch.dict(os.environ, {"TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC": "0"}):
-            self.assertFalse(avatar_skip_unused_wav2vec())
+        for off in ("0", "false", "off"):
+            with mock.patch.dict(os.environ, {"TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC": off}):
+                self.assertFalse(avatar_skip_unused_wav2vec())
+
+    def test_the_skip_is_on_by_default(self) -> None:
+        from agent.adapters.dystream_bridge import avatar_skip_unused_wav2vec
+
+        for unset in (None, ""):
+            env = {k: v for k, v in os.environ.items() if k != "TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC"}
+            if unset is not None:
+                env["TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC"] = unset
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertTrue(avatar_skip_unused_wav2vec())
 
 
 if __name__ == "__main__":
