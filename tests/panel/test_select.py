@@ -187,7 +187,10 @@ class ArmTests(unittest.TestCase):
         for arm, extra in want.items():
             self.assertEqual(ARMS[arm]["live_flags"], {**v1, **extra})
             self.assertTrue(ARMS[arm]["fact_pack"])
-        self.assertEqual(ARMS["demo"], ARMS["demo_select_frame"])
+        self.assertEqual(ARMS["demo_cards_v1"], ARMS["demo_select_frame"])
+        self.assertEqual(ARMS["demo"]["live_flags"], {**ARMS["demo_select_frame"]["live_flags"],
+                                                      "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic_v2",
+                                                      "TALKSHOW_PERSONA_GUEST": "amy_warm_v2"})
         self.assertNotIn("TALKSHOW_PANEL_SELECT", v1)
 
     def test_flags_are_registered(self) -> None:

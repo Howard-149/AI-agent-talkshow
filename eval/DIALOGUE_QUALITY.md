@@ -356,14 +356,39 @@ gave a stable verdict. Words per line were 41 to 43 in every arm, and lines with
 - **Selection alone** helps on most dimensions.
 - **Together** they are best on every dimension. The frame makes the candidates more conversational, and the
   selection picks the best of them.
-- **Current demo set.** The combined arm is now the `demo` arm and the `DEMO` preset; the first demo set is kept as
-  `demo_v1`.
+- **Demo set.** The combined arm became the demo set; the first demo set is kept as `demo_v1`.
 - **Topic.** Before the frame, panelists did not see the topic. With the lean prompt, the canned host line that names
   it is dropped from their transcript.
 
 **Fix.** Fact-pack arms in T6 had no fact pack before this change: the show system cleared `TALKSHOW_FACT_PACK` and
 the episode runner never set it. T6 results for `demo` arms from before 2026-11-15 ran without facts. Single-item
 tasks (T1 to T4) were not affected.
+
+### Persona cards for a talk show
+
+The first cards for Ryan and Amy were written for a debate. Ryan's four moves are all ways to argue, and Amy's card
+asks for 2 to 3 sentences. The v2 cards (`ryan_skeptic_v2`, `amy_warm_v2`) keep each person and their leaning. They
+change three things:
+- **Tone.** Ryan: dry, quick, ironic. Amy: warm, quick-witted, the friend who makes everyone laugh and then says the
+  true thing.
+- **Moves.** Banter and humour moves, for example landing the point as a one-liner, teasing the other panelist and
+  then conceding, and a tiny real-life moment.
+- **Relationship.** Old sparring partners who enjoy teasing each other.
+
+On T6 (current demo set, Qwen panel; GPT-5.5 · Claude):
+
+| Dimension | First cards | v2 cards | Dana + Theo | Ryan v2 + Theo |
+| --- | --- | --- | --- | --- |
+| Answers audience | **21/23 · 21/26** | 16/22 · 19/27 | 8/25 · 8/24 | 2/24 · 3/25 |
+| Entertainment | 1/30 · 0/27 | 10/30 · 8/27 | 19/29 · 20/27 | **29/29 · 26/27** |
+| Natural speech | 8/18 · 5/26 | 14/19 · 13/25 | 4/20 · 9/21 | 13/21 · **22/26** |
+| Overall | 11/17 · 13/23 | **15/20 · 12/21** | 6/22 · 11/24 | 10/25 · 9/22 |
+| Lines with an unsupported specific | 2.7% | 4.5% | 18.8% | 8.8% |
+
+- **v2 cards.** They keep answering the audience and become much more entertaining and natural. They are the demo
+  set's cards now; the first cards stay as `demo_cards_v1`.
+- **Theo, the comedian.** He is the funniest, but he rarely answers the audience and invents the most specifics. He
+  is not in the demo set.
 
 ### Dev split (pilot)
 
@@ -442,6 +467,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-16 | Talk-show v2 persona cards for Ryan and Amy; they are the demo set's cards |
 | 2026-11-16 | Shared show frame (`TALKSHOW_SHOW_FRAME`) and candidate selection (`TALKSHOW_PANEL_SELECT`), best on every T6 dimension with the reference judges; both in the demo set; the variants first judged by the open judge re-judged (selection kept, punch-up removed, plan and memory not kept) |
 | 2026-11-15 | Line length cap (`TALKSHOW_MAX_SENTENCES`); no "Human guest" on air; T6 fact-pack fix; T6 judged by dimension with reference judges (GPT-5.5, Claude), open judge found unreliable for style; persona pairings; four variants tried and not kept |
 | 2026-11-15 | Varied openers (`TALKSHOW_OPENER_VARIETY`); decision-model floor pick (`TALKSHOW_FLOOR_JEV`); demo preset; Qwen3.6-35B-A3B as panel model on the test split and T6; latency per think call |

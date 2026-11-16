@@ -261,3 +261,8 @@ for _name, (_c, _g) in {"demo_cards_v2": ("ryan_skeptic_v2", "amy_warm_v2"),
                         "demo_ryan2_theo": ("ryan_skeptic_v2", "theo_comedian")}.items():
     ARMS[_name] = {**ARMS["demo"], "live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": _c,
                                                   "TALKSHOW_PERSONA_GUEST": _g}}
+
+# The demo set uses the talk-show v2 cards for Ryan and Amy: with the reference judges they keep answering the
+# audience and become much more entertaining and natural than the first cards (eval/DIALOGUE_QUALITY.md).
+ARMS["demo_cards_v1"] = ARMS["demo"]
+ARMS["demo"] = ARMS["demo_cards_v2"]
