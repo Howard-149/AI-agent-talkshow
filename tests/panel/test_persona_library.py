@@ -48,7 +48,8 @@ class _Env(unittest.TestCase):
 
 class SchemaTests(_Env):
     def test_entries_load(self) -> None:
-        self.assertEqual(pl.available(), ["amy_warm", "dana_economist", "lessac_host", "ryan_skeptic", "theo_comedian"])
+        self.assertEqual(pl.available(), ["amy_warm", "amy_warm_v2", "dana_economist", "lessac_host", "ryan_skeptic",
+                                          "ryan_skeptic_v2", "theo_comedian"])
         for pid in pl.available():
             p = pl.load(pid)
             self.assertEqual(p.id, pid)

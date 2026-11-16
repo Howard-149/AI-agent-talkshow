@@ -253,3 +253,11 @@ def rerank_score(cand: str, earlier: list[str], used_openers: set[str], opener_p
 # reference judges (GPT-5.5, Claude) on T6 it wins on every dimension against demo_v1 (eval/DIALOGUE_QUALITY.md).
 ARMS["demo_v1"] = ARMS["demo"]
 ARMS["demo"] = ARMS["demo_select_frame"]
+
+
+# The current demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
+for _name, (_c, _g) in {"demo_cards_v2": ("ryan_skeptic_v2", "amy_warm_v2"),
+                        "demo_dana_theo2": ("dana_economist", "theo_comedian"),
+                        "demo_ryan2_theo": ("ryan_skeptic_v2", "theo_comedian")}.items():
+    ARMS[_name] = {**ARMS["demo"], "live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": _c,
+                                                  "TALKSHOW_PERSONA_GUEST": _g}}
