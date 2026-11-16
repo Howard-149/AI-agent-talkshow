@@ -9,6 +9,9 @@ With the rules on, hard limits run first, so the controller only sees requests t
 - moderator priority: the host only cuts in to moderate (clear drift or a personal attack,
   see ``HOST_OCCUPIED_GUIDANCE``); a grounded host cut is granted without a controller
   call, outranks panelists, and skips the AI cooldown and chain cap;
+- host spacing: the host does not cut the line it just handed back after a moderation cut,
+  and host cuts are spaced out on the speech clock (``TALKSHOW_FLOOR_HOST_COOLDOWN_S``,
+  0 = off), so moderation cannot turn into cut, return, cut again;
 - chain cap: after one approved cut, the line that took over cannot be cut by a panelist
   (the host may still moderate); the chain ends when a line finishes uncut;
 - AI cooldown: panelist cuts are spaced out on the speech clock.
@@ -28,6 +31,7 @@ from typing import Literal
 DEFAULT_MIN_SPEECH_S = 3.0
 DEFAULT_AI_COOLDOWN_S = 15.0
 DEFAULT_MAX_CHAIN_CUTS = 1
+DEFAULT_HOST_COOLDOWN_S = 60.0
 
 HOST_PRIORITY = 80
 PANELIST_PRIORITY = 50
@@ -72,6 +76,10 @@ def min_speech_s() -> float:
 
 def ai_cooldown_s() -> float:
     return _env_float("TALKSHOW_FLOOR_AI_COOLDOWN_S", DEFAULT_AI_COOLDOWN_S)
+
+
+def host_cooldown_s() -> float:
+    return _env_float("TALKSHOW_FLOOR_HOST_COOLDOWN_S", DEFAULT_HOST_COOLDOWN_S)
 
 
 def max_chain_cuts() -> int:
@@ -143,6 +151,8 @@ def gate_interrupts(
     now_s: float,
     last_ai_cut_s: float | None,
     chain_cuts: int,
+    last_host_cut_s: float | None = None,
+    returned_line: bool = False,
 ) -> GateResult:
     """Apply the rules to this interval's interrupt requests (in listener order)."""
     spoken_s = word_count(visible_text) / words_per_sec()
@@ -155,6 +165,10 @@ def gate_interrupts(
             decisions.append(RuleDecision(request.role, "blocked", "quote_not_heard", priority))
         elif spoken_s < min_speech_s():
             decisions.append(RuleDecision(request.role, "blocked", "minimum_speaking_time", priority))
+        elif is_host and returned_line:
+            decisions.append(RuleDecision(request.role, "blocked", "returned_line", priority))
+        elif is_host and last_host_cut_s is not None and now_s - last_host_cut_s < host_cooldown_s():
+            decisions.append(RuleDecision(request.role, "blocked", "host_cooldown", priority))
         elif is_host:
             if granted is None:
                 granted = request.role

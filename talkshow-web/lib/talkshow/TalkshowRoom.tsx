@@ -159,8 +159,18 @@ export function TalkshowRoom(props: {
       const choices = props.userChoices;
       await room.connect(props.liveKitUrl, props.token, connectOptions);
       connectedRef.current = true;
-      await room.localParticipant.setCameraEnabled(choices?.videoEnabled ?? false);
-      await room.localParticipant.setMicrophoneEnabled(choices?.audioEnabled ?? false);
+      // A blocked camera or mic must not fail the join: the show still plays, and the
+      // visitor can turn the device on from the control bar after granting permission.
+      try {
+        await room.localParticipant.setCameraEnabled(choices?.videoEnabled ?? false);
+      } catch (error) {
+        console.warn('camera unavailable', error);
+      }
+      try {
+        await room.localParticipant.setMicrophoneEnabled(choices?.audioEnabled ?? false);
+      } catch (error) {
+        console.warn('microphone unavailable', error);
+      }
     };
   }, [
     room,

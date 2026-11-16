@@ -29,7 +29,16 @@ def interrupt(quote: str | None, intent: CommunicativeIntent = CHALLENGE) -> Act
     return Action("interrupt", intent, "Hold on, that's not right.", (), quote)
 
 
-def gate(requests, *, text=SPOKEN, now_s=100.0, last_ai_cut_s=None, chain_cuts=0):
+def gate(
+    requests,
+    *,
+    text=SPOKEN,
+    now_s=100.0,
+    last_ai_cut_s=None,
+    chain_cuts=0,
+    last_host_cut_s=None,
+    returned_line=False,
+):
     return gate_interrupts(
         requests,
         host_role="host",
@@ -37,6 +46,8 @@ def gate(requests, *, text=SPOKEN, now_s=100.0, last_ai_cut_s=None, chain_cuts=0
         now_s=now_s,
         last_ai_cut_s=last_ai_cut_s,
         chain_cuts=chain_cuts,
+        last_host_cut_s=last_host_cut_s,
+        returned_line=returned_line,
     )
 
 
@@ -139,6 +150,39 @@ class ParserTests(unittest.TestCase):
 CONTROLLER_PICKS_COMMENTATOR = json.dumps(
     {"decision": "interrupt", "selected_role": "commentator", "reason_code": "timely_intervention", "reason": "r"}
 )
+CONTROLLER_PICKS_GUEST_FREE = json.dumps(
+    {"decision": "speak", "selected_role": "guest", "reason_code": "high_contribution", "reason": "r"}
+)
+
+
+class HostSpacingTests(unittest.TestCase):
+    def test_host_does_not_cut_the_line_it_handed_back(self) -> None:
+        result = gate([InterruptRequest("host", "traffic deaths double")], returned_line=True)
+        self.assertIsNone(result.granted)
+        self.assertEqual(result.decisions[0].rule, "returned_line")
+
+    def test_host_cuts_are_spaced_out(self) -> None:
+        soon = gate([InterruptRequest("host", "traffic deaths double")], now_s=130, last_host_cut_s=100)
+        self.assertIsNone(soon.granted)
+        self.assertEqual(soon.decisions[0].rule, "host_cooldown")
+        later = gate([InterruptRequest("host", "traffic deaths double")], now_s=161, last_host_cut_s=100)
+        self.assertEqual(later.granted, "host")
+
+    def test_cooldown_zero_turns_spacing_off(self) -> None:
+        with patch.dict(os.environ, {"TALKSHOW_FLOOR_HOST_COOLDOWN_S": "0"}):
+            result = gate([InterruptRequest("host", "traffic deaths double")], now_s=101, last_host_cut_s=100)
+        self.assertEqual(result.granted, "host")
+
+    def test_a_blocked_host_lets_a_panelist_reach_the_controller(self) -> None:
+        result = gate(
+            [
+                InterruptRequest("commentator", "every study shows"),
+                InterruptRequest("host", "traffic deaths double"),
+            ],
+            returned_line=True,
+        )
+        self.assertIsNone(result.granted)
+        self.assertEqual(result.to_controller, ["commentator"])
 
 
 class InteractionRuleTests(FloorInteractionTestCase):
@@ -219,6 +263,22 @@ class InteractionRuleTests(FloorInteractionTestCase):
         self.assertEqual(outcome.reason_code, "return_after_moderation")
         data.runtime.gemma_client.complete_text.assert_not_awaited()
         self.assertIsNone(interaction.rule_return_to)
+
+        # The host cannot cut the line it just handed back.
+        self.listeners_return(interaction, {"host": interrupt("traffic deaths double", MODERATE)})
+        self.assertIsNone(await self.occupied_interval(interaction, data))
+        self.assertEqual(interaction.rule_returned_role, "guest")
+
+        # The protection ends with that line; the host cooldown still applies after it.
+        interaction.actions = {"guest": SPEAK, "commentator": SPEAK}
+        data.runtime.gemma_client.complete_text.return_value = CONTROLLER_PICKS_GUEST_FREE
+        await interaction.arbitrate_free(
+            data, candidates=["guest", "commentator"], history=data.show_history, interval=2
+        )
+        self.assertIsNone(interaction.rule_returned_role)
+        self.assertIsNone(await self.occupied_interval(interaction, data))
+        interaction.rule_clock_words += 200  # about 77 s of speech later
+        self.assertEqual(await self.occupied_interval(interaction, data), "host")
 
     async def test_a_cut_that_names_another_panelist_hands_them_the_floor(self) -> None:
         from agent.config import load_persona_name

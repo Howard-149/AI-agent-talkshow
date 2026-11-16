@@ -32,8 +32,13 @@ def load_vad(prewarmed: Any | None = None) -> Any:
         return prewarmed
 
     min_silence = _env_float("TALKSHOW_VAD_MIN_SILENCE_SEC", 1.0)
-    logger.info("AgentSession loading Silero VAD min_silence_duration=%.2fs", min_silence)
-    return silero.VAD.load(min_silence_duration=min_silence)
+    kwargs: dict[str, float] = {"min_silence_duration": min_silence}
+    # Speech shorter than this (a cough, a click, a word from the crowd) does not count as
+    # the human talking, so it does not cut the current line. Unset = Silero's default.
+    if os.environ.get("TALKSHOW_VAD_MIN_SPEECH_SEC", "").strip():
+        kwargs["min_speech_duration"] = _env_float("TALKSHOW_VAD_MIN_SPEECH_SEC", 0.05)
+    logger.info("AgentSession loading Silero VAD %s", kwargs)
+    return silero.VAD.load(**kwargs)
 
 
 def build_turn_handling() -> TurnHandlingOptions:

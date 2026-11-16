@@ -18,6 +18,7 @@ export function PageClientImpl(props: {
   hq: boolean;
   codec: VideoCodec;
   singlePeerConnection: boolean;
+  agentName?: string;
 }) {
   const [preJoinChoices, setPreJoinChoices] = React.useState<LocalUserChoices | undefined>(
     undefined,
@@ -26,7 +27,7 @@ export function PageClientImpl(props: {
     return {
       username: '',
       videoEnabled: false,
-      audioEnabled: false,
+      audioEnabled: true, // the visitor talks to the show: mic on unless they turn it off
     };
   }, []);
   const [connectionDetails, setConnectionDetails] = React.useState<ConnectionDetails | undefined>(
@@ -48,10 +49,13 @@ export function PageClientImpl(props: {
     if (props.region) {
       url.searchParams.append('region', props.region);
     }
+    if (props.agentName) {
+      url.searchParams.append('agentName', props.agentName);
+    }
     const connectionDetailsResp = await fetch(url.toString());
     const connectionDetailsData = await connectionDetailsResp.json();
     setConnectionDetails(connectionDetailsData);
-  }, [props.roomName, props.region]);
+  }, [props.roomName, props.region, props.agentName]);
   const handlePreJoinError = React.useCallback((e: unknown) => console.error(e), []);
 
   return (
@@ -60,6 +64,8 @@ export function PageClientImpl(props: {
         <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}>
           <PreJoin
             defaults={preJoinDefaults}
+            // Visitors take turns at one laptop: never prefill the last visitor's name.
+            persistUserChoices={false}
             onSubmit={handlePreJoinSubmit}
             onError={handlePreJoinError}
           />

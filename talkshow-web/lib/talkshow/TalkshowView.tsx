@@ -227,17 +227,15 @@ export function TalkshowView(
   const agentConnected = remotes.some((p) => parseAgentMetadata(p.metadata)?.talkshowAgent);
   const waitingForAgent = panelists.length === 0 && !agentConnected;
   const micEnabled = localParticipant?.isMicrophoneEnabled ?? false;
-  const camEnabled = localParticipant?.isCameraEnabled ?? false;
 
   const statusText = useMemo(() => {
     if (connectionState === ConnectionState.Connecting) return 'Connecting…';
     if (connectionState !== ConnectionState.Connected) return 'Disconnected';
-    if (!micEnabled && !camEnabled) return 'Use controls below — mic/camera off by default';
     if (!micEnabled) return 'Mic off — toggle Microphone when ready to speak';
     if (floorPending) return 'Open floor — unmute and speak to join';
     if (waitingForAgent) return 'Waiting for show agent…';
     return 'Live';
-  }, [connectionState, micEnabled, camEnabled, waitingForAgent, floorPending]);
+  }, [connectionState, micEnabled, waitingForAgent, floorPending]);
 
   return (
     <div className={styles.room}>
