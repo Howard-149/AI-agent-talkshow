@@ -101,7 +101,8 @@ LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TA
                    "TALKSHOW_THINK_LEAN", "TALKSHOW_THINK_PERSONA_NEAR", "TALKSHOW_THINK_FOCUS",
                    "TALKSHOW_PERSONA_LIBRARY", "TALKSHOW_PERSONA_LIBRARY_NAMES", "TALKSHOW_PERSONA_COMMENTATOR",
                    "TALKSHOW_PERSONA_GUEST", "TALKSHOW_OPENER_VARIETY", "TALKSHOW_FLOOR_JEV",
-                   "TALKSHOW_FLOOR_JEV_MIN_CONF", "TALKSHOW_MAX_SENTENCES")
+                   "TALKSHOW_FLOOR_JEV_MIN_CONF", "TALKSHOW_MAX_SENTENCES", "TALKSHOW_PANEL_SELECT",
+                   "TALKSHOW_SHOW_FRAME")
 # Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
 CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
                  "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
@@ -110,7 +111,11 @@ FAST_V2_FLAGS = {**FAST_FLAGS, **CONTEXT_FLAGS["lean"], **CONTEXT_FLAGS["persona
 
 DEMO_EXTRA_FLAGS = {"opener": {"TALKSHOW_OPENER_VARIETY": "1"},
                     "jev": {"TALKSHOW_FLOOR_JEV": "1", "TALKSHOW_FLOOR_JEV_MIN_CONF": "0.5"},
-                    "short": {"TALKSHOW_MAX_SENTENCES": "2"}}
+                    "short": {"TALKSHOW_MAX_SENTENCES": "2"},
+                    # 3 think samples per free-floor panelist line, the decision model picks one (agent/panel/select.py)
+                    "select": {"TALKSHOW_PANEL_SELECT": "3"},
+                    # the shared show frame for every think call (agent/panel/show_frame.py)
+                    "frame": {"TALKSHOW_SHOW_FRAME": "1"}}
 
 ARMS: dict[str, dict] = {
     "production": {},
@@ -162,6 +167,11 @@ ARMS: dict[str, dict] = {
                             "TALKSHOW_PERSONA_GUEST": "amy_warm", "TALKSHOW_ADDRESSEE_FLOOR": "force"},
              "best_of": 1, "fact_pack": True},
 }
+# The first demo set plus candidate selection, the show frame, or both (demo_select_frame is the current demo set).
+for _name, _extra in (("demo_select", ("select",)), ("demo_frame", ("frame",)),
+                      ("demo_select_frame", ("select", "frame"))):
+    ARMS[_name] = {**ARMS["demo"], "live_flags": {**ARMS["demo"]["live_flags"],
+                                                  **{k: v for e in _extra for k, v in DEMO_EXTRA_FLAGS[e].items()}}}
 
 ARMS.update({
     # The demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
@@ -237,3 +247,22 @@ def rerank_score(cand: str, earlier: list[str], used_openers: set[str], opener_p
     op = opener(cand)
     op_pen = opener_penalty if (op in used_openers or op in GLOBAL_TOP_OPENERS) else 0.0
     return spec / 10 - 2 * generic - 2 * novelty_pen - op_pen
+
+
+# The current demo set: the first demo set (now demo_v1) plus candidate selection and the shared show frame. With the
+# reference judges (GPT-5.5, Claude) on T6 it wins on every dimension against demo_v1 (eval/DIALOGUE_QUALITY.md).
+ARMS["demo_v1"] = ARMS["demo"]
+ARMS["demo"] = ARMS["demo_select_frame"]
+
+
+# The current demo set with other library personas in the panel seats (seat names stay Ryan and Amy).
+for _name, (_c, _g) in {"demo_cards_v2": ("ryan_skeptic_v2", "amy_warm_v2"),
+                        "demo_dana_theo2": ("dana_economist", "theo_comedian"),
+                        "demo_ryan2_theo": ("ryan_skeptic_v2", "theo_comedian")}.items():
+    ARMS[_name] = {**ARMS["demo"], "live_flags": {**ARMS["demo"]["live_flags"], "TALKSHOW_PERSONA_COMMENTATOR": _c,
+                                                  "TALKSHOW_PERSONA_GUEST": _g}}
+
+# The demo set uses the talk-show v2 cards for Ryan and Amy: with the reference judges they keep answering the
+# audience and become much more entertaining and natural than the first cards (eval/DIALOGUE_QUALITY.md).
+ARMS["demo_cards_v1"] = ARMS["demo"]
+ARMS["demo"] = ARMS["demo_cards_v2"]

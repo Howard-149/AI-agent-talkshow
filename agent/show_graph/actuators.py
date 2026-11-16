@@ -393,7 +393,12 @@ class LiveActuators:
         text = await self.interaction.host_fallback_line(self.data, role)
         reason = "text_host_fallback"
         if text is None:
-            text = self.interaction.consume_proposed_reply(role)
+            finish = getattr(self.interaction, "finish_proposed_reply", None)
+            text = (
+                await finish(self.data, role)
+                if finish is not None
+                else self.interaction.consume_proposed_reply(role)
+            )
             reason = "text_proposed_reply_selected"
         if text:
             self.log(reason, role=role, step=step, text=text)

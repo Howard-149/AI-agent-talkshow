@@ -100,7 +100,16 @@ def word_count(text: str) -> int:
 
 
 def host_identity(name: str) -> str:
-    """The host's think system prompt (the host persona has no ``personality`` text)."""
+    """The host's think system prompt (the host persona has no ``personality`` text). With the show frame on
+    (TALKSHOW_SHOW_FRAME) it says topic and panelists, not debate topic and debaters."""
+    from agent.panel.show_frame import show_frame_enabled
+
+    if show_frame_enabled():
+        return (
+            f"You are {name}, the host of this live talk show. You stay neutral on the topic: you keep the "
+            "conversation moving and fun, follow up on the most interesting thing just said, and bring in every voice; "
+            "you are not one of the panelists."
+        )
     return (
         f"You are {name}, the host and moderator of this live talk show. You are "
         "professionally neutral on the debate topic: you run the show, keep the discussion "

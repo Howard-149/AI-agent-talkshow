@@ -117,35 +117,49 @@ def parse_ref(text: str) -> dict | None:
     return ans if all(v in ("A", "B") for v in ans.values()) else None
 
 
+def _openai_call(payload: dict, key: str) -> tuple[str, dict]:
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=json.dumps(payload).encode(),
+                                         method="POST", headers={"Content-Type": "application/json",
+                                                                 "Authorization": f"Bearer {key}"})
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                d = json.loads(resp.read())
+            return d["choices"][0]["message"]["content"], d.get("usage", {})
+        except Exception as e:  # noqa: BLE001
+            print("retry", type(e).__name__, file=sys.stderr)
+            time.sleep(5 * (attempt + 1))
+    return "", {}
+
+
 def cmd_ref_openai(args: argparse.Namespace) -> None:
+    """Answer the reference requests with an OpenAI model (parallel), recording token usage per call."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
     out = Path(args.out)
     key = os.environ["OPENAI_API_KEY"]
     path = out / f"ref_{args.tag}.jsonl"
     done = {json.loads(l)["id"] for l in path.read_text().splitlines()} if path.is_file() else set()
     reqs = [json.loads(l) for l in (out / "ref_requests.jsonl").read_text().splitlines()]
-    with path.open("a") as fh:
-        for r in reqs:
-            if r["id"] in done:
-                continue
-            payload = {"model": args.model, "messages": [{"role": "system", "content": r["system"]},
-                                                         {"role": "user", "content": r["prompt"]}]}
-            for attempt in range(4):
-                try:
-                    req = urllib.request.Request("https://api.openai.com/v1/chat/completions",
-                                                 data=json.dumps(payload).encode(), method="POST",
-                                                 headers={"Content-Type": "application/json",
-                                                          "Authorization": f"Bearer {key}"})
-                    with urllib.request.urlopen(req, timeout=300) as resp:
-                        text = json.loads(resp.read())["choices"][0]["message"]["content"]
-                    break
-                except Exception as e:  # noqa: BLE001
-                    text = ""
-                    print("retry", r["id"], type(e).__name__, file=sys.stderr)
-                    time.sleep(5 * (attempt + 1))
-            fh.write(json.dumps({"id": r["id"], "pair": r["pair"], "order": r["order"], "answer": parse_ref(text),
-                                 "raw": text}) + "\n")
-            fh.flush()
-    print("done", path)
+    todo = [r for r in reqs if r["id"] not in done]
+    lock = threading.Lock()
+
+    def one(r: dict) -> None:
+        payload = {"model": args.model, "messages": [{"role": "system", "content": r["system"]},
+                                                     {"role": "user", "content": r["prompt"]}]}
+        text, usage = _openai_call(payload, key)
+        rec = {"id": r["id"], "pair": r["pair"], "order": r["order"], "answer": parse_ref(text), "raw": text,
+               "usage": usage}
+        with lock, path.open("a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+
+    with ThreadPoolExecutor(args.workers) as ex:
+        list(ex.map(one, todo))
+    rows = [json.loads(l) for l in path.read_text().splitlines()]
+    tin = sum((r.get("usage") or {}).get("prompt_tokens", 0) for r in rows)
+    tout = sum((r.get("usage") or {}).get("completion_tokens", 0) for r in rows)
+    print(f"done {path}: {len(rows)} answers, {tin} prompt tokens, {tout} completion tokens (incl. reasoning)")
 
 
 def _pref(p_ab: float, p_ba: float) -> float:
@@ -255,6 +269,7 @@ def main(argv: list[str] | None = None) -> None:
     o.add_argument("--out", required=True)
     o.add_argument("--model", default="gpt-5.5")
     o.add_argument("--tag", default="gpt55")
+    o.add_argument("--workers", type=int, default=6)
     s = sub.add_parser("score")
     s.add_argument("--out", required=True)
     args = ap.parse_args(argv)

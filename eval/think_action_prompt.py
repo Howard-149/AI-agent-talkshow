@@ -115,7 +115,9 @@ def think_request(
         )
     finally:
         set_persona_swap(False)
-    (req,) = data.runtime.gemma_client.requests
+    # The usual think call comes first; with TALKSHOW_PANEL_SELECT the extra samples follow (same prompt, the
+    # selection temperature), which the caller makes itself (eval/bench/show.py).
+    req = data.runtime.gemma_client.requests[0]
     messages = GemmaMMClient._build_messages(
         None,  # type: ignore[arg-type]  # uses no instance state
         req["system_prompt"],
