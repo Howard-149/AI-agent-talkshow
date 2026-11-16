@@ -33,8 +33,9 @@ mkdir -p "${OUT}"
 
 # On/off latency flags. Arms that don't set one get it explicitly off, so a value in
 # .env (which the agent loads without overriding the environment) can't leak into
-# the baseline.
-BOOL_FLAGS=(TALKSHOW_PRERENDER_CANNED TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC)
+# the baseline. The wav2vec skip is on by default, so it isn't listed: an arm turns it
+# off with TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC=0.
+BOOL_FLAGS=(TALKSHOW_PRERENDER_CANNED)
 
 newest_session() {
   ls -1t "${SESSION_DIR}"/session-*.jsonl 2>/dev/null | head -1

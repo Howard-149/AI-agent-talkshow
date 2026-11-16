@@ -60,9 +60,10 @@ def avatar_denoising_steps() -> int:
 
 def avatar_skip_unused_wav2vec() -> bool:
     """Ask the sidecar to skip the wav2vec pass DyStream runs per window and then
-    discards (avatar/dystream_skip.py). Same frames, less time per frame (opt-in)."""
+    discards (avatar/dystream_skip.py). Same frames, less time per frame. On unless
+    TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC is 0, false, no or off."""
     raw = os.environ.get("TALKSHOW_AVATAR_SKIP_UNUSED_WAV2VEC", "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    return raw not in ("0", "false", "no", "off")
 
 
 def avatar_preroll_frames() -> int:

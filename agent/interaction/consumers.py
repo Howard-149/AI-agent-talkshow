@@ -33,6 +33,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_SPEECH_WORDS_PER_SEC = 2.6
+# A script cut stops the audio this long after the cut's last word ends (forced
+# alignment puts word ends slightly early), so the word isn't clipped.
+CUT_TAIL_S = 0.08
 DEFAULT_TURN_GAP_S = 1.0
 DEFAULT_TURN_GAP_JITTER_S = 0.5
 # Backchannels play over the speaker on their own track; a little louder keeps them audible.
@@ -456,7 +459,7 @@ class AVSpeechConsumer:
         heard = len(text)
         while not speech.done():
             self._sync_clock()
-            if cue.end is not None and cue.end < len(text) and self.heard_chars() >= cue.end:
+            if cue.end is not None and cue.end < len(text) and self._cut_reached(cue):
                 # The script cut this line (approved interrupt) after playback began.
                 heard = cue.end
                 speech.cancel()
@@ -484,6 +487,17 @@ class AVSpeechConsumer:
             _fire_ui(emit_interrupt(cue.role, cue.interrupted_by, heard_text=text[:heard]))
         self._last_end = None if cut_by_script else time.monotonic()
         self._last_role = cue.role
+
+    def _cut_reached(self, cue: Cue) -> bool:
+        """Playback has reached the script's cut: just after the cut's last word ends in
+        the audio, once that sentence is playing and its word timings are in; until then,
+        by the speaking-rate estimate. The estimate alone stopped the audio wherever it
+        happened to be, often a word past the cut and mid-syllable."""
+        assert cue.end is not None
+        timing = self._backchannel_due(cue, cue.end)
+        if timing is not None and timing[2]:
+            return time.monotonic() >= timing[0] + CUT_TAIL_S
+        return self.heard_chars() >= cue.end
 
     async def _announce_transcript(self, cue: Cue, text: str) -> None:
         """Open the line's transcript before its audio starts. The synced words on

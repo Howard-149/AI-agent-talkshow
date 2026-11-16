@@ -818,6 +818,39 @@ class AVSpeechConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.consumer._last, (cue, len("one two")))
         self.session.interrupt.assert_called_once_with(force=True)
 
+    async def cut_after(self, words_per_sec: float) -> float:
+        """Seconds from the sentence's audio start to the cut, for a cut after "three",
+        whose word ends at 0.3 s in the aligned audio."""
+        self.consumer = AVSpeechConsumer(self.session, words_per_sec=words_per_sec)
+        started: list[float] = []
+        cut_at: list[float] = []
+        self.session.interrupt = Mock(side_effect=lambda **_: cut_at.append(time.monotonic()))
+
+        async def speak_panel_line(session, data, *, speak_role, text, on_segment_started=None, **kw):
+            ends = asyncio.get_running_loop().create_future()
+            ends.set_result([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+            self.consumer._on_agent_state(SimpleNamespace(new_state="speaking"))
+            started.append(time.monotonic())
+            on_segment_started(0, 0.0, 0.9, ends)
+            await asyncio.sleep(10)
+
+        with patch("agent.session.session_handoff.speak_panel_line", speak_panel_line):
+            cue = Cue("guest", "one two three four five six seven eight.", "s")
+            await self.consumer.submit(self.data, cue)
+            while not started:
+                await asyncio.sleep(0.005)
+            self.consumer.close(cue, len("one two three"))
+            await asyncio.wait_for(self.consumer.drain(), timeout=2)
+        return cut_at[0] - started[0]
+
+    async def test_a_cut_during_playback_waits_for_the_cut_word_to_end(self) -> None:
+        # The rate estimate would cut at once (1000 words/s); the audio says 0.3 s.
+        self.assertGreaterEqual(await self.cut_after(1000.0), 0.3 + 0.08)
+
+    async def test_a_cut_during_playback_doesnt_run_past_the_cut_word(self) -> None:
+        # The rate estimate would cut after 3 s (1 word/s); the audio says 0.3 s.
+        self.assertLess(await self.cut_after(1.0), 0.3 + 0.08 + 0.1)
+
     async def play_two(self, first_end: int | None = None, second_role: str = "host") -> float:
         """Seconds between the first line ending and the second one starting."""
         self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
