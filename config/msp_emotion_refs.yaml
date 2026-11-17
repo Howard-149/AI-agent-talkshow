@@ -24,12 +24,14 @@ roles:
   guest:
     speaker: 130
     gender: Female
+    # 2026-11-17: re-picked by ear from the pick_refs.py shortlist (Amy's voice changed
+    # too much between moods); docs/project/tts-refs/picks/mypick.txt.
     refs:
       Neutral: MSP-PODCAST_0589_0780.wav
-      Happiness: MSP-PODCAST_0569_0426.wav
-      Anger: MSP-PODCAST_0566_0385.wav
-      Sadness: MSP-PODCAST_0579_0281.wav
-      Surprise: MSP-PODCAST_0588_0080.wav
+      Happiness: MSP-PODCAST_0573_0387.wav
+      Anger: MSP-PODCAST_0597_0319.wav
+      Sadness: MSP-PODCAST_0580_0350.wav
+      Surprise: MSP-PODCAST_0581_0097.wav
   commentator:
     speaker: 94
     gender: Male
