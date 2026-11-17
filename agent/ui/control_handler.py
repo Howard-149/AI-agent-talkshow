@@ -28,6 +28,11 @@ from agent.locale.viewer_locales import recompute_needed_locales, set_viewer_loc
 logger = logging.getLogger(__name__)
 
 
+# After a wrap_up request, an idle show waits this long for the guest's goodbye before
+# the host closes on its own.
+WRAP_UP_IDLE_S = 20.0
+
+
 def register_control_channel(
     room: rtc.Room,
     *,
@@ -84,6 +89,32 @@ def register_control_channel(
             asyncio.create_task(
                 _apply_set_locale(identity=identity, locale=parsed.locale)
             )
+            return
+        if parsed.type == "wrap_up":
+            from agent.session.ghost_flags import is_ghost_participant
+
+            if not is_ghost_participant(ev.participant):
+                logger.warning("wrap_up ignored — sender is not a ghost participant")
+                return
+            # A recording ends on the host's closing line, not mid-sentence.
+            data.wrap_up_requested = True
+            logger.info("wrap_up requested — the host closes at the next floor decision")
+
+            def _close_if_idle() -> None:
+                # The ghost says goodbye right after asking: that human turn leads to the
+                # close. Only an idle show with no human turn coming is moved on here.
+                interaction = getattr(data, "floor_interaction", None)
+                human_pending = getattr(interaction, "human_floor_pending", False) or getattr(
+                    interaction, "_human_speaking", False
+                )
+                if not data.wrap_up_requested or human_pending:
+                    return
+                if not getattr(data, "panel_chain_running", False):
+                    show = getattr(data, "show_session", None)
+                    if show is not None and getattr(show, "running", False):
+                        show.post("moderate", trigger="wrap_up", skip_open_floor=True)
+
+            asyncio.get_running_loop().call_later(WRAP_UP_IDLE_S, _close_if_idle)
             return
         if parsed.type == "ghost_human_turn":
             from agent.session.ghost_flags import ghost_turns_allowed, is_ghost_participant

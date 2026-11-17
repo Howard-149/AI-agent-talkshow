@@ -157,13 +157,23 @@ async def human_turn(state: ShowState, config: RunnableConfig) -> Command:
 # --- floor routing ---------------------------------------------------------
 
 
+def _wrap_up(act: Any) -> bool:
+    """The producer asked to end the show (a ghost run's ``wrap_up`` control event)."""
+    asked = getattr(act, "wrap_up_requested", None)
+    return bool(asked()) if callable(asked) else False
+
+
 async def panel_consume(state: ShowState, config: RunnableConfig) -> Command:
     """Route on the [next] tag left by the last line (chains panelists directly)."""
     act = _act(config)
     if act.should_stop():
         return _finish(stopped=True)
+    if _wrap_up(act):
+        return Command(goto="close")
     turn_idx, max_turns = state.get("turn_idx", 0), state.get("max_turns", 12)
-    if turn_idx >= max_turns and not (
+    # max_turns 0: no line limit, the discussion goes on while it stays on topic (the
+    # host's [next]: close, or a wrap_up request, ends it).
+    if max_turns > 0 and turn_idx >= max_turns and not (
         turn_idx == max_turns and act.grant_interrupt_grace_turn()
     ):
         return Command(goto="close")
@@ -190,6 +200,8 @@ async def moderate(state: ShowState, config: RunnableConfig) -> Command:
     act = _act(config)
     if act.should_stop():
         return _finish(stopped=True)
+    if _wrap_up(act):
+        return Command(goto="close")
     if state.get("moderations", 0) >= state.get("max_moderations", 8):
         # Hand the floor back to the human instead of ending the beat with nobody
         # holding it (nothing else re-opens the floor while the session idles).

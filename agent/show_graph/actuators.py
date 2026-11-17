@@ -102,6 +102,9 @@ class LiveActuators:
     def _human_pending(self) -> bool:
         return bool(getattr(self.interaction, "human_floor_pending", False))
 
+    def wrap_up_requested(self) -> bool:
+        return bool(getattr(self.data, "wrap_up_requested", False))
+
     def should_stop(self) -> bool:
         from agent.session.session_lifecycle import should_stop_session_work
 
@@ -127,6 +130,20 @@ class LiveActuators:
         from agent.session.human_turn import record_human_line
 
         heard = (event.get("heard") or "").strip()
+        if getattr(self.data, "wrap_up_requested", False):
+            # The guest's goodbye: nobody answers it, the host closes next (panel_consume).
+            from agent.session.human_turn import record_human_line
+
+            self.interaction.human_turn_taken()
+            self.interaction.apply_pending_rollback(self.data)
+            await record_human_line(
+                self.data,
+                heard=heard,
+                model_latency_s=float(event.get("model_latency_s") or 0.0),
+                done_event=event.get("done_event") or "gemma_stt_done",
+            )
+            self.interaction.skip_human_reaction()
+            return "", None
         # Uptake planner (no-op unless TALKSHOW_UPTAKE_PLANNER): starts now so it runs while the
         # line is recorded; the panelists' think calls in react_to_human wait for it (bounded).
         from agent.panel.uptake import start_uptake_plan
@@ -434,9 +451,11 @@ class LiveActuators:
     async def close_line(self) -> str:
         from agent.floor.host_floor import host_closing_line
 
-        if self.interaction.take_close_line_override():
+        if self.interaction.take_close_line_override() or getattr(self.data, "show_closed", False):
             return ""
         text = await host_closing_line(self.data)
+        # wrap_up_requested stays set: the guest's goodbye can arrive in several pieces
+        # (VAD splits it), each cutting the close; every later piece leads back here.
         # The show is over: the idle loop waits for the human instead of restarting.
         self.interaction.discussion_complete = True
         return text

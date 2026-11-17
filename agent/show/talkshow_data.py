@@ -58,6 +58,10 @@ class TalkShowData:
     # The sentence chunk on air: (role, pcm, sample_rate, monotonic start, abandon_rest).
     # A cut-in hands over from it with a short overlap (AVSpeechConsumer._hand_over).
     now_playing: tuple | None = None
+    # A ghost run asked the host to close the show at the next floor decision.
+    wrap_up_requested: bool = False
+    # The host's closing line played to its end: never close twice.
+    show_closed: bool = False
     # Demand-driven delivery locales from live humans (default English).
     needed_locales: frozenset[str] = field(default_factory=lambda: frozenset({"en"}))
     # Explicit locale from talkshow/control set_locale (identity → locale).

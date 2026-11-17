@@ -1590,6 +1590,15 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self._barge_in_cut_beat = False
         return resume
 
+    def skip_human_reaction(self) -> None:
+        """The human's turn needs no answer (their goodbye before the close): release the
+        floor without anyone thinking on it."""
+        self._cancel_release()
+        self.drop_speculations()
+        self.human_floor_pending = False
+        self._barge_in_cut_beat = False
+        self.last_floor_outcome = None
+
     async def react_to_human(self, data: Any, heard: str) -> FloorOutcome:
         """The human finished: every agent thinks on the transcript, then the floor is arbitrated.
 
