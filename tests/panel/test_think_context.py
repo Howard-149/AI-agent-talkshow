@@ -21,14 +21,14 @@ FAST = {"TALKSHOW_UPTAKE_PLANNER": "lite", "TALKSHOW_PANEL_SCAFFOLD_FIX": "1",
 OPEN_FLOOR = "All right, open floor — who'd like to speak?"
 RYAN_UP = "Ryan, you're up."
 PREFIX = {"lines": [
-    {"role_id": "host", "speaker": "Lessac", "text": "You wanted to talk about rent control — the floor is yours.",
+    {"role_id": "host", "speaker": "Claire", "text": "You wanted to talk about rent control — the floor is yours.",
      "procedural": True},
     {"role_id": "human", "speaker": "Human guest", "text": "Rent control keeps families in their homes.",
      "procedural": False},
-    {"role_id": "host", "speaker": "Lessac", "text": OPEN_FLOOR, "procedural": True},
-    {"role_id": "host", "speaker": "Lessac", "text": RYAN_UP, "procedural": True},
+    {"role_id": "host", "speaker": "Claire", "text": OPEN_FLOOR, "procedural": True},
+    {"role_id": "host", "speaker": "Claire", "text": RYAN_UP, "procedural": True},
     {"role_id": "commentator", "speaker": "Ryan", "text": "And it freezes the supply.", "procedural": False},
-    {"role_id": "host", "speaker": "Lessac", "text": "That's a sharp point about supply.", "procedural": False},
+    {"role_id": "host", "speaker": "Claire", "text": "That's a sharp point about supply.", "procedural": False},
 ]}
 HUMAN = "Ryan, rents here rose 40 percent in two years. Doesn't that change your view?"
 

@@ -8,7 +8,7 @@ CANDS = [{"role": "commentator", "speaker": "Ryan", "content": "Then why did the
 
 
 def test_request_has_candidates_and_host():
-    body = jev_floor.build_request("Audience: why?", CANDS, {"guest": 2}, {"host": "Lessac"}, "host")
+    body = jev_floor.build_request("Audience: why?", CANDS, {"guest": 2}, {"host": "Claire"}, "host")
     crit = body["questions"]["next"]["criteria"]
     assert set(crit) == {"commentator", "guest", "host"}
     assert "2 turns so far" in body["state"] and "Then why did they end it?" in body["state"]

@@ -116,7 +116,7 @@ class ClientScriptTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             pf = Path(d) / "prefix.json"
-            pf.write_text(json.dumps({"lines": [{"role_id": "host", "speaker": "Lessac", "text": "Hi"}]}))
+            pf.write_text(json.dumps({"lines": [{"role_id": "host", "speaker": "Claire", "text": "Hi"}]}))
             sc = Path(d) / "s.yaml"
             sc.write_text(f"prefix_file: {pf}\npersona_swap: true\nflags: {{TALKSHOW_ADDRESSEE_FLOOR: '1'}}\n"
                           "turns:\n  - text: Ryan, why?\n    topic: tipping\n")

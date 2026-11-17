@@ -229,7 +229,7 @@ class SchedulingTests(unittest.TestCase):
         async def run() -> _FakeData:
             data = _FakeData()
             client = _FakeClient(
-                {"Amy": "[pad]: stung -0.30 0.25 -0.20", "Lessac": "[pad]: alert 0 0.1 0"},
+                {"Amy": "[pad]: stung -0.30 0.25 -0.20", "Claire": "[pad]: alert 0 0.1 0"},
                 delay_s=0.01,
             )
             data.runtime = SimpleNamespace(gemma_client=client)

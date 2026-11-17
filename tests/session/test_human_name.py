@@ -31,7 +31,7 @@ class HumanNameTests(unittest.TestCase):
 
     def test_the_room_names_the_human_and_skips_the_agent_and_the_recording_page(self) -> None:
         room = _room(
-            _p("agent-1", "Lessac", {"talkshowAgent": True}),
+            _p("agent-1", "Claire", {"talkshowAgent": True}),
             _p("ghost-viewer", "ghost-viewer", {"ghostViewer": True}),
             _p("ghost-guest", "Howard", {"ghost": True}),
         )

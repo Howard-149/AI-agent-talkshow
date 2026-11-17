@@ -450,7 +450,7 @@ The job fails if the three GPU slots or three Python paths collide. Extra sideca
 |------|---------|
 | `.env` (repo root) | Secrets + Babel paths; shared by token script and `talkshow-web` |
 | `config/multimodal.yaml` | Default vLLM URL |
-| `config/personas/host.yaml` | Lessac — CosyVoice prompt wav under `tts.cosyvoice` |
+| `config/personas/host.yaml` | Claire (host) — CosyVoice prompt wav under `tts.cosyvoice` |
 | `config/personas/guest.yaml` | Amy |
 | `config/personas/commentator.yaml` | Ryan |
 | `config/scenarios/default.yaml` | `host_moderated` (default) |

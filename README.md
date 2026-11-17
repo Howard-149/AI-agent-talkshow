@@ -4,7 +4,7 @@
 
 **A live, voice-in / voice-out talk show with three AI hosts and panelists, and a benchmark for what makes them good.**
 
-Host **Lessac** moderates, commentator **Ryan** pushes back, guest **Amy** brings it back to people.
+Host **Claire** moderates, commentator **Ryan** pushes back, guest **Amy** brings it back to people.
 You join from the browser and take the floor just by speaking.
 
 [Setup](SETUP.md) · [Benchmark](eval/bench/README.md) · [Dialogue quality report](eval/DIALOGUE_QUALITY.md) · [Contributing](CONTRIBUTING.md)

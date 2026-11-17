@@ -31,9 +31,9 @@ class PerspectiveTests(unittest.TestCase):
         self.assertEqual(
             msgs,
             [
-                {"role": "user", "content": "Lessac (host): Welcome.\nHuman guest: Should we freeze hiring?\nLessac (host): Great question. Ryan?"},
+                {"role": "user", "content": "Claire (host): Welcome.\nHuman guest: Should we freeze hiring?\nClaire (host): Great question. Ryan?"},
                 {"role": "assistant", "content": "Bad idea."},
-                {"role": "user", "content": "Lessac (host): Amy, you're up.\nAmy (Guest): I disagree with Ryan."},
+                {"role": "user", "content": "Claire (host): Amy, you're up.\nAmy (Guest): I disagree with Ryan."},
             ],
         )
 
