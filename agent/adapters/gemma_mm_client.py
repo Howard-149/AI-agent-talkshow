@@ -62,6 +62,13 @@ class GemmaMMClient:
         self._mm_warmed = False
         self._output_logger: ModelOutputLogger | None = None
 
+    def _text_endpoint(self) -> tuple[str, str, str]:
+        """(base_url, model, api_key) for text calls; plain configs without text_* use the main endpoint."""
+        endpoint = getattr(self._cfg, "text_endpoint", None)
+        if endpoint is not None:
+            return endpoint
+        return self._cfg.base_url, self._cfg.model, self._cfg.api_key
+
     def set_output_logger(self, output_logger: ModelOutputLogger) -> None:
         self._output_logger = output_logger
 
@@ -242,7 +249,7 @@ class GemmaMMClient:
             history_messages=history_messages,
             tail_user=user_text,
         )
-        base_url, model, api_key = self._cfg.text_endpoint
+        base_url, model, api_key = self._text_endpoint()
         token_limit = max_tokens or self._cfg.max_tokens
         openai_reasoning = _openai_flag("OPENAI_USE_MAX_COMPLETION_TOKENS", base_url)
         if openai_reasoning:
@@ -311,7 +318,7 @@ class GemmaMMClient:
         Used by best-of-N panel drafting (TALKSHOW_PANEL_BEST_OF); same payload as complete_text otherwise."""
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(system, history_messages=history_messages, tail_user=user_text)
-        base_url, model, api_key = self._cfg.text_endpoint
+        base_url, model, api_key = self._text_endpoint()
         token_limit = max_tokens or self._cfg.max_tokens
         openai_reasoning = _openai_flag("OPENAI_USE_MAX_COMPLETION_TOKENS", base_url)
         if openai_reasoning:
