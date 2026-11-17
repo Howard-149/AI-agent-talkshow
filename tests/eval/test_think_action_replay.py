@@ -25,7 +25,7 @@ FLAGS = (
 )
 PREFIX = {
     "lines": [
-        {"role_id": "host", "speaker": "Lessac", "text": "Tonight: rent control.", "procedural": False},
+        {"role_id": "host", "speaker": "Claire", "text": "Tonight: rent control.", "procedural": False},
         {"role_id": "guest", "speaker": "Amy", "text": "Rent control keeps families in place.", "procedural": False},
         {"role_id": "commentator", "speaker": "Ryan", "text": "And freezes the supply.", "procedural": False},
     ],

@@ -17,7 +17,7 @@ from eval.quality_ruler.items import GENERIC_POOL
 
 
 def _ep(lines: list[tuple[str, str]], eid: str = "e1", **kw) -> dict:
-    names = {"host": "Lessac", "human": "Human guest", "commentator": "Ryan", "guest": "Amy"}
+    names = {"host": "Claire", "human": "Human guest", "commentator": "Ryan", "guest": "Amy"}
     L = [{"role": r, "speaker": names[r], "text": t} for r, t in lines]
     return {"id": eid, "topic_id": "t1", "topic": "Tipping", "source": "system", "lines": L,
             "scored": [i for i, l in enumerate(L) if l["role"] in ("commentator", "guest")], **kw}

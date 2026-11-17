@@ -233,7 +233,7 @@ export default function Page() {
             <a href="https://github.com/livekit-examples/meet" rel="noopener">
               LiveKit Meet
             </a>
-            {' '}— panel avatars (Lessac / Ryan / Amy) + transcript via agent data channel.
+            {' '}— panel avatars (Claire / Ryan / Amy) + transcript via agent data channel.
           </h2>
         </div>
         <Suspense fallback="Loading">

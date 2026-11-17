@@ -170,7 +170,7 @@ class ShowHistory:
 
 
 def _line_label(line: HistoryLine) -> str:
-    """Transcript label: "Human guest", "Lessac (host)", "Ryan (Commentator)"."""
+    """Transcript label: "Human guest", "Claire (host)", "Ryan (Commentator)"."""
     if line.role_id == "human":
         return human_label()
     if line.role_id == "host":

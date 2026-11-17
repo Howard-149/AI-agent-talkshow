@@ -1039,11 +1039,11 @@ class LiveWholeLineLogTests(unittest.IsolatedAsyncioTestCase):
         consumer = AVSpeechConsumer(Mock(), words_per_sec=1000.0)
         consumer._worker = Mock(done=Mock(return_value=False))  # keep playout idle
 
-        await consumer.submit(data, Cue("host", "Welcome, I'm Lessac.", "opening", whole=True))
+        await consumer.submit(data, Cue("host", "Welcome, I'm Claire.", "opening", whole=True))
         await consumer.submit(data, Cue("host", "Amy, go ahead.", "intro_guest_x", whole=True))
         await consumer.submit(data, Cue("guest", "Panel line.", "speech_guest_0"))
 
-        interaction.log_speech_start.assert_called_once_with(data, "host", "Welcome, I'm Lessac.")
+        interaction.log_speech_start.assert_called_once_with(data, "host", "Welcome, I'm Claire.")
         self.assertEqual(interaction.flush_pending_selection.call_count, 2)
 
 
@@ -1244,7 +1244,7 @@ class OpeningAwaitHumanTests(FloorInteractionTestCase):
 
     def test_waits_once_after_inviting_the_human(self) -> None:
         interaction, _consumer, data = self.make()
-        self.opening(data, ("host", "Welcome, I'm Lessac."), ("host", "Howard, what are your first thoughts?"))
+        self.opening(data, ("host", "Welcome, I'm Claire."), ("host", "Howard, what are your first thoughts?"))
         self.assertTrue(interaction.should_await_human(data))
         self.assertFalse(interaction.should_await_human(data))  # once: the idle loop may re-open
 
@@ -1252,7 +1252,7 @@ class OpeningAwaitHumanTests(FloorInteractionTestCase):
         interaction, _consumer, data = self.make()
         self.opening(
             data,
-            ("host", "Welcome, I'm Lessac."),
+            ("host", "Welcome, I'm Claire."),
             ("human", "They fired my mentor."),
             ("host", "Howard, how did that feel?"),
         )
@@ -1260,7 +1260,7 @@ class OpeningAwaitHumanTests(FloorInteractionTestCase):
 
     async def test_no_forced_close_before_anyone_but_the_host_spoke(self) -> None:
         interaction, _consumer, data = self.make()
-        self.opening(data, ("host", "Welcome, I'm Lessac."))
+        self.opening(data, ("host", "Welcome, I'm Claire."))
         interaction.host_fallback_streak = 5
         data.runtime.gemma_client.complete_text = AsyncMock(
             return_value='{"decision": "host_fallback", "selected_role": "host", '

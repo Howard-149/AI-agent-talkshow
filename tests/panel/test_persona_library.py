@@ -76,7 +76,7 @@ class SchemaTests(_Env):
 
 class RenderTests(_Env):
     def test_ryan_and_amy(self) -> None:
-        names = {"host": "Lessac", "commentator": "Ryan", "guest": "Amy"}
+        names = {"host": "Claire", "commentator": "Ryan", "guest": "Amy"}
         self.assertEqual(pl.render_card(pl.load("ryan_skeptic"), "Ryan", names), RYAN_CARD)
         self.assertEqual(pl.render_near(pl.load("ryan_skeptic"), "Ryan"), RYAN_NEAR)
         self.assertEqual(pl.render_card(pl.load("amy_warm"), "Amy", names), AMY_CARD)
@@ -121,7 +121,7 @@ class PromptTests(_Env):
     def think(self, **flags):
         from eval.think_action_prompt import think_request
 
-        prefix = {"lines": [{"role_id": "host", "speaker": "Lessac", "text": "Tonight: rent control.",
+        prefix = {"lines": [{"role_id": "host", "speaker": "Claire", "text": "Tonight: rent control.",
                              "procedural": False}]}
         with mock.patch.dict(os.environ, flags):
             return think_request(prefix, "commentator", human_text="Ryan, rents rose 40 percent.")
@@ -151,8 +151,8 @@ class PromptTests(_Env):
             cards = persona_cards(False)  # items keep the prose cards even with the library on
         self.assertNotEqual(cards["commentator"], RYAN_CARD)
         obs = {"item_id": "x", "task": "T1", "topic_id": "t", "topic": "Rent control", "role": "commentator",
-               "name": "Ryan", "names": {"host": "Lessac", "commentator": "Ryan", "guest": "Amy"},
-               "personas": cards, "history": [{"speaker": "Lessac", "role": "host", "text": "Tonight: rent."}],
+               "name": "Ryan", "names": {"host": "Claire", "commentator": "Ryan", "guest": "Amy"},
+               "personas": cards, "history": [{"speaker": "Claire", "role": "host", "text": "Tonight: rent."}],
                "audience_turn": "Ryan, rents rose.", "fact_pack": None, "show_state": {}, "floor_choice": False,
                "floor_item": False, "fact_instruction": None}
         sysm.respond(obs)

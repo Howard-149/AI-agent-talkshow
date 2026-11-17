@@ -575,7 +575,7 @@ class ThinkCheckpointTests(unittest.IsolatedAsyncioTestCase):
 
         async def complete_text(prompt, **kwargs):
             self.assertIn("[proposed_reply]", prompt)
-            self.assertIn("You are Lessac (host).", prompt)
+            self.assertIn("You are Claire (host).", prompt)
             self.assertIn("The current floor holder is Amy (guest).", prompt)
             self.assertIn("Apply these four turn-taking rules:", prompt)
             self.assertIn("A name alone is not an invitation.", prompt)
@@ -607,7 +607,7 @@ class ThinkCheckpointTests(unittest.IsolatedAsyncioTestCase):
         interaction = TextOnlyInteraction()
         history = ShowHistory(
             lines=[
-                HistoryLine("host", "Lessac", "Earlier host turn."),
+                HistoryLine("host", "Claire", "Earlier host turn."),
                 HistoryLine("commentator", "Ryan", "Earlier panelist turn."),
                 HistoryLine("guest", "Amy", "Current visible prefix."),
             ]

@@ -123,20 +123,20 @@ class HostOpeningLineTests(unittest.TestCase):
             patch.dict(os.environ, {"TALKSHOW_TOPIC": topic, "TALKSHOW_TEXT_TOPIC": ""}),
             patch.object(host_floor, "session_welcome_line", return_value=("Welcome!", {})),
             patch("agent.config.load_persona_instructions", return_value="host persona"),
-            patch("agent.config.load_persona_name", return_value="Lessac"),
+            patch("agent.config.load_persona_name", return_value="Claire"),
         ):
             return asyncio.run(host_floor.host_opening_line(data))
 
     def test_opening_is_the_generated_reply_only(self) -> None:
         text = self.opening(
-            "[heard]: You are Lessac, opening today's show.\n"
+            "[heard]: You are Claire, opening today's show.\n"
             "[reply]: Welcome in! Today we ask whether AI belongs in schools."
         )
         self.assertEqual(text, "Welcome in! Today we ask whether AI belongs in schools.")
 
     def test_opening_falls_back_to_canned_lines(self) -> None:
         canned = "Welcome! Today's discussion topic: AI in schools"
-        self.assertEqual(self.opening("[heard]: You are Lessac, opening the show."), canned)
+        self.assertEqual(self.opening("[heard]: You are Claire, opening the show."), canned)
         self.assertEqual(self.opening(RuntimeError("api down")), canned)
 
     def test_no_topic_keeps_canned_welcome(self) -> None:
@@ -150,7 +150,7 @@ class HostOpeningLineTests(unittest.TestCase):
         importlib.import_module("agent.agents")  # before agent.floor.host_floor (import cycle)
         from agent.floor import host_floor
 
-        client = SimpleNamespace(complete_text=AsyncMock(return_value="Hi, I'm Lessac. Ryan?"))
+        client = SimpleNamespace(complete_text=AsyncMock(return_value="Hi, I'm Claire. Ryan?"))
         interaction = SimpleNamespace(pending_invitation_target=None, opening_invite_role=None)
         data = SimpleNamespace(
             runtime=SimpleNamespace(gemma_client=client),
@@ -169,7 +169,7 @@ class HostOpeningLineTests(unittest.TestCase):
         ):
             text = asyncio.run(host_floor.host_opening_line(data))
 
-        self.assertEqual(text, "Hi, I'm Lessac. Ryan?")
+        self.assertEqual(text, "Hi, I'm Claire. Ryan?")
         self.assertEqual(interaction.opening_invite_role, "commentator")
         self.assertEqual(interaction.pending_invitation_target, "commentator")
         prompt = client.complete_text.await_args.args[0]
@@ -199,7 +199,7 @@ class HostClosingLineTests(unittest.TestCase):
         with (
             patch.dict(os.environ, {"TALKSHOW_TOPIC": "AI in schools", "TALKSHOW_TEXT_TOPIC": ""}),
             patch("agent.config.load_persona_instructions", return_value="host persona"),
-            patch("agent.config.load_persona_name", return_value="Lessac"),
+            patch("agent.config.load_persona_name", return_value="Claire"),
         ):
             return asyncio.run(host_floor.host_closing_line(data))
 

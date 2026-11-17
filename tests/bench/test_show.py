@@ -135,7 +135,7 @@ class GenerateTests(_Env):
     def test_arbitrate_state_is_not_mutated(self) -> None:
         from agent.interaction.think_action import parse_think_action
 
-        prefix = {"lines": [{"role_id": "host", "speaker": "Lessac", "text": "Welcome.", "procedural": True},
+        prefix = {"lines": [{"role_id": "host", "speaker": "Claire", "text": "Welcome.", "procedural": True},
                             {"role_id": "human", "speaker": "Human", "text": "Is tipping out of hand?",
                              "procedural": False}]}
         acts = {"commentator": parse_think_action(speak("Yes it is."), floor_state="free", interval_text="x",

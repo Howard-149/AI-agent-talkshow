@@ -17,7 +17,7 @@ def normalize_panelist_speech(
     """
     Fix third-person self-reference and wrong openers to panelists who have not spoken yet.
 
-    (A rule that rewrote "Lessac, …" openers into "Human guest — …" was removed: with
+    (A rule that rewrote "<host name>, …" openers into "Human guest — …" was removed: with
     speaker-perspective history, panelists address the host when answering the host,
     and the prompt forbids crediting the host with the guest's points.)
     """

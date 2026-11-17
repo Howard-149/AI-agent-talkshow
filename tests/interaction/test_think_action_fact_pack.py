@@ -88,7 +88,7 @@ class ThinkActionFactPackTests(unittest.TestCase):
 
         p = clean_env({"TALKSHOW_FACT_PACK": self.pack})
         try:
-            prefix = {"lines": [{"role_id": "host", "speaker": "Lessac", "text": "Welcome.", "procedural": False}]}
+            prefix = {"lines": [{"role_id": "host", "speaker": "Claire", "text": "Welcome.", "procedural": False}]}
             req = think_request(prefix, "guest", human_text="Is tipping out of hand?", topic_id="tipping")
         finally:
             p.stop()
