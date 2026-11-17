@@ -184,16 +184,25 @@ async def _prepare_chunk(
     """Bake one sentence chunk. If ``pcm`` is provided, skip TTS (one-shot split)."""
     if pcm is None:
         t0 = time.monotonic()
-        pcm, sample_rate, _ = await synthesize_pcm_for_config(
-            tts_cfg,
-            chunk_text,
-            emotion=emotion,
-            locale=locale,
-            turn_log=turn_log,
-            room=room,
-            role=speak_role,
-            step=f"{step}:c{chunk_idx}",
-        )
+        for attempt in (1, 2):
+            try:
+                pcm, sample_rate, _ = await synthesize_pcm_for_config(
+                    tts_cfg,
+                    chunk_text,
+                    emotion=emotion,
+                    locale=locale,
+                    turn_log=turn_log,
+                    room=room,
+                    role=speak_role,
+                    step=f"{step}:c{chunk_idx}",
+                )
+                break
+            except RuntimeError:
+                # CosyVoice now and then returns no audio for a sentence (11/17); a second
+                # try usually works, and a failure drops the rest of the line.
+                if attempt == 2:
+                    raise
+                logger.warning("TTS failed step=%s:c%d, retrying", step, chunk_idx)
         tts_ms = round((time.monotonic() - t0) * 1000)
     else:
         sample_rate = int(sample_rate or 22050)
@@ -480,7 +489,10 @@ async def _speak_avatar_chunked(
     on_segment_played: Callable[[int, float], None] | None = None,
     on_segment_started: SegmentStarted | None = None,
     on_audio_heard: Callable[[], None] | None = None,
+    first_chunk: _PreparedChunk | None = None,
 ) -> None:
+    """``first_chunk``: sentence 0 already synthesized and baked (a cut-in prepared while
+    the cut speaker was still talking, ``prepare_line_start``)."""
     sentences = split_speak_sentences(text)
     if not sentences:
         return
@@ -600,9 +612,22 @@ async def _speak_avatar_chunked(
             kw["tts_ms"] = oneshot_tts_ms if i == 0 else 0
         return kw
 
-    next_task: asyncio.Task[_PreparedChunk] | None = asyncio.create_task(
-        _prepare_chunk(**_chunk_kwargs(0))
-    )
+    if first_chunk is not None and sentences and first_chunk.text == sentences[0]:
+        ready: asyncio.Future[_PreparedChunk] = asyncio.get_running_loop().create_future()
+        ready.set_result(first_chunk)
+        next_task: asyncio.Future[_PreparedChunk] | None = ready
+    else:
+        if first_chunk is not None and first_chunk.live_stream is not None:
+            first_chunk.live_stream.cancel()  # prepared for other words: not played
+        next_task = asyncio.create_task(_prepare_chunk(**_chunk_kwargs(0)))
+
+    def abandon_rest(current: _PreparedChunk) -> None:
+        """A cut-in takes over: stop rendering this line (the sidecar renders one stream
+        at a time, and the next speaker needs it now)."""
+        if next_task is not None and not next_task.done():
+            next_task.cancel()
+        if current.live_stream is not None:
+            current.live_stream.cancel()
 
     try:
         for i, sent in enumerate(sentences):
@@ -681,7 +706,18 @@ async def _speak_avatar_chunked(
                 ) -> None:
                     on_segment_started(i, start_s, dur, word_ends)
 
-            on_audio_start = _audio_start_hook(segment_start, on_audio_heard)
+            def mark_playing(chunk: _PreparedChunk = chunk) -> None:
+                pcm = getattr(chunk, "pcm", b"")
+                if audio_via_session and pcm:
+                    data.now_playing = (
+                        speak_role,
+                        pcm,
+                        chunk.sample_rate,
+                        time.monotonic(),
+                        lambda: abandon_rest(chunk),
+                    )
+
+            on_audio_start = _audio_start_hook(segment_start, on_audio_heard, mark_playing)
 
             await _play_prepared_chunk(
                 session,
@@ -698,6 +734,9 @@ async def _speak_avatar_chunked(
                     on_segment_played(i, audio_position_s)
             prev_play_end = time.monotonic()
     finally:
+        playing = getattr(data, "now_playing", None)
+        if audio_via_session and playing is not None and playing[0] == speak_role:
+            data.now_playing = None
         if next_task is not None and not next_task.done():
             next_task.cancel()
             try:
@@ -749,6 +788,95 @@ def log_whole_line(
         interaction.flush_pending_selection(data)
 
 
+async def prepare_line_start(
+    data: TalkShowData,
+    *,
+    speak_role: str,
+    text: str,
+    step: str,
+    emotion: str | None = None,
+    before_bake: Callable[[], None] | None = None,
+) -> _PreparedChunk | None:
+    """Synthesize and bake the first sentence of a line before it is its turn, for a
+    cut-in that takes over from a speaker still talking. ``before_bake`` runs between
+    TTS and the avatar bake (it frees the avatar sidecar). None when this delivery path
+    is not covered (several viewer languages, no avatar bridge, a non-sentence chunk
+    mode): the line then prepares as usual when it plays."""
+    from agent.adapters.tts_synthesize import resolve_tts_engine
+    from agent.emotion import speaking_emotion
+    from agent.floor.floor_parser import strip_speech_control_tags
+    from agent.locale.viewer_locales import DEFAULT_LOCALE
+
+    needed = frozenset(getattr(data, "needed_locales", None) or {DEFAULT_LOCALE})
+    bridge = get_avatar_bridge()
+    if needed != {DEFAULT_LOCALE} or bridge is None:
+        return None
+    text = strip_speech_control_tags(text.strip())
+    sentences = split_speak_sentences(text)
+    if not sentences:
+        return None
+    tts_cfg = load_persona_tts(speak_role, data.runtime.config, locale=DEFAULT_LOCALE)
+    if resolve_tts_engine(tts_cfg) == "cosyvoice" and (
+        os.environ.get("TALKSHOW_COSYVOICE_CHUNK_MODE", "sentence").strip().lower() != "sentence"
+    ):
+        return None
+    if len(sentences) == 1 or not avatar_chunk_stream_enabled():
+        sentences = [text]
+    turn_log = getattr(data, "turn_log", None)
+    t0 = time.monotonic()
+    pcm, sample_rate, _ = await synthesize_pcm_for_config(
+        tts_cfg,
+        sentences[0],
+        emotion=emotion or speaking_emotion(data, speak_role),
+        locale=DEFAULT_LOCALE,
+        turn_log=turn_log,
+        room=data.room_name,
+        role=speak_role,
+        step=f"{step}:c0",
+    )
+    tts_ms = round((time.monotonic() - t0) * 1000)
+    if before_bake is not None:
+        before_bake()
+    video_pub = get_avatar_video_publisher(DEFAULT_LOCALE)
+    return await _prepare_chunk(
+        bridge=bridge,
+        tts_cfg=tts_cfg,
+        speak_role=speak_role,
+        step=step,
+        chunk_text=sentences[0],
+        chunk_idx=0,
+        slot="c0",
+        turn_log=turn_log,
+        room=data.room_name,
+        video_pub=video_pub,
+        use_lk_video=lk_video_enabled() and video_pub is not None,
+        emotion=emotion,
+        locale=DEFAULT_LOCALE,
+        pcm=pcm,
+        sample_rate=sample_rate,
+        tts_ms=tts_ms,
+        align_words=len(sentences) > 1,
+    )
+
+
+def handover_tail(data: TalkShowData, seconds: float) -> tuple[str, bytes, int] | None:
+    """The next ``seconds`` of the line on air, fading out: what the cut speaker says
+    while the interrupter starts. (role, pcm, sample rate) or None."""
+    playing = getattr(data, "now_playing", None)
+    if playing is None or seconds <= 0:
+        return None
+    role, pcm, sample_rate, started, _abandon = playing
+    import numpy as np
+
+    samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype=np.int16)
+    start = int((time.monotonic() - started) * sample_rate)
+    tail = samples[start : start + int(seconds * sample_rate)].astype(np.float32)
+    if tail.size < sample_rate // 10:
+        return None
+    tail *= np.linspace(1.0, 0.0, tail.size, dtype=np.float32) ** 0.7
+    return role, tail.astype(np.int16).tobytes(), sample_rate
+
+
 async def speak_panel_line(
     session: AgentSession,
     data: TalkShowData,
@@ -761,6 +889,7 @@ async def speak_panel_line(
     on_segment_played: Callable[[int, float], None] | None = None,
     on_segment_started: SegmentStarted | None = None,
     emotion: str | None = None,
+    prepared: _PreparedChunk | None = None,
 ) -> None:
     """Speak any show line via Piper (+ DyStream when avatar sync is on).
 
@@ -980,6 +1109,7 @@ async def speak_panel_line(
                     on_segment_played=on_segment_played,
                     on_segment_started=on_segment_started,
                     on_audio_heard=on_audio_heard,
+                    first_chunk=prepared,
                 )
                 if secondary_coros:
                     await asyncio.gather(primary_coro, *secondary_coros)

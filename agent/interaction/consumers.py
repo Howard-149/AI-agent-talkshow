@@ -61,6 +61,8 @@ class Cue:
     on_start: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
     mark: Any = None  # generator checkpoint for rollback
     interrupted_by: str | None = None  # role whose approved interrupt cut this line
+    # First sentence synthesized and baked while the line it cuts was still on air.
+    prepared: Any = None
     played_segments: dict[int, tuple[float, float]] = field(default_factory=dict)
     # TTS sentence index -> (audio position at its start, monotonic time the audience
     # started hearing it, duration, word-end timings task or None)
@@ -192,6 +194,20 @@ def turn_gap_s() -> float:
 
     jitter = env("TALKSHOW_TURN_GAP_JITTER_S", DEFAULT_TURN_GAP_JITTER_S)
     return env("TALKSHOW_TURN_GAP_S", DEFAULT_TURN_GAP_S) + random.uniform(0.0, jitter)
+
+
+DEFAULT_CUT_OVERLAP_S = 0.8
+# Longest the cut speaker talks on while the interrupter's first sentence is prepared.
+CUT_PREPARE_TIMEOUT_S = 4.0
+
+
+def cut_overlap_s() -> float:
+    """How long a cut speaker trails off under the interrupter (TALKSHOW_CUT_OVERLAP_S;
+    0: cut at once, no overlap)."""
+    try:
+        return max(0.0, float(os.environ.get("TALKSHOW_CUT_OVERLAP_S", DEFAULT_CUT_OVERLAP_S)))
+    except ValueError:
+        return DEFAULT_CUT_OVERLAP_S
 
 
 def voice_backchannels_enabled() -> bool:
@@ -370,6 +386,7 @@ class AVSpeechConsumer:
                 task.cancel()
         for cue in ([self._current] if self._current is not None else []) + list(self._queue):
             cue.playout_done.set()
+            _release_prepared(cue)
         if self._current is not None:
             try:
                 self.session.interrupt(force=True)
@@ -441,6 +458,7 @@ class AVSpeechConsumer:
                 audio_position_s, time.monotonic(), duration_s, word_ends
             )
 
+        prepared, cue.prepared = cue.prepared, None
         speech = self._speech = asyncio.create_task(
             speak_panel_line(
                 self.session,
@@ -453,6 +471,7 @@ class AVSpeechConsumer:
                 on_segment_played=segment_played,
                 on_segment_started=segment_started,
                 emotion=cue.emotion,
+                **({"prepared": prepared} if prepared is not None else {}),
             ),
             name=f"speech:{cue.role}:{cue.step}",
         )
@@ -462,11 +481,14 @@ class AVSpeechConsumer:
             if cue.end is not None and cue.end < len(text) and self._cut_reached(cue):
                 # The script cut this line (approved interrupt) after playback began.
                 heard = cue.end
+                tail = await self._hand_over(cue, speech)
                 speech.cancel()
                 try:
                     self.session.interrupt(force=True)
                 except Exception:
                     logger.debug("session.interrupt failed", exc_info=True)
+                if tail is not None:
+                    self._play_tail(*tail)
                 break
             await asyncio.wait({speech}, timeout=self._POLL_S)
         try:
@@ -487,6 +509,87 @@ class AVSpeechConsumer:
             _fire_ui(emit_interrupt(cue.role, cue.interrupted_by, heard_text=text[:heard]))
         self._last_end = None if cut_by_script else time.monotonic()
         self._last_role = cue.role
+
+    async def _hand_over(self, cue: Cue, speech: asyncio.Task) -> tuple[str, bytes, int] | None:
+        """A cut-in takes over like people do: the cut speaker goes on talking while the
+        interrupter's first sentence is synthesized and baked, and trails off over the
+        interrupter's first words (the returned tail, played on a side track). Without
+        this the audience heard the cut, then ~1 s of silence while the interrupter's
+        line was prepared. Returns the tail, or None (TALKSHOW_CUT_OVERLAP_S=0: off)."""
+        overlap_s = cut_overlap_s()
+        data = self._data
+        if overlap_s <= 0 or data is None or not cue.interrupted_by:
+            return None
+        waited = 0.0
+        while not self._queue and waited < 0.5 and not speech.done():
+            await asyncio.sleep(self._POLL_S)
+            waited += self._POLL_S
+        if not self._queue or self._queue[0].role != cue.interrupted_by:
+            return None
+        nxt = self._queue[0]
+        from agent.session.session_handoff import handover_tail, prepare_line_start
+
+        def free_sidecar() -> None:
+            playing = getattr(data, "now_playing", None)
+            if playing is not None and playing[0] == cue.role:
+                playing[4]()
+
+        t0 = time.monotonic()
+        prep = asyncio.create_task(
+            prepare_line_start(
+                data,
+                speak_role=nxt.role,
+                text=nxt.text,
+                step=nxt.step,
+                emotion=nxt.emotion,
+                before_bake=free_sidecar,
+            )
+        )
+        try:
+            await asyncio.wait(
+                {prep, speech}, timeout=CUT_PREPARE_TIMEOUT_S, return_when=asyncio.FIRST_COMPLETED
+            )
+            if not prep.done() and not speech.done():
+                prep.cancel()  # too slow: cut now, the line prepares as usual
+                return None
+            if not prep.done():  # the cut line ended by itself first: keep preparing
+                await asyncio.wait({prep}, timeout=CUT_PREPARE_TIMEOUT_S)
+        except asyncio.CancelledError:
+            prep.cancel()  # stop(): a human barged in
+            raise
+        try:
+            nxt.prepared = prep.result() if prep.done() else None
+        except Exception:
+            logger.exception("preparing the cut-in failed step=%s", nxt.step)
+            nxt.prepared = None
+        turn_log = getattr(data, "turn_log", None)
+        if turn_log is not None:
+            turn_log.log(
+                "cut_handover",
+                role=cue.role,
+                by=nxt.role,
+                prepared=nxt.prepared is not None,
+                talked_on_s=round(time.monotonic() - t0, 3),
+                room=getattr(data, "room_name", ""),
+            )
+        if speech.done():
+            return None
+        return handover_tail(data, overlap_s)
+
+    def _play_tail(self, role: str, pcm: bytes, sample_rate: int) -> None:
+        async def play() -> None:
+            from livekit.agents.job import get_job_context
+
+            from agent.adapters.locale_audio import get_backchannel_audio_publisher
+            from agent.locale.viewer_locales import DEFAULT_LOCALE
+
+            publisher = get_backchannel_audio_publisher(role, DEFAULT_LOCALE)
+            await publisher.bind_room(get_job_context().room, sample_rate=sample_rate)
+            await publisher.play_pcm(pcm, sample_rate)
+
+        task = asyncio.create_task(play(), name=f"cut-tail:{role}")
+        self._backchannels.add(task)
+        task.add_done_callback(self._backchannel_done)
 
     def _cut_reached(self, cue: Cue) -> bool:
         """Playback has reached the script's cut: just after the cut's last word ends in
@@ -716,6 +819,14 @@ class AVSpeechConsumer:
         self._backchannels.discard(task)
         if not task.cancelled() and task.exception() is not None:
             logger.warning("backchannel playback failed", exc_info=task.exception())
+
+
+def _release_prepared(cue: Cue) -> None:
+    """A prepared first sentence that will never play: stop its avatar render."""
+    prepared, cue.prepared = cue.prepared, None
+    stream = getattr(prepared, "live_stream", None)
+    if stream is not None:
+        stream.cancel()
 
 
 def _word_ends(task: Any) -> list[float] | None:
