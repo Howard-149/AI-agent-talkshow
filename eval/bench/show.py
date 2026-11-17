@@ -84,8 +84,8 @@ def load_scripts(path: Path = DEV_SCRIPTS, topics: str = "") -> list[dict]:
 
     out = yaml.safe_load(Path(path).read_text())["topics"]
     for t in out:
-        if len(t.get("audience") or []) != 3 or not all(isinstance(x, str) and x.strip() for x in t["audience"]):
-            raise ValueError(f"{t.get('slug')}: a script needs exactly 3 audience turns")
+        if not 1 <= len(t.get("audience") or []) <= 3 or not all(isinstance(x, str) and x.strip() for x in t["audience"]):
+            raise ValueError(f"{t.get('slug')}: a script needs 1 to 3 audience turns")
     if topics:
         keep = topics.split(",")
         missing = set(keep) - {t["slug"] for t in out}
@@ -167,7 +167,8 @@ def _run_think_action(system: Any, backend: Any, eps: list[dict], slots: int = S
 
     names = _names()
     n_sel = select_n()  # TALKSHOW_PANEL_SELECT: extra think samples per panelist (agent/panel/select.py)
-    for beat in range(3):
+    n_beats = min(len(e["audience"]) for e in eps)
+    for beat in range(n_beats):
         for e in eps:
             add_audience(e, e["audience"][beat])
         plans: dict[str, str] = {}
@@ -335,7 +336,8 @@ def run_plain(system: Any, backend: Any, eps: list[dict], slots: int = SLOTS) ->
             o.update(role=role, name=names[role], item_id=e["id"])
         return o
 
-    for beat in range(3):
+    n_beats = min(len(e["audience"]) for e in eps)
+    for beat in range(n_beats):
         for e in eps:
             add_audience(e, e["audience"][beat])
         for slot in range(slots):

@@ -58,9 +58,12 @@ class ScriptTests(unittest.TestCase):
 
     def test_bad_script_refused(self) -> None:
         path = Path(tempfile.mkdtemp()) / "s.yaml"
-        path.write_text(yaml.safe_dump({"topics": [{"slug": "x", "topic": "X?", "audience": ["a", "b"]}]}))
-        with self.assertRaises(ValueError):
-            show.load_scripts(path)
+        for audience in ([], ["a", "b", "c", "d"], ["a", ""]):  # 1 to 3 non-empty turns are allowed
+            path.write_text(yaml.safe_dump({"topics": [{"slug": "x", "topic": "X?", "audience": audience}]}))
+            with self.assertRaises(ValueError):
+                show.load_scripts(path)
+        path.write_text(yaml.safe_dump({"topics": [{"slug": "x", "topic": "X?", "audience": ["a"]}]}))
+        self.assertEqual(len(show.load_scripts(path)), 1)
         with self.assertRaises(SystemExit):
             show.load_scripts(topics="no-such-topic")
 

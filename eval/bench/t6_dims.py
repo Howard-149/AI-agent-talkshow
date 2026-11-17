@@ -66,8 +66,14 @@ def pairs(runs: dict[str, list[dict]]) -> list[tuple[str, str, dict, dict]]:
     return out
 
 
+HEADER_OPEN = ("Both are live panel conversations on the same motion, opening with the same question from an audience "
+               "member.")
+_header = [HEADER]
+
+
 def body(topic: str, a: dict, b: dict) -> str:
-    return f"Topic: {topic}\n\nEpisode A:\n{episode_text(a)}\n\nEpisode B:\n{episode_text(b)}\n\n{HEADER} {LENGTH_RULE}"
+    return (f"Topic: {topic}\n\nEpisode A:\n{episode_text(a)}\n\nEpisode B:\n{episode_text(b)}\n\n{_header[0]} "
+            f"{LENGTH_RULE}")
 
 
 def words(ep: dict) -> int:
@@ -78,6 +84,8 @@ def words(ep: dict) -> int:
 def cmd_build(args: argparse.Namespace) -> None:
     out = Path(args.out)
     (out / "judge").mkdir(parents=True, exist_ok=True)
+    if args.open_header:
+        _header[0] = HEADER_OPEN  # episodes from different sources (for example real debates), not one fixed script
     runs = load_runs(args.runs.split(","))
     ps = pairs(runs)
     reqs, meta = [], []
@@ -267,6 +275,8 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--out", required=True)
     b.add_argument("--ref-pairs", type=int, default=48)
     b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--open-header", action="store_true",
+                   help="say only that both are panels on the same motion and opening question")
     o = sub.add_parser("ref-openai")
     o.add_argument("--out", required=True)
     o.add_argument("--model", default="gpt-5.5")
