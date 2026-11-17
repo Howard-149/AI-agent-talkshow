@@ -125,9 +125,10 @@ python -m eval.ghost_session            # new room per run; needs the Babel TALK
 
 JSONL still lands on Babel (`LOG_DIR`). Summarize there.
 
-The laptop cannot reach the CosyVoice sidecar, so spoken turns need their audio already in the cache: run the script
-once on Babel (it fills `logs/ghost-voice-cache/`) and copy that folder over, or name recordings with `audio:`, or use
-`--text-turns`.
+Without a tunnel the laptop cannot reach the CosyVoice sidecar, so spoken turns need their audio already in the cache:
+run the script once on Babel (it fills `logs/ghost-voice-cache/`) and copy that folder over, or name recordings with
+`audio:`, or use `--text-turns`. With an SSH tunnel to the sidecar, set `COSYVOICE_SIDECAR_URL` and
+`GHOST_VOICE_REMOTE_DIR` (see Live turns).
 
 ## Script format
 
@@ -148,6 +149,91 @@ turns:
 
 All four timing fields are optional; without `after_lines` the turn waits for the beat to end (above). A timed turn
 that has waited `max_wait_sec` (default 180) is spoken anyway. `--script` can point at another YAML.
+
+### Live turns (LLM-written)
+
+A turn can leave out `text` and set `generate: true`: its words are written during the show by an LLM from what the
+panel actually said, then spoken in the guest's voice like any other turn. Timing fields work as above.
+
+```yaml
+topic: Is AI Making Us Smarter or More Dependent?   # the show topic (prompt context only)
+persona: >                                          # who the guest is and how he talks
+  Howard, a grad student who uses AI tools daily ...
+turns:
+  - generate: true
+    goal: push back on whoever is talking right now  # optional hint for this turn
+    after_lines: 4
+    when: mid_line
+    after_sec: 3
+```
+
+The client keeps the show transcript from the UI events (`transcript`, trimmed to `heard_text` on an `interrupt`,
+dropped on a `line_end` with `played: false`) plus the guest's own turns. As soon as the trigger line is announced
+(its transcript arrives before its audio) it sends persona + topic + the last 12 lines + `goal` (+ for `mid_line`,
+only the first words of the line being cut into) to the LLM, which answers with an emotion
+(Neutral/Happiness/Anger/Sadness/Surprise) and a 25–70-word spoken line; it retries once on an unparseable reply and
+falls back to Neutral. The line is synthesized right away, so it is usually ready by the cut-in point; if not, it is
+spoken as soon as it is. The log shows `generated in …s`, `TTS …s` and `ready …s before/after the cut-in point`.
+With `--text-turns` the generated text is sent as text.
+
+| Env | Default | |
+|-----|---------|---|
+| `GHOST_LLM_BASE_URL` | `http://127.0.0.1:18000/v1` | OpenAI-compatible chat endpoint |
+| `GHOST_LLM_MODEL` | first id from `/models` | |
+| `GHOST_LLM_API_KEY` | `EMPTY` | |
+| `GHOST_VOICE_REMOTE_DIR` | unset | the sidecar's copy of the references (see below) |
+
+The sidecar opens the reference by path. When it runs on another machine (a laptop with an SSH tunnel to Babel),
+set `GHOST_VOICE_REMOTE_DIR` to the folder with the same `<Emotion>.wav` files on that machine: the reference is still
+chosen from the local `GHOST_VOICE_DIR`, and the sidecar gets `GHOST_VOICE_REMOTE_DIR/<same name>`.
+
+```bash
+COSYVOICE_SIDECAR_URL=http://127.0.0.1:18767 GHOST_VOICE_REMOTE_DIR=/path/on/sidecar/node/voice \
+  python -m eval.ghost_session --record --stop-after-panel 6 --script path/to/live.yaml
+```
+
+### Reactive guest
+
+With `reactive: true` the guest takes part like a panelist after the turns above (which become seeds, e.g. one
+`generate: true` turn after the host's opening). On every agent line announced (its transcript arrives before its
+audio):
+
+- **Floor handed to him** (`addressing.py`: a vocative of his name, or "our guest", tied to a question or an
+  invitation like "the floor is yours" / "what do you think" in the same or next sentence, at the end of the line): he
+  always answers, 0.4–0.8 s after the line ends, even if the next line has started.
+- **Floor handed to someone else** ("…Amy, how do you see it?"; names from `panel_roster`, the transcript speakers,
+  or a vocative-looking name): he stays silent, with no LLM call, and leaves the gap to them.
+- **Asked in passing** (a question tied to his name mid-line): the LLM decides, outside the cooldown.
+- **Otherwise** (a bare "Howard, …", a mention, nothing): nothing within `min_lines_between_turns` lines of his last
+  turn (no LLM call); after that, one LLM call decides `silent` (default) / `respond` (after the line) / `cut_in`
+  (rare, ~2.5 s into the line; at most two) and writes the words. A reply is spoken in the gap after the line; if the
+  next line is already playing by then, it is dropped and the newest line is considered instead. A reply is also
+  dropped as stale when more than one newer line was announced, when the next line has played 2 s without this
+  line's end being seen, or 15 s after its line ended.
+
+The words are written and synthesized as soon as the line is announced. He never speaks twice without an agent line
+in between. After `max_turns` (seeds included) or `max_minutes` (from the first agent line) he stops reacting and
+leaves after `--stop-after-panel N` panel lines. Every line considered is logged as `react line N <speaker>
+addressed=… → <decision> gen=… tts=… latency=…` (latency: line end → his audio).
+
+```yaml
+reactive: true
+max_turns: 12               # a cap; time normally ends the show
+min_lines_between_turns: 3
+max_minutes: 9.5
+```
+
+**Ending.** When the budget is spent he stops reacting and, at the next natural gap (a line has ended, nothing is
+playing, and the floor was not just handed to someone else), says a short LLM-written goodbye (thanks, a one-sentence
+takeaway, "I have to head out"; a script `goodbye:` gives fixed words). Right after his audio the ghost sends
+`{"type": "wrap_up"}` on `talkshow/control`; the worker moves to the host's closing line (step `close_round`). The ghost
+leaves (and the recording stops) once that line has ended and no agent audio has played for 3 s; without a
+`close_round` within 90 s, once nothing has played or been announced for 5 s. It never leaves while a line plays.
+In reactive mode this replaces `--stop-after-panel`; scripted runs get it with `wrap_up: true` or `--wrap-up` (after the
+last turn's beat, `--stop-after-panel` lines or quiet).
+
+Scripted `line_end` turns also hold back when their trigger line hands the floor to someone else: they wait for that
+person's line to end (or 20 s without them speaking) and cut in after it.
 
 Replay scripts (the listening test, `eval/README.md`) add a saved show state to the first turn:
 
