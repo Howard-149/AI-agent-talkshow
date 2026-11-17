@@ -442,6 +442,41 @@ Claude, both orders):
 - **Sample size.** 10 pairs, and the Qwen episodes come from the earlier host-card run with the same settings. The
   result is unanimous, but small.
 
+### Against real debaters
+
+All earlier T6 results are relative. To see how far the show is from real people, we compared GPT-5.5 on the demo
+set with real Intelligence Squared exchanges: one host question and four panel turns per motion, the most interactive
+window, with speakers renamed (`eval/bench/human_ref.py`). The test covered 37 test motions. Both sides start from the
+same audience question, and each side gives 5 lines. The judges are told only that both are panels on the same motion
+(`t6_dims --open-header`). Wins for GPT-5.5 out of comparisons made (GPT-5.5 · Claude):
+
+| Dimension | GPT-5.5 wins |
+| --- | --- |
+| Answers the audience | 34/34 · 29/29 |
+| Entertaining | 36/37 · 25/26 |
+| Distinct characters | 33/34 · 17/23 |
+| Panel reacts to each other | 33/34 · 17/27 |
+| New points | 26/31 · **9/25** |
+| Natural speech | **12/27 · 6/25** |
+| Overall | 35/36 · 20/24 |
+
+- **Where GPT-5.5 loses.** Both judges find the real people more natural, and Claude also finds them more novel. The
+  model's lines still read as written text: in the dev episodes, 75 of 90 contain a dash, and Ryan uses a sports
+  image in 14 of his 34 lines.
+- **The comparison is not even.**
+  - The real exchanges come from the middle of a debate and answer the moderator's question at that point. The
+    opening question is ours, so "answers the audience" is not meaningful for them.
+  - The debaters are not trying to entertain.
+  - Real talk show transcripts would be a better reference, but we have none we may use.
+- **Real debater lines are longer.** Median 60 words, against 43 for GPT-5.5, so length does not favour the model.
+
+**Picking candidates for natural speech did not help.** We asked the decision model to pick the candidate that sounds
+most like real speech, instead of the best talk show moment. Against the real debaters the model was still less
+natural (Claude 3/24). Against the default pick it was slightly worse on every question, for example entertainment
+5/15 · 10/27. The three candidates come from the same model and sound alike, so picking cannot add naturalness. This
+needs a change in generation, most likely training, so the switch is not kept. Cost of this section: about 2.4M prompt
+and 0.3M completion tokens.
+
 ### Dev split (pilot)
 
 These are pilot numbers on the dev split, averaged over both judges, on a 0 to 100 scale.
@@ -519,6 +554,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-17 | GPT-5.5 against real IQ2 debaters on 37 motions: wins overall, loses on natural speech; picking candidates for natural speech did not help |
 | 2026-11-17 | T6 harness takes an OpenAI panel model; GPT-5.5 beats Qwen3.6 on every T6 dimension (10/10 overall, both judges) |
 | 2026-11-17 | Host card (`TALKSHOW_HOST_CARD`) in the demo set; T6 judge asks about the host |
 | 2026-11-16 | Talk-show v2 persona cards for Ryan and Amy; they are the demo set's cards |
