@@ -81,6 +81,24 @@ def scrub_human_label(text: str | None) -> str | None:
     return _LABEL_ANY.sub("our guest", text)
 
 
+_STAGE_LEAD = re.compile(r"(^|(?<=[.!?]))\s*\[[^\[\]]{1,40}\]\s*[,:\u2014-]?\s*")
+_STAGE = re.compile(r"\s*\[[^\[\]]{1,40}\]\s*")
+
+
+def strip_stage_directions(text: str | None) -> str | None:
+    """A spoken line without bracketed stage directions or placeholders ("[to the guest]", "[laughs]", "[Guest],"):
+    short square-bracket asides are dropped with a comma that follows them, the spacing is repaired, and a sentence
+    that now starts lower case is capitalised."""
+    if not text or "[" not in text:
+        return text
+    out = _STAGE_LEAD.sub(" ", text)  # a placeholder that opens a sentence takes its comma with it
+    out = _STAGE.sub(" ", out)
+    out = re.sub(r"\s+([,.!?;:])", r"\1", out)
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    out = re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), out)
+    return out
+
+
 def human_label() -> str:
     """The human in transcripts and prompts: "Howard (human guest)", else "Human guest"."""
     return f"{_human_name} (human guest)" if _human_name else HUMAN_LABEL
