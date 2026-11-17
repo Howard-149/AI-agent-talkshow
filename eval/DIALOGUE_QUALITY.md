@@ -413,6 +413,35 @@ made (GPT-5.5 · Claude); the T6 judge now has an eighth question about the host
 
 The demo set now includes the card. The demo set without it stays as `demo_host_v1`.
 
+### An API panel model: GPT-5.5
+
+The T6 harness can use an OpenAI chat model as the panel model (`--model openai:<name>`). Stages run as parallel
+requests with hidden reasoning off, and token usage is logged per call (`usage.jsonl`).
+
+We compared GPT-5.5 with Qwen3.6-35B-A3B on the demo set: fact pack, show frame, candidate selection, the v2 persona
+cards and the host card. Both ran on the same 5 dev topics × 2 reruns. Wins are out of comparisons made (GPT-5.5 ·
+Claude, both orders):
+
+| Dimension | GPT-5.5 wins |
+| --- | --- |
+| Answers the audience | 10/10 · 10/10 |
+| Panel reacts to each other | 10/10 · 6/9 |
+| Entertaining | 10/10 · 10/10 |
+| Natural speech | 9/9 · 10/10 |
+| Host | 9/9 · 8/8 |
+| Overall | 10/10 · 10/10 |
+
+- **Judge bias.** One reference judge is the same model as the panel, so Claude is the check. Claude agrees on every
+  overall verdict.
+- **Counted measures.** GPT-5.5 never repeats its own previous opener (Qwen: 11%) and links to the other speaker's
+  words more (0.70 vs 0.56). Lines with an unsupported specific are about the same (7.2% vs 6.6%).
+- **Length.** GPT-5.5 lines are longer, 50 words against 40. The reference judges showed little length preference
+  elsewhere, so this does not explain a 10 to 0 result.
+- **Cost and speed.** 10 episodes took 529 calls, 705k prompt tokens and 76k completion tokens, in under 3 minutes run
+  in parallel. A single call takes about 1.5 s.
+- **Sample size.** 10 pairs, and the Qwen episodes come from the earlier host-card run with the same settings. The
+  result is unanimous, but small.
+
 ### Dev split (pilot)
 
 These are pilot numbers on the dev split, averaged over both judges, on a 0 to 100 scale.
@@ -490,6 +519,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-17 | T6 harness takes an OpenAI panel model; GPT-5.5 beats Qwen3.6 on every T6 dimension (10/10 overall, both judges) |
 | 2026-11-17 | Host card (`TALKSHOW_HOST_CARD`) in the demo set; T6 judge asks about the host |
 | 2026-11-16 | Talk-show v2 persona cards for Ryan and Amy; they are the demo set's cards |
 | 2026-11-16 | Shared show frame (`TALKSHOW_SHOW_FRAME`) and candidate selection (`TALKSHOW_PANEL_SELECT`), best on every T6 dimension with the reference judges; both in the demo set; the variants first judged by the open judge re-judged (selection kept, punch-up removed, plan and memory not kept) |
