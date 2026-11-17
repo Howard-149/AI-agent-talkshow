@@ -139,6 +139,7 @@ async def _make_plan(data: TalkShowData, human_text: str) -> str:
             raw=True,
             temperature=0.0,
             max_tokens=160,
+            decision=True,
         )
     except Exception:
         logger.exception("uptake planner failed")
