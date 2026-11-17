@@ -36,7 +36,7 @@ def test_build_and_score_roundtrip():
 
 def test_parse_ref():
     ok = '```json\n{"audience":"A","interplay":"B","novelty":"A","persona":"A","entertainment":"B",' \
-         '"naturalness":"A","overall":"B","why":"x"}\n```'
+         '"naturalness":"A","host":"A","overall":"B","why":"x"}\n```'
     assert t6_dims.parse_ref(ok)["overall"] == "B"
     assert t6_dims.parse_ref('{"audience":"A"}') is None
     assert t6_dims.parse_ref("no json") is None

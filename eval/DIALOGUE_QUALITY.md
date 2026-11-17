@@ -390,6 +390,29 @@ On T6 (current demo set, Qwen panel; GPT-5.5 · Claude):
 - **Theo, the comedian.** He is the funniest, but he rarely answers the audience and invents the most specifics. He
   is not in the demo set.
 
+### Host card
+
+The host's think prompt was three sentences, and the host mostly restated what was just said ("That's a powerful
+image, Amy"). The host card (`TALKSHOW_HOST_CARD`) keeps the host neutral, gives it one move per line, and forbids
+restating and praise.
+- **First version.** It mostly questioned the audience member. The host improved, but the panel stopped talking to
+  each other, and the episode got worse overall.
+- **Second version (kept).** It hands the most interesting thing just said to the other panelist by name, and turns
+  to the audience only when they have been out of the conversation for a while.
+
+On T6, the current demo set with and without the card: Qwen panel, 5 topics × 3 reruns. Wins are out of comparisons
+made (GPT-5.5 · Claude); the T6 judge now has an eighth question about the host.
+
+| Dimension | Without | With the host card |
+| --- | --- | --- |
+| Panel reacts to each other | 3/13 · 1/14 | **10/13 · 13/14** |
+| Answers the audience | 4/13 · 5/14 | **9/13 · 9/14** |
+| Natural speech | 4/14 · 3/11 | **10/14 · 8/11** |
+| Host | 7/15 · 6/15 | 8/15 · 9/15 |
+| Overall | 4/13 · 0/10 | **9/13 · 10/10** |
+
+The demo set now includes the card. The demo set without it stays as `demo_host_v1`.
+
 ### Dev split (pilot)
 
 These are pilot numbers on the dev split, averaged over both judges, on a 0 to 100 scale.
@@ -467,6 +490,7 @@ With the fact pack, panelists say about 5 times more specifics than with the fas
 
 | Date | Change |
 | --- | --- |
+| 2026-11-17 | Host card (`TALKSHOW_HOST_CARD`) in the demo set; T6 judge asks about the host |
 | 2026-11-16 | Talk-show v2 persona cards for Ryan and Amy; they are the demo set's cards |
 | 2026-11-16 | Shared show frame (`TALKSHOW_SHOW_FRAME`) and candidate selection (`TALKSHOW_PANEL_SELECT`), best on every T6 dimension with the reference judges; both in the demo set; the variants first judged by the open judge re-judged (selection kept, punch-up removed, plan and memory not kept) |
 | 2026-11-15 | Line length cap (`TALKSHOW_MAX_SENTENCES`); no "Human guest" on air; T6 fact-pack fix; T6 judged by dimension with reference judges (GPT-5.5, Claude), open judge found unreliable for style; persona pairings; four variants tried and not kept |
