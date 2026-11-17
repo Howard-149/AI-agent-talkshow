@@ -22,16 +22,19 @@ roles:
       Sadness: MSP-PODCAST_2347_2359.wav
       Surprise: MSP-PODCAST_2421_1127.wav
   guest:
-    speaker: 130
+    speaker: 1115
     gender: Female
-    # 2026-11-17: re-picked by ear from the pick_refs.py shortlist (Amy's voice changed
-    # too much between moods); docs/project/tts-refs/picks/mypick.txt.
+    # 2026-11-17: speaker 130 sounded like a different person from mood to mood, even with
+    # clips re-picked by ear. 1115 ranked most consistent of the unheard female speakers
+    # (eval/msp_female_candidates.py; each mood's clip picked for campplus similarity to the
+    # speaker's Neutral), and her cloned lines stay closest to the same voice across moods
+    # (mean 0.91 vs 0.77 for 130); chosen by ear from an A/B of five voices.
     refs:
-      Neutral: MSP-PODCAST_0589_0780.wav
-      Happiness: MSP-PODCAST_0573_0387.wav
-      Anger: MSP-PODCAST_0597_0319.wav
-      Sadness: MSP-PODCAST_0580_0350.wav
-      Surprise: MSP-PODCAST_0581_0097.wav
+      Neutral: MSP-PODCAST_1825_0075.wav
+      Happiness: MSP-PODCAST_1825_0077.wav
+      Anger: MSP-PODCAST_1825_0195.wav
+      Sadness: MSP-PODCAST_1825_0009.wav
+      Surprise: MSP-PODCAST_1825_0002.wav
   commentator:
     speaker: 94
     gender: Male
