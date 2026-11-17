@@ -41,7 +41,7 @@ def _client(cfg: LocaleLLMConfig, content: str = "[heard]: hi\n[reply]: hello") 
 CLEAN_ENV = {
     k: v
     for k, v in os.environ.items()
-    if not k.startswith(("OPENAI_USE_", "OPENAI_REASONING", "TALKSHOW_TEXT_LLM_"))
+    if not k.startswith(("OPENAI_USE_", "OPENAI_REASONING", "TALKSHOW_TEXT_LLM_", "TALKSHOW_DECISIONS_"))
 }
 
 
@@ -67,6 +67,22 @@ class TextEndpointTests(unittest.TestCase):
         self.assertNotIn("max_tokens", payload)
         self.assertNotIn("temperature", payload)
         self.assertEqual(headers["Authorization"], "Bearer sk-test")
+
+    def test_mode2_decisions_stay_on_vllm(self) -> None:
+        client, post = _client(_cfg(text_base_url=OAI, text_model="gpt-5.5", text_api_key="sk-test"))
+        asyncio.run(client.complete_text("who speaks?", raw=True, decision=True, reasoning_effort="low"))
+        url, payload, headers = post.call_args.args[0], post.call_args.kwargs["json"], post.call_args.kwargs["headers"]
+        self.assertEqual(url, f"{VLLM}/chat/completions")
+        self.assertEqual(payload["model"], "google/gemma-4-E4B-it")
+        self.assertIn("max_tokens", payload)
+        self.assertNotIn("reasoning_effort", payload)
+        self.assertEqual(headers["Authorization"], "Bearer EMPTY")
+
+    def test_mode2_decisions_on_openai_when_opted_out(self) -> None:
+        client, post = _client(_cfg(text_base_url=OAI, text_model="gpt-5.5", text_api_key="sk-test"))
+        with patch.dict("os.environ", {"TALKSHOW_DECISIONS_ON_MAIN_LLM": "0"}):
+            asyncio.run(client.complete_text("who speaks?", raw=True, decision=True))
+        self.assertEqual(post.call_args.args[0], f"{OAI}/chat/completions")
 
     def test_mode2_n_samples_go_to_openai(self) -> None:
         client, post = _client(_cfg(text_base_url=OAI, text_model="gpt-5.5", text_api_key="sk-test"))

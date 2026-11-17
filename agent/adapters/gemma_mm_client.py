@@ -48,6 +48,14 @@ def _openai_flag(name: str, base_url: str) -> bool:
     return "api.openai.com" in base_url
 
 
+def decisions_on_main_llm() -> bool:
+    """Short structured calls (floor control, uptake plan) stay on the main (local) endpoint
+    when a separate text LLM is configured: each one is a serial step before the next line,
+    and a remote round trip costs 1-2 s apiece. TALKSHOW_DECISIONS_ON_MAIN_LLM=0 sends them
+    to the text endpoint too."""
+    return os.environ.get("TALKSHOW_DECISIONS_ON_MAIN_LLM", "1").strip() != "0"
+
+
 def _takes_reasoning_effort(model: str) -> bool:
     return model.strip().lower().startswith("gpt-6-luna")
 
@@ -62,8 +70,11 @@ class GemmaMMClient:
         self._mm_warmed = False
         self._output_logger: ModelOutputLogger | None = None
 
-    def _text_endpoint(self) -> tuple[str, str, str]:
-        """(base_url, model, api_key) for text calls; plain configs without text_* use the main endpoint."""
+    def _text_endpoint(self, decision: bool = False) -> tuple[str, str, str]:
+        """(base_url, model, api_key) for text calls; plain configs without text_* use the main endpoint.
+        ``decision`` calls use the main endpoint unless TALKSHOW_DECISIONS_ON_MAIN_LLM=0."""
+        if decision and decisions_on_main_llm():
+            return self._cfg.base_url, self._cfg.model, self._cfg.api_key
         endpoint = getattr(self._cfg, "text_endpoint", None)
         if endpoint is not None:
             return endpoint
@@ -234,6 +245,7 @@ class GemmaMMClient:
         max_tokens: int | None = None,
         output_role: str | None = None,
         reasoning_effort: str | None = None,
+        decision: bool = False,
     ) -> str:
         """Text-only turn with optional prior conversation as chat messages.
 
@@ -244,6 +256,9 @@ class GemmaMMClient:
         ``reasoning_effort`` is sent only to models that take it: callers pass "low"
         for decisions (floor control, reactions, appraisals) and "none" for plain
         spoken output. ``OPENAI_REASONING_EFFORT`` overrides it for every call.
+
+        ``decision=True`` marks a short structured call (floor control, uptake plan) that
+        stays on the main endpoint; see ``decisions_on_main_llm``.
         """
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(
@@ -251,7 +266,7 @@ class GemmaMMClient:
             history_messages=history_messages,
             tail_user=user_text,
         )
-        base_url, model, api_key = self._text_endpoint()
+        base_url, model, api_key = self._text_endpoint(decision)
         token_limit = max_tokens or self._cfg.max_tokens
         openai_reasoning = _openai_flag("OPENAI_USE_MAX_COMPLETION_TOKENS", base_url)
         if openai_reasoning:

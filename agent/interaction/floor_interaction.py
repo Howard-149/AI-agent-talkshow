@@ -412,6 +412,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             max_tokens=192,
             temperature=0.0,
             reasoning_effort="low",
+            decision=True,
         )
         result = _json_object(raw)
         decision = result.get("decision") if result else None
@@ -570,6 +571,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             max_tokens=320,
             temperature=0.0,
             reasoning_effort="low",
+            decision=True,
         )
         result = _json_object(raw) or {}
         decision = result.get("decision")
