@@ -102,7 +102,7 @@ LIVE_FLAG_NAMES = ("TALKSHOW_UPTAKE_PLANNER", "TALKSHOW_PANEL_SCAFFOLD_FIX", "TA
                    "TALKSHOW_PERSONA_LIBRARY", "TALKSHOW_PERSONA_LIBRARY_NAMES", "TALKSHOW_PERSONA_COMMENTATOR",
                    "TALKSHOW_PERSONA_GUEST", "TALKSHOW_OPENER_VARIETY", "TALKSHOW_FLOOR_JEV",
                    "TALKSHOW_FLOOR_JEV_MIN_CONF", "TALKSHOW_MAX_SENTENCES", "TALKSHOW_PANEL_SELECT",
-                   "TALKSHOW_SHOW_FRAME")
+                   "TALKSHOW_SHOW_FRAME", "TALKSHOW_HOST_CARD")
 # Think & Action context variants of the panelist's think prompt (agent/panel/think_prompt.py), on top of FAST.
 CONTEXT_FLAGS = {"lean": {"TALKSHOW_THINK_LEAN": "1"}, "persona": {"TALKSHOW_THINK_PERSONA_NEAR": "1"},
                  "focus": {"TALKSHOW_THINK_FOCUS": "1"}}
@@ -266,3 +266,8 @@ for _name, (_c, _g) in {"demo_cards_v2": ("ryan_skeptic_v2", "amy_warm_v2"),
 # audience and become much more entertaining and natural than the first cards (eval/DIALOGUE_QUALITY.md).
 ARMS["demo_cards_v1"] = ARMS["demo"]
 ARMS["demo"] = ARMS["demo_cards_v2"]
+
+# The demo set uses the host card: with the reference judges on T6 it wins on every dimension, the panel reacting
+# to each other most of all (eval/DIALOGUE_QUALITY.md). The demo set without it stays as demo_host_v1.
+ARMS["demo_host_v1"] = ARMS["demo"]
+ARMS["demo"] = {**ARMS["demo_host_v1"], "live_flags": {**ARMS["demo_host_v1"]["live_flags"], "TALKSHOW_HOST_CARD": "1"}}

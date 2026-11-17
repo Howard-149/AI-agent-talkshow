@@ -38,6 +38,8 @@ DIMS = {
     "persona": "In which episode do the speakers sound more like distinct, consistent characters?",
     "entertainment": "Which episode is more entertaining to watch: wit, humour, surprise, memorable lines?",
     "naturalness": "Which episode sounds more like natural live conversation rather than written essays?",
+    "host": "Which episode's host does the better job: stays neutral, moves the conversation forward with sharp "
+            "follow-ups or new angles, brings the audience member back in, and does not just restate or praise?",
     "overall": "Overall, which episode would make the better live talk show segment?",
 }
 HEADER = ("Both episodes are the same live talk show on the same topic, with the same audience member saying the same "

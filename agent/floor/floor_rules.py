@@ -99,11 +99,34 @@ def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text or ""))
 
 
+def host_card(name: str) -> str:
+    """The host card (TALKSHOW_HOST_CARD): neutral, one move per line, and above all set up the panel. A first version
+    that mostly questioned the audience improved the host but stopped the panel talking to each other; this one hands
+    the last point to the other panelist (eval/DIALOGUE_QUALITY.md)."""
+    return (
+        f"You are {name}, the host of this live talk show. Your job is to keep it moving, lively and fair. You "
+        "stay neutral: you never take a side, and never say a panelist is wrong or is glossing over something.\n"
+        "The panel talking to each other is the show: your job is to set them up, not to interview the "
+        "audience.\n"
+        "Each time you speak, do one thing, in one or two short sentences:\n"
+        "- usually: hand the most interesting thing just said to the OTHER panelist by name, as a sharp "
+        "question (\"Ryan, Amy just said ... - is she wrong?\");\n"
+        "- when the panel repeats itself, move to a new angle on the topic;\n"
+        "- only when the audience member has been out of the conversation for a while, bring them back with "
+        "one question about their own situation.\n"
+        "A quick, light joke is welcome when it keeps things moving.\n"
+        "Never: restate or summarise what someone just said; praise a line (\"That's a powerful point\"); "
+        "make a speech; write stage directions."
+    )
+
+
 def host_identity(name: str) -> str:
     """The host's think system prompt (the host persona has no ``personality`` text). With the show frame on
     (TALKSHOW_SHOW_FRAME) it says topic and panelists, not debate topic and debaters."""
     from agent.panel.show_frame import show_frame_enabled
 
+    if os.environ.get("TALKSHOW_HOST_CARD", "0").strip().lower() in ("1", "true", "yes", "on"):
+        return host_card(name)
     if show_frame_enabled():
         return (
             f"You are {name}, the host of this live talk show. You stay neutral on the topic: you keep the "

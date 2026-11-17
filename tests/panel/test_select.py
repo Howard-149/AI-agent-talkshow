@@ -188,7 +188,7 @@ class ArmTests(unittest.TestCase):
             self.assertEqual(ARMS[arm]["live_flags"], {**v1, **extra})
             self.assertTrue(ARMS[arm]["fact_pack"])
         self.assertEqual(ARMS["demo_cards_v1"], ARMS["demo_select_frame"])
-        self.assertEqual(ARMS["demo"]["live_flags"], {**ARMS["demo_select_frame"]["live_flags"],
+        self.assertEqual(ARMS["demo_host_v1"]["live_flags"], {**ARMS["demo_select_frame"]["live_flags"],
                                                       "TALKSHOW_PERSONA_COMMENTATOR": "ryan_skeptic_v2",
                                                       "TALKSHOW_PERSONA_GUEST": "amy_warm_v2"})
         self.assertNotIn("TALKSHOW_PANEL_SELECT", v1)
