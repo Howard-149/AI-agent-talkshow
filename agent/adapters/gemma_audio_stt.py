@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import logging
 import os
@@ -238,11 +239,13 @@ class GemmaAudioSTT(stt.STT):
                     turn_log=data.turn_log,
                     room=data.room_name,
                 )
-            from agent.show.show_context import host_audio_user_hint
+            from agent.show.show_context import host_audio_system_prompt, host_audio_user_hint
 
             user_hint = host_audio_user_hint()
+            stt_system = host_audio_system_prompt()
         else:
             user_hint = None
+            stt_system = None
 
         if data.turn_log is not None:
             data.turn_log.log(
@@ -258,9 +261,16 @@ class GemmaAudioSTT(stt.STT):
         # as the start of the guest's speech.
         t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
-            wav, user_text=user_hint, history_messages=[], output_role="host"
+            wav,
+            user_text=user_hint,
+            history_messages=[],
+            output_role="host",
+            **({"system_prompt": stt_system, "temperature": 0.0} if stt_system else {}),
         )
         model_latency_s = time.monotonic() - t0
+        if stt_system and not parsed.heard and parsed.reply:
+            # The transcriber often drops the [heard]: tag: its whole output is the transcript.
+            parsed = dataclasses.replace(parsed, heard=parsed.reply)
 
         if is_noise_heard(parsed.heard):
             logger.info("GemmaAudioSTT: skip empty/noise heard=%r", parsed.heard[:60])
