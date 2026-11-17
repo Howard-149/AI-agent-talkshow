@@ -139,6 +139,68 @@ class VLLMBackend:
         return [strip_think(o.outputs[0].text) for o in outs]
 
 
+class OpenAIBackend:
+    """An OpenAI chat model as the panel model (``--model openai:<name>``): requests of a stage in parallel, no hidden
+    reasoning (reasoning_effort none), token usage summed in ``usage`` and appended per call to ``usage_path``.
+    Needs OPENAI_API_KEY in the environment."""
+
+    def __init__(self, model: str, workers: int = 16, usage_path: str = "") -> None:
+        import os
+
+        self.model = model
+        self.key = os.environ["OPENAI_API_KEY"]
+        self.workers = workers
+        self.usage = {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0}
+        self.usage_path = usage_path
+        self.temperature_ok = True
+
+    def _one(self, r: Request) -> str:
+        import json
+        import time
+        import urllib.error
+        import urllib.request
+
+        body = {"model": self.model, "messages": r.messages, "max_completion_tokens": max(r.max_tokens, 256),
+                "reasoning_effort": "none"}
+        if self.temperature_ok:
+            body["temperature"] = r.temperature
+        for attempt in range(5):
+            req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json",
+                                                  "Authorization": f"Bearer {self.key}"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    d = json.loads(resp.read())
+                u = d.get("usage") or {}
+                rec = {"calls": 1, "prompt_tokens": u.get("prompt_tokens", 0),
+                       "cached_tokens": (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+                       "completion_tokens": u.get("completion_tokens", 0)}
+                for k, v in rec.items():
+                    self.usage[k] += v
+                if self.usage_path:
+                    with open(self.usage_path, "a") as fh:
+                        fh.write(json.dumps({"kind": r.kind, **rec}) + "\n")
+                return d["choices"][0]["message"]["content"] or ""
+            except urllib.error.HTTPError as e:
+                msg = e.read().decode()[:300]
+                if "temperature" in msg and self.temperature_ok:
+                    self.temperature_ok = False
+                    body.pop("temperature", None)
+                    continue
+                time.sleep(3 * (attempt + 1))
+            except Exception:  # noqa: BLE001
+                time.sleep(3 * (attempt + 1))
+        return ""
+
+    def generate(self, reqs: list[Request]) -> list[str]:
+        from concurrent.futures import ThreadPoolExecutor
+
+        if not reqs:
+            return []
+        with ThreadPoolExecutor(self.workers) as ex:
+            return [strip_think(t) for t in ex.map(self._one, reqs)]
+
+
 # ------------------------------------------------------------------------------------------------ interface
 
 @dataclass

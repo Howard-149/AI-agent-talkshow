@@ -386,10 +386,16 @@ def generate(args: argparse.Namespace) -> Path:
         from eval.bench.systems import VLLMBackend
         from eval.hf_local import local_snapshot
 
-        model_path = local_snapshot(args.model)
-        if not (os.environ.get("VLLM_MODEL_PATH") or os.environ.get("VLLM_MODEL")):
-            os.environ["VLLM_MODEL_PATH"] = model_path  # the think path splits intervals with the model's tokenizer
-        backend = VLLMBackend(model_path, tp=args.tp, max_model_len=args.max_model_len, seed=args.seed)
+        if args.model.startswith("openai:"):
+            from eval.bench.systems import OpenAIBackend
+
+            Path(args.out).mkdir(parents=True, exist_ok=True)
+            backend = OpenAIBackend(args.model.split(":", 1)[1], usage_path=str(Path(args.out) / "usage.jsonl"))
+        else:
+            model_path = local_snapshot(args.model)
+            if not (os.environ.get("VLLM_MODEL_PATH") or os.environ.get("VLLM_MODEL")):
+                os.environ["VLLM_MODEL_PATH"] = model_path  # the think path splits intervals with the model's tokenizer
+            backend = VLLMBackend(model_path, tp=args.tp, max_model_len=args.max_model_len, seed=args.seed)
         model = args.model
     system = make_system(args.system, backend, args.arm)
     label = args.system if args.system == "plain" else f"{args.system}-{args.arm}"
