@@ -295,6 +295,20 @@ class SchedulingTests(unittest.TestCase):
         row = next(r for r in data.turn_log.rows if r["event"] == "pad_expression")
         self.assertEqual(row["arousal_before"], 0.5)
 
+    def test_expression_display_shows_the_label_the_line_is_spoken_with(self) -> None:
+        from agent.emotion.pad_pipeline import speaking_emotion
+
+        data = _FakeData()
+        data.role_pad["guest"] = (0.6, 0.5, 0.3)
+        data.role_emotion["guest"] = "Surprise"  # stale label from an earlier line
+        shown: list[dict] = []
+        with mock.patch.dict(os.environ, _SEPARATE), \
+                mock.patch.object(A, "_send_pad_state", shown.append):
+            A.relax_after_expression(data, "guest")
+            spoken = speaking_emotion(data, "guest")
+        self.assertEqual(shown[-1]["emotion"], spoken)
+        self.assertNotEqual(spoken, "Surprise")
+
     def test_disabled_without_loop_or_in_llm_mode(self) -> None:
         data = _FakeData()
         data.runtime = SimpleNamespace(gemma_client=_FakeClient({}))

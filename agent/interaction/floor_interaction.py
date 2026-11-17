@@ -1144,6 +1144,9 @@ class ThinkActionInteraction(TextOnlyInteraction):
         data.show_history.lines = kept
 
         self._restore(data, mark.end if full and mark.end is not None else mark.start)
+        from agent.emotion.appraisal import resync_pad_display
+
+        resync_pad_display(data)
         self._last_cue = cue if (full or prefix) else mark.prev
         decided = full and mark.end is not None
         # Resuming re-thinks on a line that was cut, or heard before its listeners decided.
