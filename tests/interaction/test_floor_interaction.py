@@ -830,6 +830,17 @@ class AVSpeechConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events, ["cut"])
         self.assertNotIn("prepared", lines[1])
 
+    async def test_the_show_closes_once(self) -> None:
+        self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
+        with self.fake_speech(0.01):
+            for _ in range(2):
+                cue = Cue("host", "Thanks for joining us.", "close_round")
+                await self.consumer.submit(self.data, cue)
+                self.consumer.close(cue, len(cue.text))
+                await self.consumer.drain()
+        self.assertEqual(self.spoken, ["Thanks for joining us."])
+        self.assertTrue(self.data.show_closed)
+
     async def test_cut_without_interrupter_sends_no_interrupt_event(self) -> None:
         self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
         emitted = AsyncMock()

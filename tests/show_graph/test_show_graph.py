@@ -313,6 +313,38 @@ class ModerationTests(unittest.TestCase):
 
 
 class LimitTests(unittest.TestCase):
+    def test_no_line_limit_by_default(self) -> None:
+        import os
+        from unittest import mock
+
+        act = FakeActuators(
+            floor=["guest"],
+            tags={"guest": ["commentator"] * 10, "commentator": ["guest"] * 10},
+            stop_after_lines=15,
+        )
+        with mock.patch.dict(os.environ, {"TALKSHOW_PANEL_MAX_TURNS": "0"}):
+            run(act, entry="panel")
+        kinds = [k for k, _ in act.kinds("speak")]
+        self.assertNotIn("close", kinds)
+        self.assertEqual(len(kinds), 15)
+
+    def test_wrap_up_closes_at_the_next_floor_decision(self) -> None:
+        act = FakeActuators(
+            floor=["guest"],
+            tags={"guest": ["commentator"] * 10, "commentator": ["guest"] * 10},
+        )
+        lines = {"n": 0}
+
+        def wrap_up_requested() -> bool:
+            lines["n"] = len(act.kinds("speak"))
+            return lines["n"] >= 3
+
+        act.wrap_up_requested = wrap_up_requested
+        final = run(act, entry="panel")
+        kinds = [k for k, _ in act.kinds("speak")]
+        self.assertEqual(kinds, ["panelist"] * 3 + ["close"])
+        self.assertEqual(final["outcome"], "close")
+
     def test_max_turns_closes_a_chain(self) -> None:
         import os
         from unittest import mock

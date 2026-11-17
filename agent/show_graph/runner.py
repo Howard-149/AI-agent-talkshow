@@ -43,7 +43,7 @@ async def run_beat(
         listen_role=listen_role,
         human_event=human_event,
         skip_open_floor=skip_open_floor,
-        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12")),
+        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "0")),
         max_moderations=int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8")),
         spoken_roles=spoken_roles,
         **act.snapshot(),
@@ -346,7 +346,7 @@ def start_show_session(
         session_id=f"{data.room_name or 'room'}:{int(time.time())}",
         hooks=LiveSessionHooks(session, data, controller),
         shutdown=data.shutdown_event,
-        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "12")),
+        max_turns=int(os.environ.get("TALKSHOW_PANEL_MAX_TURNS", "0")),
         max_moderations=int(os.environ.get("TALKSHOW_HOST_MODERATE_MAX_DEPTH", "8")),
     )
     data.show_session = show

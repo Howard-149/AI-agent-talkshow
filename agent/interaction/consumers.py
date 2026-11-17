@@ -437,6 +437,10 @@ class AVSpeechConsumer:
     async def _play(self, cue: Cue) -> None:
         from agent.session.session_handoff import speak_panel_line
 
+        if cue.step == "close_round" and getattr(self._data, "show_closed", False):
+            # Already closed (a goodbye in several pieces asks for the close more than once).
+            cue.playout_done.set()
+            return
         text = cue.text
         if cue.end is not None and cue.end < len(text):
             text = text[: cue.end].rstrip()
@@ -501,6 +505,8 @@ class AVSpeechConsumer:
         cut_by_script = cue.end is not None and cue.end < len(cue.text)
         if not cut_by_script and speech.done() and not speech.cancelled():
             cue.playout_ended_at = time.monotonic()
+            if cue.step == "close_round" and self._data is not None:
+                self._data.show_closed = True
         cue.playout_done.set()
         self._last = (cue, heard)
         if cut_by_script and cue.interrupted_by:

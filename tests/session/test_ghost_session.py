@@ -32,6 +32,11 @@ class ControlEventTests(unittest.TestCase):
     def test_parse_unknown_ignored(self) -> None:
         self.assertIsNone(parse_control_payload(b'{"type":"nope"}'))
 
+    def test_wrap_up_payload(self) -> None:
+        ev = parse_control_payload(b'{"type":"wrap_up"}')
+        assert ev is not None
+        self.assertEqual(ev.type, "wrap_up")
+
 
 class GhostGuardTests(unittest.TestCase):
     def test_allowed_default(self) -> None:

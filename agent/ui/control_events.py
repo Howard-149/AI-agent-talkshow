@@ -53,5 +53,7 @@ def parse_control_payload(raw: bytes) -> ControlEvent | None:
             text=str(data.get("text", "") or "").strip(),
             prefix=prefix if isinstance(prefix, dict) else None,
         )
+    if ev_type == "wrap_up":
+        return ControlEvent(type=ev_type)
     logger.debug("control_events: unknown type=%s", ev_type)
     return None
