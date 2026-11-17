@@ -19,7 +19,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from agent.emotion.state import (
     affect_descriptor,
@@ -61,6 +61,9 @@ class Utterance:
     # Lines spoken before this one, snapshotted when it was scheduled:
     # (role_id, speaker_label, text, procedural). Empty → read live history.
     context: tuple[tuple[str, str, str, bool], ...] = ()
+    # The show-history line this utterance is; a barge-in rollback that drops it
+    # discards its appraisal (the audience never heard it). None → always applied.
+    line: Any = None
 
 
 APPRAISAL_PROTOCOLS = ("reply", "exchange", "line")
@@ -356,6 +359,7 @@ _ui_tasks: set[asyncio.Task[None]] = set()
 
 
 PAD_DISPLAY_PENDING_MAX = 64
+PAD_DISPLAY_PLAYED_MAX = 8
 
 
 def pad_display_sync_enabled() -> bool:
@@ -390,6 +394,16 @@ def _send_pad_state(fields: dict[str, object]) -> None:
     task.add_done_callback(_ui_tasks.discard)
 
 
+def _pad_fields(data: TalkShowData, role: str) -> dict[str, object]:
+    from agent.emotion.role_pad import get_role_pad
+
+    return {
+        "role": role,
+        "pad": [round(float(x), 3) for x in get_role_pad(data, role)],
+        "emotion": get_role_emotion(data, role),
+    }
+
+
 def publish_pad_state(
     data: TalkShowData,
     role: str,
@@ -402,21 +416,17 @@ def publish_pad_state(
     ``source`` is the line (speaker, text) that caused the change. An AI line is
     written ahead of its audio, so its event waits for ``release_pad_display`` when
     that line starts playing; a human line has already been heard."""
-    from agent.emotion.role_pad import get_role_pad
-
-    fields: dict[str, object] = {
-        "role": role,
-        "pad": [round(float(x), 3) for x in get_role_pad(data, role)],
-        "emotion": get_role_emotion(data, role),
-    }
+    fields = _pad_fields(data, role)
     if feeling:
         fields["feeling"] = feeling
     pending = getattr(data, "pad_display_pending", None)
+    played = getattr(data, "pad_display_played", None) or []
     if (
         source is not None
         and source[0] not in ("", "human")
         and pending is not None
         and pad_display_sync_enabled()
+        and not any(_same_line(_line_key(*source), key) for key in played)
     ):
         pending.append((_line_key(*source), fields))
         while len(pending) > PAD_DISPLAY_PENDING_MAX:
@@ -438,10 +448,35 @@ def release_pad_display(data: TalkShowData, role: str, text: str) -> int:
     for _, fields in pending[: last + 1]:
         _send_pad_state(fields)
     del pending[: last + 1]
+    played = getattr(data, "pad_display_played", None)
+    if played is not None:
+        played.append(key)
+        del played[:-PAD_DISPLAY_PLAYED_MAX]
     return last + 1
 
 
+def resync_pad_display(data: TalkShowData) -> None:
+    """After a barge-in rollback: drop held changes (their lines were cut from the
+    script) and show every panelist's restored mood, i.e. where the audience is."""
+    pending = getattr(data, "pad_display_pending", None)
+    if pending is not None:
+        pending.clear()
+    try:
+        roles = ai_roles(data)
+    except AttributeError:  # no scenario (bare test data): nothing to show
+        return
+    for role in roles:
+        _send_pad_state(_pad_fields(data, role))
+
+
 # --- scheduling glue (replaced by a graph node later) ---------------------
+
+
+def utterance_dropped(data: TalkShowData, utt: Utterance) -> bool:
+    """True when a rollback removed ``utt``'s line from the show (never heard)."""
+    if utt.line is None:
+        return False
+    return not any(line is utt.line for line in data.show_history.lines)
 
 
 async def _appraise_chained(
@@ -454,6 +489,13 @@ async def _appraise_chained(
     if prev is not None and not prev.done():
         # Apply in utterance order per role; LLM calls themselves run in parallel.
         await asyncio.wait([prev])
+    if utterance_dropped(data, utt):
+        if data.turn_log is not None:
+            data.turn_log.log(
+                "pad_appraisal_dropped", role=role, speaker=utt.speaker, seq=utt.seq,
+                room=getattr(data, "room_name", "") or "",
+            )
+        return
     apply_appraisal(data, utt, result)
 
 
@@ -487,6 +529,11 @@ def relax_after_expression(
     p, a, d = get_role_pad(data, speaker)
     new_a = a * (1.0 - gamma)
     set_role_pad(data, speaker, (p, new_a, d))
+    # Map the relaxed PAD to its label now, so the display shows the label this line
+    # is spoken with (the TTS reads it right after) instead of the previous one.
+    from agent.emotion.pad_pipeline import speaking_emotion
+
+    speaking_emotion(data, speaker)
     if data.turn_log is not None:
         data.turn_log.log(
             "pad_expression",
@@ -519,10 +566,13 @@ def schedule_appraisals(data: TalkShowData, speaker: str, text: str) -> list[str
     except RuntimeError:
         return []
 
-    seq = len(data.show_history.lines)
+    lines = data.show_history.lines
+    seq = len(lines)
     text = text.strip()
+    last = lines[-1] if lines else None
+    own = last if last is not None and getattr(last, "role_id", None) == speaker else None
     utt = Utterance(
-        speaker=speaker, text=text, seq=seq, context=snapshot_context(data, text)
+        speaker=speaker, text=text, seq=seq, context=snapshot_context(data, text), line=own
     )
     listeners = appraisal_listeners(data, speaker)
     pending = data.pending_appraisals

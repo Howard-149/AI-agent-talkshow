@@ -20,7 +20,7 @@ class PadDisplaySyncTests(unittest.TestCase):
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.data = SimpleNamespace(pad_display_pending=[])
+        self.data = SimpleNamespace(pad_display_pending=[], pad_display_played=[])
 
     def roles(self) -> list[str]:
         return [fields["role"] for fields in self.sent]
@@ -56,10 +56,48 @@ class PadDisplaySyncTests(unittest.TestCase):
         appraisal.release_pad_display(self.data, "host", "Wow. That really puts the human")
         self.assertEqual(self.roles(), ["guest"])
 
+    def test_a_late_reaction_to_a_playing_line_shows_at_once(self) -> None:
+        line = ("guest", "Oh, I'm genuinely glad he landed somewhere better.")
+        appraisal.publish_pad_state(self.data, "guest", source=line)  # speaker relaxes
+        appraisal.release_pad_display(self.data, *line)  # line starts playing
+        appraisal.publish_pad_state(self.data, "host", feeling="relieved", source=line)
+        self.assertEqual(self.roles(), ["guest", "host"])
+        self.assertEqual(self.data.pad_display_pending, [])
+
+    def test_rollback_drops_changes_from_lines_never_heard(self) -> None:
+        dropped = ("host", "Oh, come on, obedience training is bleak, isn't it?")
+        appraisal.publish_pad_state(self.data, "guest", feeling="bitter", source=dropped)
+        self.data.scenario = SimpleNamespace(turn_control=SimpleNamespace(listen_role="host"))
+        with mock.patch(
+            "agent.panel.panel_context.panel_speaker_roles", lambda scenario: ["guest", "commentator"]
+        ):
+            appraisal.resync_pad_display(self.data)
+        self.assertEqual(self.data.pad_display_pending, [])
+        self.assertEqual(self.roles(), ["host", "guest", "commentator"])
+        self.assertNotIn("feeling", self.sent[1])
+        # The next line to play releases nothing from the dropped script.
+        self.assertEqual(appraisal.release_pad_display(self.data, *dropped), 0)
+
     def test_off_switch_shows_at_once(self) -> None:
         with mock.patch.dict("os.environ", {"TALKSHOW_PAD_DISPLAY_SYNC": "0"}):
             appraisal.publish_pad_state(self.data, "guest", source=("host", "A line written ahead."))
         self.assertEqual(self.roles(), ["guest"])
+
+
+class DroppedLineAppraisalTests(unittest.TestCase):
+    def test_appraisal_of_a_rolled_back_line_is_not_applied(self) -> None:
+        import asyncio
+
+        heard, cut = object(), object()
+        data = SimpleNamespace(show_history=SimpleNamespace(lines=[heard]), turn_log=None)
+        applied: list[str] = []
+        result = SimpleNamespace(role="guest")
+        with mock.patch.object(appraisal, "run_appraisal", mock.AsyncMock(return_value=result)), \
+                mock.patch.object(appraisal, "apply_appraisal", lambda d, u, r: applied.append(u.text)):
+            for line, text in ((heard, "heard"), (cut, "cut"), (None, "untracked")):
+                utt = appraisal.Utterance(speaker="host", text=text, line=line)
+                asyncio.run(appraisal._appraise_chained(data, "guest", utt, None))
+        self.assertEqual(applied, ["heard", "untracked"])
 
 
 if __name__ == "__main__":

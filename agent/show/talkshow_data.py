@@ -53,6 +53,8 @@ class TalkShowData:
     # pad_state UI events held until the line that caused them is heard
     # (agent/emotion/appraisal.py: publish_pad_state / release_pad_display).
     pad_display_pending: list = field(default_factory=list)
+    # Lines (role, text key) already playing: a late mood change they cause shows at once.
+    pad_display_played: list = field(default_factory=list)
     # Demand-driven delivery locales from live humans (default English).
     needed_locales: frozenset[str] = field(default_factory=lambda: frozenset({"en"}))
     # Explicit locale from talkshow/control set_locale (identity → locale).
