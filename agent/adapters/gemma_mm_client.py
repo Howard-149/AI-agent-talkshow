@@ -40,6 +40,14 @@ def _add_seed(payload: dict[str, Any]) -> None:
         payload["seed"] = seed
 
 
+def _openai_flag(name: str, base_url: str) -> bool:
+    """OPENAI_USE_* flag: "1"/"0" when set, otherwise on for the OpenAI API itself."""
+    raw = os.environ.get(name, "").strip()
+    if raw:
+        return raw == "1"
+    return "api.openai.com" in base_url
+
+
 def _takes_reasoning_effort(model: str) -> bool:
     return model.strip().lower().startswith("gpt-6-luna")
 
@@ -53,6 +61,13 @@ class GemmaMMClient:
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
         self._mm_warmed = False
         self._output_logger: ModelOutputLogger | None = None
+
+    def _text_endpoint(self) -> tuple[str, str, str]:
+        """(base_url, model, api_key) for text calls; plain configs without text_* use the main endpoint."""
+        endpoint = getattr(self._cfg, "text_endpoint", None)
+        if endpoint is not None:
+            return endpoint
+        return self._cfg.base_url, self._cfg.model, self._cfg.api_key
 
     def set_output_logger(self, output_logger: ModelOutputLogger) -> None:
         self._output_logger = output_logger
@@ -234,8 +249,9 @@ class GemmaMMClient:
             history_messages=history_messages,
             tail_user=user_text,
         )
+        base_url, model, api_key = self._text_endpoint()
         token_limit = max_tokens or self._cfg.max_tokens
-        openai_reasoning = os.environ.get("OPENAI_USE_MAX_COMPLETION_TOKENS") == "1"
+        openai_reasoning = _openai_flag("OPENAI_USE_MAX_COMPLETION_TOKENS", base_url)
         if openai_reasoning:
             # Reasoning models spend completion tokens on hidden reasoning first; the
             # small budgets sized for Gemma's visible output make them fail with 400.
@@ -243,20 +259,20 @@ class GemmaMMClient:
                 token_limit, int(os.environ.get("OPENAI_MIN_COMPLETION_TOKENS", "4096"))
             )
         payload: dict[str, Any] = {
-            "model": self._cfg.model,
+            "model": model,
             "messages": messages,
             ("max_completion_tokens" if openai_reasoning else "max_tokens"): token_limit,
         }
         effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() or (
-            reasoning_effort if _takes_reasoning_effort(self._cfg.model) else None
+            reasoning_effort if _takes_reasoning_effort(model) else None
         )
         if openai_reasoning and effort:
             payload["reasoning_effort"] = effort
-        if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
+        if not _openai_flag("OPENAI_USE_DEFAULT_SAMPLING", base_url):
             payload["temperature"] = 0.45 if temperature is None else temperature
             _add_seed(payload)
-        url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
-        headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
         hist_n = len(history_messages) if history_messages else 0
         logger.info(
             "Gemma text request → %s persona=%s history_msgs=%d",
@@ -269,7 +285,7 @@ class GemmaMMClient:
             logger.error(
                 "Gemma text HTTP %s model=%s body=%.500s",
                 resp.status_code,
-                self._cfg.model,
+                model,
                 resp.text,
             )
         resp.raise_for_status()
@@ -302,32 +318,33 @@ class GemmaMMClient:
         Used by best-of-N panel drafting (TALKSHOW_PANEL_BEST_OF); same payload as complete_text otherwise."""
         system = system_prompt if system_prompt is not None else self._system_prompt
         messages = self._build_messages(system, history_messages=history_messages, tail_user=user_text)
+        base_url, model, api_key = self._text_endpoint()
         token_limit = max_tokens or self._cfg.max_tokens
-        openai_reasoning = os.environ.get("OPENAI_USE_MAX_COMPLETION_TOKENS") == "1"
+        openai_reasoning = _openai_flag("OPENAI_USE_MAX_COMPLETION_TOKENS", base_url)
         if openai_reasoning:
             token_limit = max(
                 token_limit, int(os.environ.get("OPENAI_MIN_COMPLETION_TOKENS", "4096"))
             )
         payload: dict[str, Any] = {
-            "model": self._cfg.model,
+            "model": model,
             "messages": messages,
             ("max_completion_tokens" if openai_reasoning else "max_tokens"): token_limit,
             "n": int(n),
         }
         effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip() or (
-            reasoning_effort if _takes_reasoning_effort(self._cfg.model) else None
+            reasoning_effort if _takes_reasoning_effort(model) else None
         )
         if openai_reasoning and effort:
             payload["reasoning_effort"] = effort
-        if os.environ.get("OPENAI_USE_DEFAULT_SAMPLING") != "1":
+        if not _openai_flag("OPENAI_USE_DEFAULT_SAMPLING", base_url):
             payload["temperature"] = 0.45 if temperature is None else temperature
             _add_seed(payload)
-        url = f"{self._cfg.base_url.rstrip('/')}/chat/completions"
-        headers = {"Authorization": f"Bearer {self._cfg.api_key}"}
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
         logger.info("Gemma text request (n=%d) → %s persona=%s", n, url, self.active_persona_id)
         resp = await self._post(url, payload, headers)
         if resp.status_code >= 400:
-            logger.error("Gemma text HTTP %s model=%s body=%.500s", resp.status_code, self._cfg.model, resp.text)
+            logger.error("Gemma text HTTP %s model=%s body=%.500s", resp.status_code, model, resp.text)
         resp.raise_for_status()
         out = []
         for ch in resp.json()["choices"]:
