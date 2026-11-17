@@ -88,7 +88,10 @@ export function TalkshowRoom(props: {
         dtx: false,
         red: !e2eeEnabled,
       },
-      adaptiveStream: true,
+      // Off: with no tile showing the shared avatar track (a cut line hands off before the
+      // next speaker's tile mounts), adaptiveStream pauses it, and the next tile shows the
+      // previous speaker's last frame until a keyframe arrives (seconds, on 11/17).
+      adaptiveStream: false,
       dynacast: true,
       e2ee: e2eeEnabled
         ? {

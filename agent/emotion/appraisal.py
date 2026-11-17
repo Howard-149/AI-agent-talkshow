@@ -309,6 +309,8 @@ async def run_appraisal(
                 )
             ),
             reasoning_effort="low",
+            # A short structured call the reply waits on: stays on the local LLM in mode 2.
+            decision=True,
         )
     except Exception as exc:  # network / vLLM hiccup: keep the show going
         logger.exception("pad appraisal failed role=%s", role)
