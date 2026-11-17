@@ -768,6 +768,68 @@ class AVSpeechConsumerTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
         emitted.assert_awaited_once_with("guest", "commentator", heard_text="one two")
 
+    async def cut_in(self, overlap: str) -> tuple[list, list, Mock, Mock]:
+        """Amy is cut by Ryan mid-line; returns (kwargs of each spoken line, events, the
+        prepare mock, the tail player)."""
+        self.consumer = AVSpeechConsumer(self.session, words_per_sec=20.0)
+        lines: list[dict] = []
+        events: list[str] = []
+        self.session.interrupt = Mock(side_effect=lambda **_: events.append("cut"))
+
+        async def speak_panel_line(session, data, *, speak_role, text, **kw):
+            lines.append({"role": speak_role, **kw})
+            self.consumer._on_agent_state(SimpleNamespace(new_state="speaking"))
+            await asyncio.sleep(10 if speak_role == "guest" else 0.01)
+
+        async def prepare(data, **kw):
+            events.append(f"prepare:{kw['speak_role']}")
+            kw["before_bake"]()
+            await asyncio.sleep(0.1)
+            events.append("ready")
+            return "PREPARED"
+
+        prepare_mock = Mock(side_effect=prepare)
+        play_tail = Mock()
+        self.consumer._play_tail = play_tail
+        abandon = Mock()
+        self.data.now_playing = ("guest", b"", 24000, time.monotonic(), abandon)
+        with (
+            patch.dict(os.environ, {"TALKSHOW_CUT_OVERLAP_S": overlap}),
+            patch("agent.session.session_handoff.speak_panel_line", speak_panel_line),
+            patch("agent.session.session_handoff.prepare_line_start", prepare_mock),
+            patch("agent.session.session_handoff.handover_tail", Mock(return_value=("guest", b"t", 24000))),
+            patch("agent.ui.ui_events.emit_interrupt", AsyncMock()),
+        ):
+            amy = Cue("guest", "one two three four five six seven eight", "s")
+            await self.consumer.submit(self.data, amy)
+            while not lines:
+                await asyncio.sleep(0.01)
+            amy.interrupted_by = "commentator"
+            ryan = Cue("commentator", "Hold on. That is not right.", "r")
+            await self.consumer.submit(self.data, ryan)
+            self.consumer.close(amy, len("one two"))
+            self.consumer.close(ryan, len(ryan.text))
+            await asyncio.wait_for(self.consumer.drain(), timeout=3)
+        self.abandon = abandon
+        return lines, events, prepare_mock, play_tail
+
+    async def test_cut_speaker_talks_on_until_the_interrupter_is_ready(self) -> None:
+        lines, events, prepare, play_tail = await self.cut_in("0.8")
+        # Ryan's first sentence is prepared while Amy still talks; she is cut only then,
+        # her next words fading out under him, and his line plays what was prepared.
+        self.assertEqual(events, ["prepare:commentator", "ready", "cut"])
+        self.abandon.assert_called_once()  # her render stopped before his bake
+        play_tail.assert_called_once_with("guest", b"t", 24000)
+        self.assertEqual([line["role"] for line in lines], ["guest", "commentator"])
+        self.assertEqual(lines[1].get("prepared"), "PREPARED")
+
+    async def test_no_overlap_cuts_at_once(self) -> None:
+        lines, events, prepare, play_tail = await self.cut_in("0")
+        prepare.assert_not_called()
+        play_tail.assert_not_called()
+        self.assertEqual(events, ["cut"])
+        self.assertNotIn("prepared", lines[1])
+
     async def test_cut_without_interrupter_sends_no_interrupt_event(self) -> None:
         self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
         emitted = AsyncMock()

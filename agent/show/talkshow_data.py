@@ -55,6 +55,9 @@ class TalkShowData:
     pad_display_pending: list = field(default_factory=list)
     # Lines (role, text key) already playing: a late mood change they cause shows at once.
     pad_display_played: list = field(default_factory=list)
+    # The sentence chunk on air: (role, pcm, sample_rate, monotonic start, abandon_rest).
+    # A cut-in hands over from it with a short overlap (AVSpeechConsumer._hand_over).
+    now_playing: tuple | None = None
     # Demand-driven delivery locales from live humans (default English).
     needed_locales: frozenset[str] = field(default_factory=lambda: frozenset({"en"}))
     # Explicit locale from talkshow/control set_locale (identity → locale).
