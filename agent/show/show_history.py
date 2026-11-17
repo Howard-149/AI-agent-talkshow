@@ -66,6 +66,24 @@ def asks_human(text: str) -> bool:
     return re.search(rf"\b{re.escape(_human_name)}\b", text) is not None
 
 
+def names_human(text: str) -> bool:
+    """A line that names the human guest ("Howard, I'd love to hear you on that."), question or not."""
+    import re
+
+    return bool(_human_name) and re.search(rf"\b{re.escape(_human_name)}\b", text or "") is not None
+
+
+def unanswered_human_calls(lines: list[Any], host_role: str) -> int:
+    """Host lines that named the human guest since the human last spoke."""
+    count = 0
+    for line in reversed(lines):
+        if line.role_id == "human":
+            break
+        if line.role_id == host_role and names_human(line.text):
+            count += 1
+    return count
+
+
 _LABEL_VOCATIVE = re.compile(r"(^|(?<=[.!?]\s))\[?\s*(?:the\s+)?human\s+guest\s*\]?\s*[,:\u2014-]\s*(\w)",
                              re.IGNORECASE)
 _LABEL_ANY = re.compile(r"\[\s*(?:the\s+)?human\s+guest\s*\]|\b(?:the\s+)?human\s+guest\b", re.IGNORECASE)

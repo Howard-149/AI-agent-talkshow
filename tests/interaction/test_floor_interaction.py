@@ -1269,3 +1269,111 @@ class OpeningAwaitHumanTests(FloorInteractionTestCase):
         )
         outcome = await interaction.arbitrate_free(data, candidates=[], history=data.show_history, interval=0)
         self.assertEqual(outcome.host_strategy, "reframe")
+
+
+class QuietGuestTests(FloorInteractionTestCase):
+    """After two host calls the guest let pass, the host hands the floor to a panelist."""
+
+    INVITE_HUMAN = (
+        '{"decision": "host_fallback", "selected_role": "host", '
+        '"reason_code": "no_suitable_candidate", "reason": "nobody applied", '
+        '"host_fallback": {"strategy": "invite", "target": "human", '
+        '"instruction": "Ask Howard again."}}'
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        from agent.show.show_history import set_human_name
+
+        set_human_name("Howard")
+        self.addCleanup(set_human_name, None)
+
+    def show(self, data, *lines):
+        for role, text in lines:
+            data.show_history.append(role, text)
+
+    async def arbitrate(self, interaction, data, candidates=()):
+        with patch("agent.config.load_persona_name", lambda role: {"guest": "Amy", "commentator": "Ryan",
+                                                                    "host": "Claire", "human": "Howard"}[role]):
+            return await interaction.arbitrate_free(
+                data, candidates=list(candidates), history=data.show_history, interval=0
+            )
+
+    def test_counts_host_calls_since_the_human_spoke(self) -> None:
+        from agent.show.show_history import unanswered_human_calls
+
+        interaction, _consumer, data = self.make()
+        self.show(
+            data,
+            ("host", "Howard, what happened?"),
+            ("human", "They fired my mentor."),
+            ("host", "Howard, how did that feel?"),
+            ("guest", "That sounds awful."),
+            ("host", "Howard, I'd love to hear you on that."),
+        )
+        self.assertEqual(unanswered_human_calls(data.show_history.lines, "host"), 2)
+
+    async def test_one_unanswered_call_may_still_invite_the_human(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.show(data, ("human", "Hi."), ("guest", "Hello."), ("host", "Howard, what do you think?"))
+        data.runtime.gemma_client.complete_text = AsyncMock(return_value=self.INVITE_HUMAN)
+        outcome = await self.arbitrate(interaction, data)
+        self.assertEqual((outcome.host_strategy, outcome.host_target), ("invite", "human"))
+
+    async def test_after_two_calls_the_host_invites_a_panelist(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.show(
+            data,
+            ("human", "Hi."),
+            ("host", "Howard, what do you think?"),
+            ("guest", "I think it's cruel."),
+            ("host", "Howard, I'd really like to hear you on that."),
+        )
+        data.runtime.gemma_client.complete_text = AsyncMock(return_value=self.INVITE_HUMAN)
+        outcome = await self.arbitrate(interaction, data)
+        prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertIn("do NOT invite the human again", prompt)
+        self.assertEqual(outcome.host_strategy, "invite")
+        self.assertEqual(outcome.host_target, "commentator")  # Amy spoke last
+        self.assertIn("Ryan", outcome.host_instruction)
+        self.assertIn("do not address or question them", outcome.host_instruction)
+
+    async def test_host_candidate_calling_the_guest_is_dropped(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.show(
+            data,
+            ("human", "Hi."),
+            ("host", "Howard, what do you think?"),
+            ("host", "Howard, still with us?"),
+        )
+        interaction.actions = {
+            "host": Action("speak", CommunicativeIntent("invite", "ask", "human"), "Howard, one more time?"),
+            "guest": SPEAK,
+        }
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "speak", "selected_role": "guest", '
+            '"reason_code": "high_contribution", "reason": "ok"}'
+        )
+        outcome = await self.arbitrate(interaction, data, candidates=["host", "guest"])
+        prompt = data.runtime.gemma_client.complete_text.await_args.args[0]
+        self.assertNotIn("one more time", prompt)
+        self.assertEqual(outcome.selected_role, "guest")
+
+    async def test_close_is_kept(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.show(data, ("human", "Hi."), ("host", "Howard, thoughts?"), ("host", "Howard, anything?"))
+        data.runtime.gemma_client.complete_text = AsyncMock(
+            return_value='{"decision": "host_fallback", "selected_role": "host", '
+            '"reason_code": "discussion_complete", "reason": "done", '
+            '"host_fallback": {"strategy": "close", "target": null, "instruction": "Wrap up."}}'
+        )
+        outcome = await self.arbitrate(interaction, data)
+        self.assertEqual(outcome.host_strategy, "close")
+
+    async def test_limit_zero_turns_it_off(self) -> None:
+        interaction, _consumer, data = self.make()
+        self.show(data, ("human", "Hi."), ("host", "Howard, thoughts?"), ("host", "Howard, anything?"))
+        data.runtime.gemma_client.complete_text = AsyncMock(return_value=self.INVITE_HUMAN)
+        with patch.dict(os.environ, {"TALKSHOW_HUMAN_CALL_LIMIT": "0"}):
+            outcome = await self.arbitrate(interaction, data)
+        self.assertEqual(outcome.host_target, "human")

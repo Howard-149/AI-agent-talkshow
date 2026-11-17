@@ -59,6 +59,24 @@ from agent.session.text_only_interaction import TextOnlyInteraction
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_HUMAN_CALL_LIMIT = 2
+
+
+def human_call_limit() -> int:
+    """After this many host lines name a guest who stays silent, the host stops calling on
+    them and hands the floor to a panelist (TALKSHOW_HUMAN_CALL_LIMIT; 0 turns it off)."""
+    try:
+        return int(os.environ.get("TALKSHOW_HUMAN_CALL_LIMIT", DEFAULT_HUMAN_CALL_LIMIT))
+    except ValueError:
+        return DEFAULT_HUMAN_CALL_LIMIT
+
+
+def guest_gone_quiet(lines: list[Any], host_role: str) -> bool:
+    from agent.show.show_history import unanswered_human_calls
+
+    limit = human_call_limit()
+    return limit > 0 and unanswered_human_calls(lines, host_role) >= limit
+
 
 def _speaker_name(role: str) -> str:
     from agent.config import load_persona_name
@@ -452,6 +470,15 @@ class ThinkActionInteraction(TextOnlyInteraction):
             for role in candidates
             if role in self.actions and self.actions[role].decision == "speak"
         ]
+        from agent.show.show_history import names_human
+
+        quiet_guest = guest_gone_quiet(list(getattr(history, "lines", []) or []), host_role)
+        if quiet_guest:
+            # The guest let the last calls pass: no host line that calls on them again.
+            candidate_payload = [
+                item for item in candidate_payload
+                if not (item["role"] == host_role and names_human(item["content"] or ""))
+            ]
         candidate_roles = {item["role"] for item in candidate_payload}
         roster = _roster(self._floor_roles(data), host_role)
         self.rule_returned_role = None  # protection lasts for the handed-back line only
@@ -517,7 +544,12 @@ class ThinkActionInteraction(TextOnlyInteraction):
             f"Pending host invitation target (role ID): {invited_role!r}\n"
             f"Actual floor grants: {json.dumps(participant_counts, ensure_ascii=False)}\n"
             f"Consecutive fallbacks: {self.host_fallback_streak}\n"
-            f"Recent fallback history: {json.dumps(recent_fallbacks, ensure_ascii=False)}\n"
+            + (
+                "The human guest has not answered the host's last calls: do NOT invite "
+                "the human again; keep the panel talking (invite a panelist).\n"
+                if quiet_guest else ""
+            )
+            + f"Recent fallback history: {json.dumps(recent_fallbacks, ensure_ascii=False)}\n"
             'Return one JSON object ONLY. For speaker selection: '
             '{"decision":"speak", "selected_role":"exact candidate role ID", '
             '"reason_code":"directed_response|high_contribution|participation_balance", '
@@ -607,6 +639,22 @@ class ThinkActionInteraction(TextOnlyInteraction):
             if strategy == "invite" and target is None:
                 strategy = "reframe"
                 instruction = "Introduce a new concrete angle rather than repeating an unanswered invitation."
+            if quiet_guest and strategy != "close" and panel_roles:
+                # Hand the floor to the least-heard panelist instead of calling the guest again.
+                last_panelist = next(
+                    (line.role_id for line in reversed(history.lines) if line.role_id in panel_roles),
+                    None,
+                )
+                target = min(
+                    sorted(panel_roles),
+                    key=lambda role: (role == last_panelist, self.actual_floor_counts.get(role, 0)),
+                )
+                strategy = "invite"
+                instruction = (
+                    "The human guest has not answered your last questions: do not address or "
+                    f"question them now. Hand the conversation to {load_persona_name(target)} with a "
+                    "short, concrete question about what was just said."
+                )
             outcome = FloorOutcome(
                 "host_fallback",
                 selected_role=host_role,
