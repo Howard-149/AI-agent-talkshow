@@ -59,7 +59,9 @@ class ThinkRequestTests(_Env):
         self.assertIn("Current floor holder: Human guest (human).", msgs[-1]["content"])
         self.assertIn("Latest public interval: Amy, rents rose 40 percent here.\n", msgs[-1]["content"])
         self.assertTrue(msgs[-1]["content"].endswith("speak is valid only when free."))
-        self.assertEqual((req["temperature"], req["max_tokens"]), (0.2, 768))
+        from agent.interaction.floor_interaction import think_max_tokens
+
+        self.assertEqual((req["temperature"], req["max_tokens"]), (0.2, think_max_tokens()))
         self.assertEqual(req["speaker"], "human")
 
     def test_flags_reach_the_offline_prompt(self) -> None:

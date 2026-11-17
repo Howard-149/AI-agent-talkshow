@@ -219,6 +219,11 @@ async def entrypoint(ctx: JobContext) -> None:
 
     register_session_lifecycle(session, data, ctx.room, job_ctx=ctx)
 
+    from agent.interaction.speculate import HumanPartialTranscriber
+
+    # Partial transcripts of the human, so the panel thinks while they are still talking.
+    partial_transcriber = HumanPartialTranscriber(data, ctx.room, session)
+
     @session.on("speech_created")
     def _on_speech_created(ev) -> None:  # type: ignore[no-untyped-def]
         """Emit role_idle after each playout so chunked lines idle between sentences."""
@@ -244,6 +249,7 @@ async def entrypoint(ctx: JobContext) -> None:
             old_state=_state_name(getattr(ev, "old_state", "")),
             room=ctx.room.name,
         )
+        partial_transcriber.on_user_state(state)
         if state == "speaking":
             from agent.interaction import human_barge_in
 

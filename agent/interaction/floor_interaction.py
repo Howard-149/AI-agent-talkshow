@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal
 
@@ -60,6 +61,50 @@ from agent.session.text_only_interaction import TextOnlyInteraction
 logger = logging.getLogger(__name__)
 
 DEFAULT_HUMAN_CALL_LIMIT = 2
+
+
+THINK_FIELD_HINT = "private reflection, one or two short sentences"
+
+
+def think_brief() -> bool:
+    """TALKSHOW_THINK_BRIEF (default on): a short private reflection and a lower token cap.
+    The JSON a think call writes was most of its 4–5 s, even on the local Gemma (11/17)."""
+    return os.environ.get("TALKSHOW_THINK_BRIEF", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def think_max_tokens() -> int:
+    """400 on the local LLM; an OpenAI reasoning model counts its reasoning in the cap."""
+    on_main = not os.environ.get("TALKSHOW_TEXT_LLM_BASE_URL", "").strip()
+    return 400 if think_brief() and on_main else 768
+
+
+@dataclass
+class Thought:
+    """One role's think call, before it is recorded as that role's action."""
+
+    result: Any  # think_action.ThinkActionResult
+    candidates: list | None = None  # TALKSHOW_PANEL_SELECT samples, when on
+    samples: int = 1
+
+
+
+
+class _SilentResult:
+    """Think result for a listener who did not think (a speculation chose the responder)."""
+
+    def __init__(self) -> None:
+        self.action = Action("silent", None, None)
+        self.think = ""
+
+
+@dataclass(eq=False)
+class _Speculation:
+    """Think calls started on a partial human turn."""
+
+    text: str
+    listeners: list[str]
+    task: asyncio.Task
+    started: float = field(default_factory=time.monotonic)
 
 
 def human_call_limit() -> int:
@@ -136,6 +181,41 @@ def _index_of(lines: list[Any], line: Any) -> int | None:
     return next((i for i, candidate in enumerate(lines) if candidate is line), None)
 
 
+def _rolled_back(lines: list[Any], position: Any) -> tuple[Any, int, list[Any], Any] | None:
+    """History as the audience heard it at ``position`` (cue, chars heard), without
+    changing anything: (cue, heard, kept lines, copy of the cue's line cut to what was
+    heard or None). None when there is nothing to roll back."""
+    import dataclasses
+
+    cue, heard = position
+    while heard <= 0 and cue.mark is not None and cue.mark.prev is not None:
+        # Nothing of this cue was heard: the audience is at the end of the previous one.
+        cue = cue.mark.prev
+        heard = cue.end if cue.end is not None else len(cue.text)
+    mark = cue.mark
+    if mark is None:
+        return None
+    end = cue.end if cue.end is not None else len(cue.text)
+    full = heard >= end
+    prefix = cue.text[:heard].strip()
+    own = _index_of(lines, mark.line) if mark.line is not None else None
+    cut_line = None
+    if own is not None:
+        kept = lines[:own]
+        if full or prefix:
+            line = mark.line
+            if not full:
+                line = cut_line = dataclasses.replace(mark.line, text=prefix)
+            kept.append(line)
+        kept += [line for offset, line in mark.backchannels if full or offset <= heard]
+    elif mark.anchor is None:
+        kept = []
+    else:
+        anchor = _index_of(lines, mark.anchor)
+        kept = list(lines) if anchor is None else lines[: anchor + 1]
+    return cue, heard, kept, cut_line
+
+
 @dataclass(eq=False)
 class _Mark:
     """Generator checkpoint around one cue, for rolling back unheard script."""
@@ -155,6 +235,8 @@ _NOT_CHECKPOINTED = frozenset(
         "human_floor_pending",
         "_barge_in_cut_beat",
         "_rollback_to",
+        # Speculation runs on the human's turn, after the barge-in rollback point.
+        "_speculations",
         "_rethink",
         "_last_cue",
         "_human_speaking",
@@ -241,6 +323,8 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self._barge_in_cut_beat = False
         # Where the audience was when the human barged in; applied at the next safe point.
         self._rollback_to: Position | None = None
+        # Think calls already running on a partial human turn (newest last).
+        self._speculations: list[_Speculation] = []
         # A cut line to re-think on (speaker, heard prefix) when the show resumes.
         self._rethink: tuple[str, str] | None = None
         self._last_cue: Cue | None = None
@@ -1115,32 +1199,19 @@ class ThinkActionInteraction(TextOnlyInteraction):
         position, self._rollback_to = self._rollback_to, None
         if position is None:
             return
-        cue, heard = position
-        while heard <= 0 and cue.mark is not None and cue.mark.prev is not None:
-            # Nothing of this cue was heard: the audience is at the end of the previous one.
-            cue = cue.mark.prev
-            heard = cue.end if cue.end is not None else len(cue.text)
-        mark = cue.mark
-        if mark is None:
+        rolled = _rolled_back(data.show_history.lines, position)
+        if rolled is None:
             return
+        cue, heard, kept, cut_line = rolled
+        mark = cue.mark
         end = cue.end if cue.end is not None else len(cue.text)
         full = heard >= end
         prefix = cue.text[:heard].strip()
-        lines = data.show_history.lines
-        before = len(lines)
-        own = _index_of(lines, mark.line) if mark.line is not None else None
-        if own is not None:
-            kept = lines[:own]
-            if full or prefix:
-                if not full:
-                    mark.line.text = prefix
-                kept.append(mark.line)
-            kept += [line for offset, line in mark.backchannels if full or offset <= heard]
-        elif mark.anchor is None:
-            kept = []
-        else:
-            anchor = _index_of(lines, mark.anchor)
-            kept = lines if anchor is None else lines[: anchor + 1]
+        before = len(data.show_history.lines)
+        if cut_line is not None:
+            # Keep the same line object (marks find it by identity), now cut to what was heard.
+            mark.line.text = cut_line.text
+            kept = [mark.line if line is cut_line else line for line in kept]
         data.show_history.lines = kept
 
         self._restore(data, mark.end if full and mark.end is not None else mark.start)
@@ -1355,6 +1426,113 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self._cancel_release()
         self._take_floor(data)
 
+    # --- thinking ahead on a partial human turn (agent/interaction/speculate.py) ----
+
+    def speculate_on_partial(self, data: Any, partial: str) -> None:
+        """Every panelist starts thinking on what the human has said so far, against the
+        history as the audience heard it (script past the barge-in left out)."""
+        from agent.interaction.speculate import (
+            MIN_PARTIAL_WORDS,
+            likely_responder,
+            max_speculations,
+            one_role,
+            words,
+        )
+        from agent.show.show_history import ShowHistory
+
+        partial = partial.strip()
+        if len(words(partial)) < MIN_PARTIAL_WORDS:
+            return
+        if self._speculations and self._speculations[-1].text == partial:
+            return
+        lines = list(data.show_history.lines)
+        if self._rollback_to is not None:
+            rolled = _rolled_back(lines, self._rollback_to)
+            if rolled is not None:
+                lines = rolled[2]
+        history = ShowHistory(lines=list(lines))
+        history.append("human", partial)
+        listeners = [role for role in self._floor_roles(data) if role != "human"]
+        thinkers = listeners
+        if one_role():
+            host = data.scenario.turn_control.listen_role
+            recent = [line.role_id for line in lines]
+            thinkers = [likely_responder(partial, listeners, recent, host)]
+
+        async def run() -> dict[str, Thought]:
+            thoughts = await asyncio.gather(
+                *(
+                    self._think(
+                        data,
+                        role,
+                        history=history,
+                        speaker="human",
+                        interval_text=partial,
+                        visible_text=partial,
+                        checkpoint=1,
+                        floor_state="free",
+                    )
+                    for role in thinkers
+                )
+            )
+            return dict(zip(thinkers, thoughts))
+
+        spec = _Speculation(partial, listeners, asyncio.create_task(run(), name="speculate:think"))
+        self._speculations.append(spec)
+        while len(self._speculations) > max_speculations():
+            self._speculations.pop(0).task.cancel()
+        turn_log = getattr(data, "turn_log", None)
+        if turn_log is not None:
+            turn_log.log("speculate_start", room=data.room_name, words=len(words(partial)))
+
+    def drop_speculations(self) -> None:
+        for spec in self._speculations:
+            spec.task.cancel()
+        self._speculations = []
+
+    async def _speculated_thoughts(
+        self, data: Any, heard: str, listeners: list[str]
+    ) -> dict[str, Thought] | None:
+        """The newest speculation that covers ``heard``, awaited; None to think afresh."""
+        from agent.interaction.speculate import covers
+
+        specs, self._speculations = self._speculations, []
+        usable = []
+        for spec in reversed(specs):  # newest first
+            ok, gap = covers(spec.text, heard)
+            if ok and spec.listeners == listeners and not spec.task.cancelled():
+                usable.append((spec, gap))
+        # A finished one beats a newer one still thinking (11/17: waiting for the newest
+        # added 2–5 s); both cover the turn.
+        finished = [(spec, gap) for spec, gap in usable if spec.task.done() and not spec.task.exception()]
+        chosen, missing = (finished or usable or [(None, None)])[0]
+        for spec in specs:
+            if spec is not chosen:
+                spec.task.cancel()
+        turn_log = getattr(data, "turn_log", None)
+        if chosen is None:
+            if turn_log is not None and specs:
+                turn_log.log("speculate_miss", room=data.room_name, speculations=len(specs))
+            return None
+        t0 = time.monotonic()
+        try:
+            thoughts = await chosen.task
+        except (asyncio.CancelledError, Exception):
+            logger.exception("speculative think failed; thinking afresh")
+            return None
+        if turn_log is not None:
+            turn_log.log(
+                "speculate_hit",
+                room=data.room_name,
+                missing_words=missing,
+                waited_s=round(time.monotonic() - t0, 3),
+                ran_s=round(time.monotonic() - chosen.started, 3),
+            )
+        data.runtime.gemma_client.log_text_only_event(
+            "interval", "speculation used", partial=chosen.text, final=heard.strip()
+        )
+        return thoughts
+
     def human_turn_taken(self) -> None:
         """The show starts handling one submitted transcript."""
         self._human_turns_waiting = max(0, self._human_turns_waiting - 1)
@@ -1406,6 +1584,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         self._cancel_release()
         if self._human_speaking or self._human_turns_waiting:
             return False  # the human is still talking or another transcript is coming
+        self.drop_speculations()
         resume = self.human_floor_pending and self._barge_in_cut_beat
         self.human_floor_pending = False
         self._barge_in_cut_beat = False
@@ -1450,21 +1629,34 @@ class ThinkActionInteraction(TextOnlyInteraction):
             complete_content=heard.strip(),
         )
         self._final_interval = True
-        await asyncio.gather(
-            *(
-                self._think_and_act(
-                    data,
-                    role,
-                    history=history,
-                    speaker=speaker,
-                    interval_text=heard,
-                    visible_text=heard,
-                    checkpoint=1,
-                    floor_state="free",
-                )
-                for role in listeners
-            )
+        thoughts = (
+            await self._speculated_thoughts(data, heard, listeners) if speaker == "human" else None
         )
+        if thoughts is not None and not any(
+            t.result.action.decision == "speak" for t in thoughts.values()
+        ):
+            thoughts = None  # the speculated responder had nothing to say: everyone thinks
+        if thoughts is not None:
+            for role in listeners:
+                # Roles nobody thought for stay silent: the speculated responder answers.
+                thought = thoughts.get(role) or Thought(_SilentResult())
+                self._store_thought(data, role, thought, 1)
+        else:
+            await asyncio.gather(
+                *(
+                    self._think_and_act(
+                        data,
+                        role,
+                        history=history,
+                        speaker=speaker,
+                        interval_text=heard,
+                        visible_text=heard,
+                        checkpoint=1,
+                        floor_state="free",
+                    )
+                    for role in listeners
+                )
+            )
         candidates = [
             role
             for role in listeners
@@ -1801,6 +1993,32 @@ class ThinkActionInteraction(TextOnlyInteraction):
         checkpoint: int,
         floor_state: Literal["occupied", "free"],
     ) -> Action | None:
+        thought = await self._think(
+            data,
+            role,
+            history=history,
+            speaker=speaker,
+            interval_text=interval_text,
+            visible_text=visible_text,
+            checkpoint=checkpoint,
+            floor_state=floor_state,
+        )
+        return self._store_thought(data, role, thought, checkpoint)
+
+    async def _think(
+        self,
+        data: Any,
+        role: str,
+        *,
+        history: Any,
+        speaker: str,
+        interval_text: str,
+        visible_text: str,
+        checkpoint: int,
+        floor_state: Literal["occupied", "free"],
+    ) -> "Thought":
+        """One role's think call. Reads the show, changes no floor state (see
+        ``_store_thought``), so it can also run ahead on a partial human turn."""
         from agent.config import load_persona_name
         from agent.panel.panel_prompts import panelist_personality_block
         from agent.panel import think_prompt as tp
@@ -1901,7 +2119,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             f"{near + chr(10) + chr(10) if near and not extra else ''}"
             "JSON schema:\n"
             "{\n"
-            '  "think": "private reflection",\n'
+            f'  "think": "{THINK_FIELD_HINT if think_brief() else "private reflection"}",\n'
             '  "action": {\n'
             '    "decision": "silent | interrupt | speak",\n'
             '    "intent": {"type": "acknowledge | support | challenge | clarify | correct | contribute | answer | facilitate", '
@@ -1935,7 +2153,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             system_prompt=system_prompt,
             history_messages=(tp.lean_history(history) if lean else history).prior_messages(perspective=role),
             raw=True,
-            max_tokens=768,
+            max_tokens=think_max_tokens(),
             temperature=0.2,
             reasoning_effort="low",
         )
@@ -1955,7 +2173,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
             interval_text=interval_text,
             allow_backchannels=True,
         )
-        action = result.action
+        candidates = None
         if samples > 1:
             from agent.panel.select import candidate_contents
 
@@ -1964,10 +2182,18 @@ class ThinkActionInteraction(TextOnlyInteraction):
                                    allow_backchannels=True).action
                 for r in extra_raws
             ]
-            self.speak_candidates[role] = candidate_contents(action, extras)
+            candidates = candidate_contents(result.action, extras)
+        return Thought(result=result, candidates=candidates, samples=samples)
+
+    def _store_thought(self, data: Any, role: str, thought: "Thought", checkpoint: int) -> Action:
+        """Record one think call's result as ``role``'s current action."""
+        result = thought.result
+        action = result.action
+        if thought.candidates is not None:
+            self.speak_candidates[role] = thought.candidates
             data.runtime.gemma_client.log_text_only_event(
                 role, f"think candidates - interval {checkpoint}",
-                candidates=self.speak_candidates[role], samples=samples,
+                candidates=thought.candidates, samples=thought.samples,
             )
         self.actions[role] = action
         self.thoughts[role] = result.think
@@ -2016,7 +2242,7 @@ class ThinkActionInteraction(TextOnlyInteraction):
         from agent.panel.select import SAMPLE_TEMPERATURE
 
         client = data.runtime.gemma_client
-        kw = dict(system_prompt=system_prompt, history_messages=history_messages, max_tokens=768,
+        kw = dict(system_prompt=system_prompt, history_messages=history_messages, max_tokens=think_max_tokens(),
                   temperature=SAMPLE_TEMPERATURE, reasoning_effort="low")
         try:
             if hasattr(client, "complete_text_n"):
