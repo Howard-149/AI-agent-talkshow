@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
+import io
 import logging
 import os
 import time
 import uuid
+import wave
+from pathlib import Path
 
 from livekit import rtc
 from livekit.agents import stt
@@ -20,6 +24,28 @@ logger = logging.getLogger(__name__)
 
 _MIN_WAV_BYTES = int(os.environ.get("TALKSHOW_MIN_UTTERANCE_WAV_BYTES", "16000"))
 _MIN_RMS = float(os.environ.get("TALKSHOW_MIN_UTTERANCE_RMS", "180"))
+
+
+def _clip_info(wav: bytes, room: str | None) -> dict:
+    """Length and loudness of an utterance; with TALKSHOW_STT_DUMP_DIR set (debugging only,
+    never for a public demo: it keeps the visitor's voice) the clip is saved there too."""
+    try:
+        with wave.open(io.BytesIO(wav), "rb") as wf:
+            duration = wf.getnframes() / float(wf.getframerate() or 1)
+    except (wave.Error, EOFError):
+        duration = 0.0
+    info: dict = {"duration_s": round(duration, 2), "rms": round(_wav_rms(wav), 1)}
+    dump_dir = os.environ.get("TALKSHOW_STT_DUMP_DIR", "").strip()
+    if dump_dir:
+        try:
+            folder = Path(dump_dir) / (room or "no-room")
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{time.time():.3f}.wav"
+            path.write_bytes(wav)
+            info["dump"] = str(path)
+        except OSError as exc:
+            logger.warning("GemmaAudioSTT: dump failed: %s", exc)
+    return info
 
 
 def _wav_rms(wav_bytes: bytes) -> float:
@@ -134,7 +160,15 @@ class GemmaAudioSTT(stt.STT):
         language: NotGivenOr[str],
     ) -> stt.SpeechEvent:
         wav = _buffer_to_wav(buffer)
-        logger.info("GemmaAudioSTT: wav_bytes=%d active_role=%s", len(wav), getattr(self._talkshow_data, "active_role", "?"))
+        self._last_clip = _clip_info(wav, getattr(self._talkshow_data, "room_name", None))
+        logger.info(
+            "GemmaAudioSTT: wav_bytes=%d dur=%.2fs rms=%.0f active_role=%s dump=%s",
+            len(wav),
+            self._last_clip["duration_s"],
+            self._last_clip["rms"],
+            getattr(self._talkshow_data, "active_role", "?"),
+            self._last_clip.get("dump"),
+        )
 
         if len(wav) < _MIN_WAV_BYTES:
             logger.info(
@@ -205,11 +239,13 @@ class GemmaAudioSTT(stt.STT):
                     turn_log=data.turn_log,
                     room=data.room_name,
                 )
-            from agent.show.show_context import host_audio_user_hint
+            from agent.show.show_context import host_audio_system_prompt, host_audio_user_hint
 
             user_hint = host_audio_user_hint()
+            stt_system = host_audio_system_prompt()
         else:
             user_hint = None
+            stt_system = None
 
         if data.turn_log is not None:
             data.turn_log.log(
@@ -217,6 +253,7 @@ class GemmaAudioSTT(stt.STT):
                 room=data.room_name,
                 active_role=data.active_role,
                 panel_turn=panel_turn,
+                **getattr(self, "_last_clip", {}),
             )
 
         # No show history: it is a transcription, and the history can hold lines that were
@@ -224,9 +261,16 @@ class GemmaAudioSTT(stt.STT):
         # as the start of the guest's speech.
         t0 = time.monotonic()
         parsed = await self._client.complete_from_wav(
-            wav, user_text=user_hint, history_messages=[], output_role="host"
+            wav,
+            user_text=user_hint,
+            history_messages=[],
+            output_role="host",
+            **({"system_prompt": stt_system, "temperature": 0.0} if stt_system else {}),
         )
         model_latency_s = time.monotonic() - t0
+        if stt_system and not parsed.heard and parsed.reply:
+            # The transcriber often drops the [heard]: tag: its whole output is the transcript.
+            parsed = dataclasses.replace(parsed, heard=parsed.reply)
 
         if is_noise_heard(parsed.heard):
             logger.info("GemmaAudioSTT: skip empty/noise heard=%r", parsed.heard[:60])

@@ -82,6 +82,29 @@ class TextEndpointTests(unittest.TestCase):
         self.assertEqual(payload["model"], "google/gemma-4-E4B-it")
         self.assertEqual(headers["Authorization"], "Bearer EMPTY")
 
+    def test_transcription_uses_its_own_system_prompt(self) -> None:
+        from agent.show.show_context import host_audio_system_prompt
+
+        client, post = _client(_cfg(), content="What's your favorite sport?")
+        client.set_persona("host", "You are Claire, the host.")
+        parsed = asyncio.run(
+            client.complete_from_wav(b"RIFF", system_prompt=host_audio_system_prompt(), temperature=0.0)
+        )
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["messages"][0]["content"], host_audio_system_prompt())
+        self.assertNotIn("Claire", payload["messages"][0]["content"])
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(parsed.heard, "")  # no tag: the STT adapter falls back to the reply
+        self.assertEqual(parsed.reply, "What's your favorite sport?")
+
+    def test_default_audio_call_keeps_the_persona(self) -> None:
+        client, post = _client(_cfg())
+        client.set_persona("host", "You are Claire, the host.")
+        asyncio.run(client.complete_from_wav(b"RIFF"))
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["messages"][0]["content"], "You are Claire, the host.")
+        self.assertEqual(payload["temperature"], 0.5)
+
     def test_explicit_flag_overrides_openai_default(self) -> None:
         client, post = _client(_cfg(text_base_url=OAI, text_model="gpt-4.1", text_api_key="sk-test"))
         with patch.dict("os.environ", {"OPENAI_USE_DEFAULT_SAMPLING": "0"}):

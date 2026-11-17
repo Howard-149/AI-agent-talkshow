@@ -62,6 +62,20 @@ def host_after_human_card(scenario) -> str:
     ) + f"\nYour beat: 1–2 sentences to the ROOM; you may name a panelist ({panel})."
 
 
+TRANSCRIBE_SYSTEM_PROMPT = (
+    "You are a speech-to-text transcriber for a live talk show. You never answer, reply to, "
+    "or comment on what is said: if the speaker asks a question, you write the question down. "
+    "Output only what was said."
+)
+
+
+def host_audio_system_prompt() -> str:
+    """System prompt for transcribing the guest's mic turn. Not the host persona: with it,
+    Gemma answered a guest's question ("what's your favorite sport?") instead of writing it
+    down ("I'm a big fan of soccer.")."""
+    return TRANSCRIBE_SYSTEM_PROMPT
+
+
 def host_audio_user_hint() -> str:
     """Mic turn: transcribe the human's audio. Think & Action decides who answers, so no
     host reply is drafted here."""

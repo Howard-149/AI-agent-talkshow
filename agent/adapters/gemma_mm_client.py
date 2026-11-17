@@ -158,6 +158,8 @@ class GemmaMMClient:
         user_text: str | None = None,
         history_messages: list[dict[str, Any]] | None = None,
         output_role: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float = 0.5,
     ) -> ParsedTurn:
         b64 = base64.standard_b64encode(wav_bytes).decode("ascii")
         audio_url = f"data:audio/wav;base64,{b64}"
@@ -173,7 +175,7 @@ class GemmaMMClient:
             {"type": "text", "text": user_text},
         ]
         messages = self._build_messages(
-            self._system_prompt,
+            system_prompt if system_prompt is not None else self._system_prompt,
             history_messages=history_messages,
             tail_user=tail,
         )
@@ -182,7 +184,7 @@ class GemmaMMClient:
             "model": self._cfg.model,
             "messages": messages,
             "max_tokens": self._cfg.max_tokens,
-            "temperature": 0.5,
+            "temperature": temperature,
         }
         _add_seed(payload)
 
