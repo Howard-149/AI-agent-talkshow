@@ -317,6 +317,17 @@ class SchedulingTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TALKSHOW_EMOTION_SOURCE": "llm"}):
             self.assertEqual(A.schedule_appraisals(data, "guest", "hi"), [])
 
+    def test_appraisal_runs_on_the_local_llm(self) -> None:
+        # The reply after a human line waits on this call; in mode 2 the OpenAI round trip
+        # added ~3.5 s of silence (11/17), so it goes with the other decision calls.
+        data = _FakeData()
+        client = _FakeClient({})
+        data.runtime = SimpleNamespace(gemma_client=client)
+        utt = A.Utterance(speaker="human", text="hi", seq=0, context=A.snapshot_context(data, "hi"))
+        with mock.patch.dict(os.environ, _SEPARATE):
+            asyncio.run(A.run_appraisal(data, "guest", utt))
+        self.assertTrue(client.calls[0]["decision"])
+
 
 if __name__ == "__main__":
     unittest.main()
