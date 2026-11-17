@@ -8,7 +8,10 @@ Sadness, Happiness, …) is used for a turn with that emotion when present. A
 Synthesis goes through the CosyVoice sidecar (``COSYVOICE_SIDECAR_URL``) in instruct2
 mode: the reference sets the timbre, the emotion instruct sets the delivery. The
 sidecar reads the reference by path, so it must see the same file system (on Babel,
-point ``GHOST_VOICE_DIR`` at a shared copy). Results are cached per text, emotion and
+point ``GHOST_VOICE_DIR`` at a shared copy). When the sidecar runs elsewhere (a laptop
+reaching it through a tunnel), set ``GHOST_VOICE_REMOTE_DIR`` to the folder holding the
+same references on the sidecar's machine: the reference is still chosen and checked in
+``GHOST_VOICE_DIR``, but the sidecar is sent ``GHOST_VOICE_REMOTE_DIR/<same file name>``. Results are cached per text, emotion and
 reference in ``GHOST_VOICE_CACHE`` (default ``logs/ghost-voice-cache/``).
 """
 
@@ -17,9 +20,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("ghost_session")
 
@@ -63,6 +68,33 @@ def reference_wav(emotion: str = "") -> Path:
     return neutral
 
 
+def sidecar_reference_path(reference: Path) -> str:
+    """The path the sidecar opens: ``GHOST_VOICE_REMOTE_DIR/<name>`` when set (the
+    sidecar is on another machine), else the local file."""
+    remote = os.environ.get("GHOST_VOICE_REMOTE_DIR", "").strip().rstrip("/")
+    if remote:
+        return f"{remote}/{reference.name}"
+    return str(reference.resolve())
+
+
+def _sidecar_synth() -> Any:
+    """``agent.adapters.cosyvoice_client.synthesize_pcm_via_sidecar``. On a laptop without
+    the agents SDK the ``agent.adapters`` package ``__init__`` (LiveKit TTS adapters) fails
+    to import; the HTTP client itself only needs httpx, so load it without that init."""
+    try:
+        from agent.adapters import cosyvoice_client
+    except ImportError:
+        import importlib
+        import sys
+        import types
+
+        pkg = types.ModuleType("agent.adapters")
+        pkg.__path__ = [str(_REPO_ROOT / "agent" / "adapters")]
+        sys.modules["agent.adapters"] = pkg
+        cosyvoice_client = importlib.import_module("agent.adapters.cosyvoice_client")
+    return cosyvoice_client.synthesize_pcm_via_sidecar
+
+
 def read_wav(path: Path) -> Speech:
     with wave.open(str(path), "rb") as wf:
         if wf.getsampwidth() != 2:
@@ -101,21 +133,23 @@ async def speech_for_turn(text: str, *, emotion: str = "", audio: str = "", loca
             path = _REPO_ROOT / path
         return read_wav(path), path
 
-    from agent.adapters.cosyvoice_client import synthesize_pcm_via_sidecar
     from agent.emotion.tts import emotion_instruct
+
+    synthesize_pcm_via_sidecar = _sidecar_synth()
 
     reference = reference_wav(emotion)
     instruct = emotion_instruct(emotion=emotion or "Neutral", locale=locale)
     cached = cache_dir() / f"{_cache_key(text, emotion, reference, instruct)}.wav"
     if cached.is_file():
         return read_wav(cached), cached
+    t0 = time.monotonic()
     pcm, rate, _ = await synthesize_pcm_via_sidecar(
-        text=text, instruct=instruct, prompt_wav=str(reference.resolve()), mode="instruct2"
+        text=text, instruct=instruct, prompt_wav=sidecar_reference_path(reference), mode="instruct2"
     )
     speech = Speech(pcm, rate)
     write_wav(cached, speech)
     logger.info(
-        "ghost voice synthesized %.1fs emotion=%s ref=%s → %s",
-        speech.duration_s, emotion or "Neutral", reference.name, cached,
+        "ghost voice synthesized %.1fs of audio in %.1fs emotion=%s ref=%s → %s",
+        speech.duration_s, time.monotonic() - t0, emotion or "Neutral", reference.name, cached,
     )
     return speech, cached

@@ -4,6 +4,10 @@ Think & Action floor: the human never waits for a floor grant. A scripted turn c
 when to cut in (after how many agent lines, at a line's end or partway into it); a turn
 that doesn't waits for the panel to finish a beat (``--beat-panel`` / ``--quiet-sec``).
 
+A turn can also be written live (``generate: true``, live.py): an LLM writes the words
+from what the panel has said so far, early enough that the audio is ready when the
+script says to cut in.
+
 Turns are spoken as microphone audio — CosyVoice from a recorded reference (voice.py) —
 so the agent hears them through VAD, barge-in and STT like a real guest, and a recording
 has the guest's voice. Replay scripts (a ``prefix``) and ``--text-turns`` send the text
@@ -22,9 +26,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from dotenv import load_dotenv
+
+from eval.ghost_session.live import TranscriptLine
 
 # Protocol topics — keep in sync with agent.ui.control_events / ui_events.
 CONTROL_TOPIC = "talkshow/control"
@@ -55,6 +61,10 @@ class ScriptedTurn:
     emotion: str = ""  # CosyVoice delivery (Anger, Sadness, …); "" = Neutral
     audio: str = ""  # a recorded wav to play instead of synthesizing
     max_wait_sec: float = 180.0  # speak anyway after this long
+    # Live turn: no text; an LLM writes it from the show so far (live.py), with ``goal``
+    # as a hint for what this turn should do.
+    generate: bool = False
+    goal: str = ""
 
 
 @dataclass
@@ -66,6 +76,20 @@ class GhostScript:
     # Replay mode (worker needs TALKSHOW_GHOST_REPLAY=1): sent with the first turn;
     # the worker swaps in this history / mood state before handling the turn.
     prefix: dict[str, Any] | None = None
+    # Live turns: who the guest is and what the show is about (prompt context only).
+    persona: str = ""
+    topic: str = ""
+    # Reactive mode (reactive.py): after the turns above (seeds), the guest decides on
+    # every agent line whether to answer / react / cut in, within these limits.
+    reactive: bool = False
+    max_turns: int = 12  # all of his turns, seeds included (a cap; time ends a show)
+    min_lines_between_turns: int = 3  # spontaneous turns only (an answer when asked is always given)
+    max_minutes: float = 9.5  # from the first agent line
+    nudge_after_lines: int = 5  # quiet this many agent lines → he answers the next eligible one
+    # Ending (ending.py): a goodbye at the next gap, then wrap_up, then leave after the
+    # host's close. Always on in reactive mode; scripted runs opt in (or --wrap-up).
+    wrap_up: bool = False
+    goodbye: str = ""  # fixed goodbye text; default: LLM-written
 
 
 def _turn(item: Any) -> ScriptedTurn | None:
@@ -74,7 +98,8 @@ def _turn(item: Any) -> ScriptedTurn | None:
     if not isinstance(item, dict):
         return None
     text = str(item.get("text") or "").strip()
-    if not text:
+    generate = bool(item.get("generate")) and not text
+    if not text and not generate:
         return None
     when = str(item.get("when") or "line_end").strip()
     if when not in WHEN:
@@ -89,6 +114,8 @@ def _turn(item: Any) -> ScriptedTurn | None:
         emotion=str(item.get("emotion") or "").strip(),
         audio=str(item.get("audio") or "").strip(),
         max_wait_sec=float(item.get("max_wait_sec", 180.0)),
+        generate=generate,
+        goal=str(item.get("goal") or "").strip(),
     )
 
 
@@ -117,6 +144,15 @@ def load_script(path: Path) -> GhostScript:
         name=str(raw.get("name") or "Guest").strip() or "Guest",
         turns=turns,
         prefix=prefix,
+        persona=str(raw.get("persona") or "").strip(),
+        topic=str(raw.get("topic") or "").strip(),
+        reactive=bool(raw.get("reactive")),
+        max_turns=int(raw.get("max_turns", 12)),
+        min_lines_between_turns=max(0, int(raw.get("min_lines_between_turns", 3))),
+        max_minutes=float(raw.get("max_minutes", 9.5)),
+        nudge_after_lines=max(0, int(raw.get("nudge_after_lines", 5))),
+        wrap_up=bool(raw.get("wrap_up")),
+        goodbye=str(raw.get("goodbye") or "").strip(),
     )
 
 
@@ -226,12 +262,107 @@ class GhostRoomClient:
         self._segment_started: asyncio.Future[float] | None = None
         self._segment_done: asyncio.Event | None = None
         self.spoken: list[tuple[Path, float]] = []  # (wav, monotonic start) for the recording
+        # What was said on air, in order (None: a line the worker dropped unplayed).
+        self._lines: list[TranscriptLine | None] = []
+        self._line_at: dict[tuple[str, str], int] = {}  # open agent line → its index
+        # Per agent line, by its ordinal (1 = first agent line): where it is in the
+        # transcript, when it was announced / ended, and whether it was dropped unplayed.
+        self._ordinal_idx: dict[int, int] = {}
+        self._ordinal_of: dict[tuple[str, str], int] = {}
+        self.line_announced_at: dict[int, float] = {}
+        self.line_ended_at: dict[int, float] = {}
+        self.line_dropped: set[int] = set()
+        self.line_started_at: dict[int, float] = {}  # its audio started (role_active)
+        # Agent audio actually on air (role_active … role_idle); ``speaking`` also counts a
+        # line announced but not yet playing.
+        self.playing = False
+        self.playing_since = 0.0
+        self.guest_name = ""  # whose floor hand-overs a seed turn must not cut into
+        self.close_round_ended_at: float | None = None  # the host's closing line ended
+        self.roster_names: set[str] = set()  # panel names from panel_roster
+
+    def known_names(self) -> set[str]:
+        """Panel names: the roster plus everyone who has spoken (the guest excluded)."""
+        names = set(self.roster_names)
+        names.update(line.speaker for line in self.transcript if line.speaker and line.role != "human")
+        names.discard(self.guest_name)
+        return names
+
+    def agent_line(self, ordinal: int) -> TranscriptLine | None:
+        idx = self._ordinal_idx.get(ordinal)
+        return None if idx is None else self._lines[idx]
+
+    def transcript_through(self, ordinal: int) -> list[TranscriptLine]:
+        """The transcript up to and including agent line ``ordinal``."""
+        idx = self._ordinal_idx.get(ordinal)
+        if idx is None:
+            return self.transcript
+        return [line for line in self._lines[: idx + 1] if line is not None]
+
+    @property
+    def transcript(self) -> list[TranscriptLine]:
+        return [line for line in self._lines if line is not None]
+
+    def record_own_line(self, speaker: str, text: str) -> None:
+        """The guest's own turn (the worker's STT of it may differ; keep what was said)."""
+        if text.strip():
+            self._lines.append(TranscriptLine("human", speaker, text.strip()))
+
+    def _track_transcript(self, ev_type: str, role: str, ev: dict[str, Any]) -> None:
+        key = (role, str(ev.get("step") or ""))
+        if ev_type == "transcript":
+            if not role or role == "human":
+                return
+            text = str(ev.get("text") or "").strip()
+            if not text:
+                texts = ev.get("texts")
+                if isinstance(texts, dict):
+                    text = str(texts.get("en") or next(iter(texts.values()), "")).strip()
+            idx = self._line_at.get(key)
+            if idx is None:
+                ordinal = self.agent_lines + 1  # on_ui_event counts it right after this
+                self._ordinal_idx[ordinal] = len(self._lines)
+                self._ordinal_of[key] = ordinal
+                self.line_announced_at[ordinal] = time.monotonic()
+                self._line_at[key] = len(self._lines)
+                self._lines.append(TranscriptLine(role, str(ev.get("speaker") or ""), text, key[1]))
+            elif text and self._lines[idx] is not None:
+                old = self._lines[idx]
+                self._lines[idx] = TranscriptLine(old.role, old.speaker, text, old.step)
+        elif ev_type == "line_end":
+            idx = self._line_at.pop(key, None)
+            ordinal = self._ordinal_of.pop(key, None)
+            if ordinal is not None:
+                self.line_ended_at[ordinal] = time.monotonic()
+            if key[1] == "close_round":
+                self.close_round_ended_at = time.monotonic()
+            if idx is not None and ev.get("played") is False:
+                self._lines[idx] = None  # never heard: the UI drops it too
+                if ordinal is not None:
+                    self.line_dropped.add(ordinal)
+        elif ev_type == "interrupt":
+            heard = str(ev.get("heard_text") or "").strip()
+            if not role:
+                return
+            for idx in range(len(self._lines) - 1, -1, -1):
+                line = self._lines[idx]
+                if line is not None and line.role == role:
+                    if heard:
+                        self._lines[idx] = TranscriptLine(line.role, line.speaker, heard + " —", line.step)
+                    break
 
     # --- following the show -------------------------------------------------
 
     def on_ui_event(self, ev: dict[str, Any]) -> None:
         ev_type = str(ev.get("type") or "")
         role = str(ev.get("role") or "")
+        if ev_type in ("transcript", "line_end", "interrupt"):
+            self._track_transcript(ev_type, role, ev)
+        if ev_type == "panel_roster":
+            for member in ev.get("members") or []:
+                if isinstance(member, dict) and str(member.get("name") or "").strip():
+                    self.roster_names.add(str(member["name"]).strip())
+            return
         if ev_type == "transcript":
             self.transcript_seen.set()
             self.last_transcript_t = time.monotonic()
@@ -260,8 +391,16 @@ class GhostRoomClient:
             self.lines_ended += 1
         elif ev_type == "role_active":
             self.speaking = True
+            self.playing, self.playing_since = True, time.monotonic()
+            # The oldest open line of that role is the one that started playing.
+            open_lines = sorted(o for (r, _s), o in self._ordinal_of.items() if r == role)
+            for ordinal in open_lines:
+                if ordinal not in self.line_started_at:
+                    self.line_started_at[ordinal] = self.playing_since
+                    break
         elif ev_type == "role_idle":
             self.speaking = False
+            self.playing = False
             self.idle_since = time.monotonic()
         else:
             return
@@ -279,12 +418,29 @@ class GhostRoomClient:
                 pass
         return True
 
-    async def wait_for_turn(self, turn: ScriptedTurn, *, lines_before: int) -> str:
-        """Block until the script says the guest cuts in; returns why it did."""
+    async def wait_for_turn(
+        self,
+        turn: ScriptedTurn,
+        *,
+        lines_before: int,
+        on_target: Callable[[], None] | None = None,
+    ) -> str:
+        """Block until the script says the guest cuts in; returns why it did.
+
+        ``on_target`` runs as soon as the trigger line is announced (its transcript
+        comes before its audio): a live turn starts writing and synthesizing then."""
         deadline = time.monotonic() + turn.max_wait_sec
         target = lines_before + (turn.after_lines or 0)
         if not await self._until(lambda: self.agent_lines >= target, deadline):
             return "timeout"
+        handed_to = self._floor_handed_to(target) if turn.when == "line_end" else ""
+        if handed_to:
+            # The trigger line hands the floor to someone else: let them answer first,
+            # and cut in after their line instead.
+            logger.info("line %d hands the floor to %s — waiting for their line", target, handed_to)
+            target = await self._wait_for_line_by(handed_to, after=target, deadline=deadline)
+        if on_target is not None:
+            on_target()
         if turn.when == "mid_line":
             await asyncio.sleep(min(turn.after_sec, max(0.0, deadline - time.monotonic())))
             return "mid_line"
@@ -294,7 +450,7 @@ class GhostRoomClient:
             # floor stays quiet for a moment: the next line of the same beat (the host's
             # opening, then its invite) starts right after it, and a guest who waits for
             # the end doesn't talk over that one either.
-            if self.lines_ended < target:
+            if target not in self.line_ended_at and self.lines_ended < target:
                 return False
             return not self.speaking and time.monotonic() - self.idle_since >= LINE_END_QUIET_S
 
@@ -302,6 +458,40 @@ class GhostRoomClient:
             return "timeout"
         await asyncio.sleep(turn.after_sec)
         return "line_end"
+
+    def _floor_handed_to(self, ordinal: int) -> str:
+        from eval.ghost_session.addressing import addressing
+
+        line = self.agent_line(ordinal)
+        if line is None or not self.guest_name:
+            return ""
+        addr = addressing(line.text, self.guest_name, self.known_names())
+        return addr[6:] if addr.startswith("other:") else ""
+
+    async def _wait_for_line_by(
+        self, name: str, *, after: int, deadline: float, show_up_sec: float = 20.0
+    ) -> int:
+        """The ordinal of the first line by ``name`` after line ``after``, once it is
+        announced (``after`` itself if they don't speak within ``show_up_sec`` of it)."""
+
+        def theirs() -> int:
+            for o in range(after + 1, self.agent_lines + 1):
+                line = self.agent_line(o)
+                if line is not None and line.speaker.lower() == name.lower():
+                    return o
+            return 0
+
+        def ready() -> bool:
+            if theirs():
+                return True
+            ended = self.line_ended_at.get(after)
+            return ended is not None and time.monotonic() - ended >= show_up_sec
+
+        await self._until(ready, deadline)
+        found = theirs()
+        if not found:
+            logger.info("%s never took the floor — going ahead", name)
+        return found or after
 
     # --- room ---------------------------------------------------------------
 
@@ -343,6 +533,10 @@ class GhostRoomClient:
             topic=CONTROL_TOPIC,
         )
 
+    async def send_wrap_up(self) -> None:
+        """Ask the worker to close the show (host's close_round line next)."""
+        await self.publish_control({"type": "wrap_up"})
+
     async def inject_turn(self, text: str, *, prefix: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {"type": "ghost_human_turn", "text": text}
         if prefix:
@@ -380,8 +574,9 @@ class GhostRoomClient:
                 chunk = silence
             await self._source.capture_frame(rtc.AudioFrame(chunk, MIC_RATE, 1, samples))
 
-    async def say(self, speech: Any, wav: Path) -> None:
-        """Play ``speech`` (voice.Speech) on the mic in real time."""
+    async def say(self, speech: Any, wav: Path, *, on_start: Callable[[], None] | None = None) -> None:
+        """Play ``speech`` (voice.Speech) on the mic in real time; ``on_start`` runs when
+        its first frame goes out."""
         import numpy as np
 
         pcm = np.frombuffer(speech.pcm, dtype=np.int16).astype(np.float32)
@@ -394,6 +589,8 @@ class GhostRoomClient:
         self._segment_started, self._segment_done = loop.create_future(), asyncio.Event()
         self._pending.extend(pcm[i : i + 2 * samples] for i in range(0, len(pcm), 2 * samples))
         started = await self._segment_started
+        if on_start is not None:
+            on_start()
         await self._segment_done.wait()
         self.spoken.append((wav, started))
 
@@ -468,6 +665,121 @@ async def _wait_quiet(
     logger.warning("panel still talking after %.0fs — moving on", max_sec)
 
 
+@dataclass
+class LiveTurn:
+    """A generated turn, ready to say: its words, and audio unless sent as text."""
+
+    text: str
+    emotion: str
+    speech: tuple[Any, Path] | None
+    ready_t: float  # monotonic time it became ready
+
+
+async def prepare_live_turn(
+    client: GhostRoomClient,
+    writer: Any,
+    script: GhostScript,
+    turn: ScriptedTurn,
+    *,
+    idx: int,
+    voice: bool,
+) -> LiveTurn:
+    """Write the turn from the transcript so far, then synthesize it in the guest's voice."""
+    from eval.ghost_session.live import build_messages
+
+    lines = client.transcript
+    cut_line = None
+    if turn.when == "mid_line" and turn.after_lines and lines and lines[-1].role != "human":
+        cut_line, lines = lines[-1], lines[:-1]
+    messages = build_messages(
+        name=script.name,
+        persona=script.persona,
+        topic=script.topic,
+        transcript=lines,
+        goal=turn.goal,
+        cut_line=cut_line,
+        cut_after_sec=turn.after_sec,
+    )
+    gen = await writer.write_turn(messages)
+    logger.info(
+        "turn %d: generated in %.1fs (attempts=%d%s) emotion=%s words=%d %r",
+        idx, gen.seconds, gen.attempts, ", FALLBACK" if gen.fallback else "",
+        gen.emotion, len(gen.text.split()), gen.text,
+    )
+    speech = None
+    if voice:
+        from eval.ghost_session.voice import speech_for_turn
+
+        t0 = time.monotonic()
+        try:
+            speech = await speech_for_turn(gen.text, emotion=gen.emotion, locale=script.locale)
+        except Exception:
+            # Better a text turn than no turn: the show goes on without the voice.
+            logger.exception("turn %d: TTS failed — sending the text instead", idx)
+        else:
+            logger.info(
+                "turn %d: TTS %.1fs for %.1fs of audio", idx, time.monotonic() - t0, speech[0].duration_s
+            )
+    return LiveTurn(gen.text, gen.emotion, speech, time.monotonic())
+
+
+async def prepare_reaction(
+    writer: Any, script: GhostScript, messages: list[dict[str, str]], must_answer: bool, *, voice: bool
+) -> Any:
+    """Reactive mode: decide + write (one LLM call), then synthesize unless silent."""
+    from eval.ghost_session.reactive import PreparedReply
+
+    try:
+        r = await writer.react(messages, must_answer=must_answer)
+    except Exception:
+        logger.exception("reactive: LLM failed")
+        return PreparedReply("silent", "", "", None, 0.0, 0.0)
+    speech = None
+    t0 = time.monotonic()
+    if r.action != "silent" and voice:
+        from eval.ghost_session.voice import speech_for_turn
+
+        try:
+            speech = await speech_for_turn(r.text, emotion=r.emotion, locale=script.locale)
+        except Exception:
+            logger.exception("reactive: TTS failed — sending the text instead")
+    return PreparedReply(r.action, r.emotion, r.text, speech, r.seconds, time.monotonic() - t0)
+
+
+async def prepare_goodbye(
+    client: GhostRoomClient, writer: Any, script: GhostScript, *, voice: bool
+) -> tuple[str, Any]:
+    """The goodbye's words (script ``goodbye:``, else LLM-written) and its audio."""
+    from eval.ghost_session.live import (
+        GOODBYE_FALLBACK,
+        GOODBYE_MAX_WORDS,
+        build_goodbye_messages,
+        trim_words,
+    )
+
+    text, emotion = script.goodbye, "Happiness"
+    if not text:
+        text = GOODBYE_FALLBACK
+        if writer is not None:
+            gen = await writer.write_turn(
+                build_goodbye_messages(
+                    name=script.name, persona=script.persona, topic=script.topic,
+                    transcript=client.transcript,
+                )
+            )
+            if not gen.fallback:
+                text, emotion = trim_words(gen.text, GOODBYE_MAX_WORDS), gen.emotion
+    speech = None
+    if voice:
+        from eval.ghost_session.voice import speech_for_turn
+
+        try:
+            speech = await speech_for_turn(text, emotion=emotion, locale=script.locale)
+        except Exception:
+            logger.exception("goodbye: TTS failed — sending the text instead")
+    return text, speech
+
+
 def speaks_turns(script: GhostScript, *, text_turns: bool) -> bool:
     """Voice unless asked for text. A replay (prefix) compares runs that differ in one
     word, so it always sends the exact text: no TTS, no STT."""
@@ -486,6 +798,7 @@ async def run_ghost_session(
     quiet_sec: float = 90.0,
     stop_after_panel: int = 0,
     beat_panel: int = 0,
+    wrap_up: bool = False,
     record: bool = False,
     frontend_url: str = "http://localhost:3000",
     start_frontend: bool = False,
@@ -494,7 +807,10 @@ async def run_ghost_session(
 ) -> Path | None:
     """Turns with ``after_lines`` cut in when the script says; the others wait for the
     beat to end (``beat_panel`` panel lines before the first turn, then quiet or
-    ``beat_panel`` / ``stop_after_panel`` panel lines after each turn)."""
+    ``beat_panel`` / ``stop_after_panel`` panel lines after each turn).
+
+    Ending: reactive mode (or ``wrap_up``) ends with a goodbye, wrap_up and the host's
+    close (ending.py) instead of leaving after ``stop_after_panel`` lines."""
     from eval.ghost_session.record_frontend import (
         FrontendRecorder,
         RoomAudioTap,
@@ -509,11 +825,25 @@ async def run_ghost_session(
     if voice:
         from eval.ghost_session.voice import speech_for_turn
 
-        # Synthesize before joining, so a turn is never late because of TTS.
+        # Synthesize before joining, so a turn is never late because of TTS (live
+        # turns are synthesized during the show, as soon as their words are written).
         for i, turn in enumerate(turns):
+            if turn.generate:
+                continue
             speeches[i] = await speech_for_turn(
                 turn.text, emotion=turn.emotion, audio=turn.audio, locale=script.locale
             )
+
+    reactive = script.reactive and not opening_only
+    ending = reactive or ((wrap_up or script.wrap_up) and bool(turns))
+    if reactive and stop_after_panel:
+        logger.info("reactive mode ends with goodbye + wrap_up: --stop-after-panel ignored")
+    writer: Any = None
+    if reactive or any(turn.generate for turn in turns) or (ending and not script.goodbye):
+        from eval.ghost_session.live import LiveWriter
+
+        writer = LiveWriter()
+        logger.info("live turns: LLM at %s", writer.config.base_url)
 
     url, token = mint_ghost_token(
         room=room,
@@ -552,12 +882,13 @@ async def run_ghost_session(
         page_url = ""
 
     client = GhostRoomClient(audio_tap=audio_tap)
+    client.guest_name = script.name
     await client.connect(url, token)
     try:
-        if voice and turns:
+        if voice and (turns or reactive):
             await client.open_mic()
         if recorder is not None:
-            if voice and turns:
+            if voice and (turns or reactive):
                 # The worker listens to the first participant it finds; the viewer
                 # joining first would leave the guest's mic unheard all session.
                 try:
@@ -569,11 +900,40 @@ async def run_ghost_session(
             await asyncio.wait_for(client.first_line.wait(), timeout=welcome_timeout_sec)
         except asyncio.TimeoutError:
             logger.warning("no agent line after %.0fs — continuing", welcome_timeout_sec)
+        show_started_t = time.monotonic()
+
+        async def speak(
+            text: str, speech: Any, *, idx: int = 0, on_start: Callable[[], Any] | None = None
+        ) -> float | None:
+            """Say a turn (mic audio, or text when there is none); returns when the audio
+            started (monotonic), None for a text turn."""
+            client.record_own_line(script.name, text)
+            if speech is not None:
+                await client.say(*speech, on_start=on_start)
+                return client.spoken[-1][1]
+            if on_start is not None:
+                started = on_start()
+                if asyncio.isfuture(started):
+                    await started  # text turns: let it go out before the text does
+            await _inject_until_heard(client, text, prefix=script.prefix if idx == 1 else None)
+            return None
 
         lines_before = 0
+        last_turn_ordinal = 0
         for idx, (turn, speech) in enumerate(zip(turns, speeches), start=1):
+            live_task: asyncio.Task[LiveTurn] | None = None
+
+            def start_live(turn: ScriptedTurn = turn, idx: int = idx) -> None:
+                nonlocal live_task
+                if turn.generate and live_task is None:
+                    logger.info("turn %d: trigger line announced — writing the turn", idx)
+                    live_task = asyncio.create_task(
+                        prepare_live_turn(client, writer, script, turn, idx=idx, voice=voice),
+                        name=f"ghost:live-{idx}",
+                    )
+
             if turn.after_lines is not None:
-                why = await client.wait_for_turn(turn, lines_before=lines_before)
+                why = await client.wait_for_turn(turn, lines_before=lines_before, on_target=start_live)
                 logger.info(
                     "turn %d: cutting in (%s, %d agent lines since the last turn)",
                     idx, why, client.agent_lines - lines_before,
@@ -588,18 +948,26 @@ async def run_ghost_session(
                     stop_after_panel=beat_panel,
                     panel_base=0,
                 )
+            text = turn.text
+            if turn.generate:
+                trigger_t = time.monotonic()
+                start_live()  # no-op when already started at the trigger line
+                assert live_task is not None
+                live = await live_task
+                late = live.ready_t - trigger_t
+                if late > 0.05:
+                    logger.warning("turn %d: ready %.1fs after the cut-in point", idx, late)
+                else:
+                    logger.info("turn %d: ready %.1fs before the cut-in point", idx, -late)
+                text, speech = live.text, live.speech
             panel_base = client.panel_transcripts
-            if speech is not None:
-                await client.say(*speech)
-            else:
-                await _inject_until_heard(
-                    client,
-                    turn.text,
-                    prefix=script.prefix if idx == 1 else None,
-                )
+            last_turn_ordinal = client.agent_lines
+            await speak(text, speech, idx=idx)
             lines_before = client.agent_lines
             last = idx == len(turns)
-            if last or turns[idx].after_lines is None:
+            if last and reactive:
+                pass  # the reactive guest takes over right away
+            elif last or turns[idx].after_lines is None:
                 await _wait_quiet(
                     client,
                     quiet_sec=quiet_sec,
@@ -609,8 +977,45 @@ async def run_ghost_session(
                     stop_after_panel=stop_after_panel if last else beat_panel,
                     panel_base=panel_base,
                 )
-        await asyncio.sleep(max(0.0, hold_sec))
+        if reactive:
+            from eval.ghost_session.live import build_reaction_messages
+            from eval.ghost_session.reactive import ReactiveGuest, ReactiveLimits
+
+            guest = ReactiveGuest(
+                client,
+                name=script.name,
+                limits=ReactiveLimits(
+                    max_turns=script.max_turns,
+                    min_lines_between_turns=script.min_lines_between_turns,
+                    max_minutes=script.max_minutes,
+                    nudge_after_lines=script.nudge_after_lines,
+                ),
+                prepare=lambda messages, must: prepare_reaction(writer, script, messages, must, voice=voice),
+                speak=speak,
+                build_messages=lambda **kw: build_reaction_messages(
+                    name=script.name, persona=script.persona, topic=script.topic, **kw
+                ),
+                turns_done=len(turns),
+                show_started_t=show_started_t,
+            )
+            logger.info(
+                "reactive: on (max_turns=%d incl. %d seeds, min_lines_between_turns=%d, max_minutes=%.1f)",
+                script.max_turns, len(turns), script.min_lines_between_turns, script.max_minutes,
+            )
+            await guest.run(last_turn_ordinal=last_turn_ordinal)
+        if ending:
+            from eval.ghost_session.ending import goodbye_and_wrap_up
+
+            await goodbye_and_wrap_up(
+                client,
+                prepare=lambda: prepare_goodbye(client, writer, script, voice=voice),
+                speak=speak,
+            )
+        else:
+            await asyncio.sleep(max(0.0, hold_sec))
     finally:
+        if writer is not None:
+            await writer.aclose()
         wav: Path | None = None
         video: Path | None = None
         if recorder is not None:
@@ -693,7 +1098,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stop-after-panel",
         type=int,
         default=0,
-        help="After the LAST scripted turn, leave once this many panelist lines were heard (0 = off)",
+        help="After the LAST scripted turn, leave once this many panelist lines were heard (0 = off). "
+        "Ignored in reactive mode, which ends with a goodbye + wrap_up instead",
     )
     parser.add_argument(
         "--beat-panel",
@@ -701,6 +1107,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Before a NON-final scripted turn, wait for this many panelist lines (a full beat) — "
         "with --quiet-sec as fallback for beats that end early (0 = silence only)",
+    )
+    parser.add_argument(
+        "--wrap-up",
+        action="store_true",
+        help="Scripted runs: after the last turn's beat, say goodbye, send wrap_up and leave after "
+        "the host's closing line (reactive scripts always do; there --stop-after-panel is ignored)",
     )
     parser.add_argument(
         "--log-dir",
@@ -785,6 +1197,7 @@ def main(argv: list[str] | None = None) -> int:
             quiet_sec=args.quiet_sec,
             stop_after_panel=args.stop_after_panel,
             beat_panel=args.beat_panel,
+            wrap_up=args.wrap_up,
             record=args.record,
             frontend_url=args.frontend_url,
             start_frontend=args.start_frontend,

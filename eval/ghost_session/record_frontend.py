@@ -302,24 +302,37 @@ def track_is_audio(track: Any) -> bool:
 
 
 class RoomAudioTap:
-    """Write the first subscribed remote audio track to a WAV (show TTS)."""
+    """Record the show's audio: every remote audio track (the speaker's line, and the
+    listeners' backchannels and a cut speaker's trailing words, which play on their own
+    tracks at the same time), mixed into one WAV. Recording only the first track left
+    every overlap out of the video."""
+
+    RATE = 48000
+    # A gap this long in a track's frames is silence the track did not send: keep the
+    # track on the wall clock by padding it.
+    _GAP_S = 0.25
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._wave: Any = None
-        self._started = False
-        self._task: asyncio.Task[None] | None = None
+        self._tracks: dict[str, tuple[asyncio.Task[None], Path]] = {}
+        self._starts: dict[str, float] = {}
         self.started_at: float | None = None
 
+    @property
+    def _started(self) -> bool:
+        return bool(self._tracks)
+
     def _maybe_start(self, track: Any) -> None:
-        if self._started or track is None:
+        if track is None or not track_is_audio(track):
+            if track is not None:
+                logger.debug("audio tap skip kind=%r", getattr(track, "kind", None))
             return
-        if not track_is_audio(track):
-            logger.debug("audio tap skip kind=%r", getattr(track, "kind", None))
+        key = str(getattr(track, "sid", "") or id(track))
+        if key in self._tracks:
             return
-        self._started = True
-        logger.info("audio tap subscribed kind=%r", getattr(track, "kind", None))
-        self._task = asyncio.create_task(self._consume(track))
+        part = self.path.with_name(f"{self.path.stem}.track{len(self._tracks)}.wav")
+        logger.info("audio tap subscribed kind=%r track=%s", getattr(track, "kind", None), key)
+        self._tracks[key] = (asyncio.create_task(self._consume(track, key, part)), part)
 
     def attach(self, room: Any) -> None:
         def _on_track(*args: Any, **kwargs: Any) -> None:
@@ -340,7 +353,7 @@ class RoomAudioTap:
             for pub in items:
                 self._maybe_start(getattr(pub, "track", None))
 
-    async def _consume(self, track: Any) -> None:
+    async def _consume(self, track: Any, key: str, part: Path) -> None:
         try:
             from livekit import rtc
         except ImportError:
@@ -348,43 +361,81 @@ class RoomAudioTap:
             return
         import wave
 
-        stream = rtc.AudioStream(track)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        stream = rtc.AudioStream(track, sample_rate=self.RATE, num_channels=1)
+        part.parent.mkdir(parents=True, exist_ok=True)
         wf: wave.Wave_write | None = None
+        written = 0  # samples
         try:
             async for event in stream:
-                frame = event.frame
-                rate = int(getattr(frame, "sample_rate", 48000) or 48000)
-                ch = int(getattr(frame, "num_channels", 1) or 1)
-                data = getattr(frame, "data", b"")
+                data = bytes(getattr(event.frame, "data", b"") or b"")
+                now = time.monotonic()
                 if wf is None:
-                    self.started_at = time.monotonic()
-                    wf = wave.open(str(self.path), "wb")
-                    wf.setnchannels(ch)
+                    self._starts[key] = now
+                    if self.started_at is None or now < self.started_at:
+                        self.started_at = now
+                    wf = wave.open(str(part), "wb")
+                    wf.setnchannels(1)
                     wf.setsampwidth(2)
-                    wf.setframerate(rate)
-                    logger.info("audio tap → %s rate=%d ch=%d", self.path, rate, ch)
+                    wf.setframerate(self.RATE)
+                    logger.info("audio tap → %s", part)
+                behind = int((now - self._starts[key]) * self.RATE) - written
+                if behind > self._GAP_S * self.RATE:
+                    wf.writeframes(b"\x00\x00" * behind)
+                    written += behind
                 if data:
-                    wf.writeframes(bytes(data))
+                    wf.writeframes(data)
+                    written += len(data) // 2
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("audio tap failed")
+            logger.exception("audio tap failed track=%s", key)
         finally:
             if wf is not None:
                 wf.close()
 
+    def _mix(self, parts: list[tuple[float, Path]]) -> None:
+        import wave
+
+        import numpy as np
+
+        t0 = min(start for start, _ in parts)
+        tracks = []
+        for start, part in parts:
+            with wave.open(str(part)) as wf:
+                samples = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+            tracks.append((int(round((start - t0) * self.RATE)), samples))
+        total = max(offset + len(samples) for offset, samples in tracks)
+        mix = np.zeros(total, dtype=np.int32)
+        for offset, samples in tracks:
+            mix[offset : offset + len(samples)] += samples
+        with wave.open(str(self.path), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(self.RATE)
+            wf.writeframes(np.clip(mix, -32768, 32767).astype(np.int16).tobytes())
+        self.started_at = t0
+
     async def finish(self) -> Path | None:
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
-        if self.path.is_file() and self.path.stat().st_size > 44:
-            return self.path
-        logger.warning("audio tap produced no wav (started=%s path=%s)", self._started, self.path)
-        return None
+        for task, _ in self._tracks.values():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        parts = [
+            (self._starts[key], part)
+            for key, (_, part) in self._tracks.items()
+            if key in self._starts and part.is_file() and part.stat().st_size > 44
+        ]
+        if not parts:
+            logger.warning("audio tap produced no wav (tracks=%d path=%s)", len(self._tracks), self.path)
+            return None
+        self._mix(parts)
+        for _, part in parts:
+            part.unlink(missing_ok=True)
+        logger.info("audio tap mixed %d track(s) → %s", len(parts), self.path)
+        return self.path
 
 
 def default_record_dir() -> Path:
