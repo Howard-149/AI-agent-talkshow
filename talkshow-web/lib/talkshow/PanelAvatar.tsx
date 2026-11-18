@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 
 import type { TrackReference } from '@livekit/components-core';
 import type { PanelistDef } from '@/lib/talkshow/roles';
-import { localIdleUrl, localPortraitUrl } from '@/lib/talkshow/avatarAssets';
+import { localIdleUrl, localPortraitUrl, AVATAR_ENGINE } from '@/lib/talkshow/avatarAssets';
 import styles from '@/styles/TalkshowStage.module.css';
 
 const AvatarPanelVideo = dynamic(
@@ -83,6 +83,7 @@ export function PanelAvatar({
         className={styles.avatarSlot}
         data-avatar-mode={isActive ? 'dystream-livekit' : 'dystream-idle'}
         data-avatar-role={panelist.role}
+        data-avatar-engine={AVATAR_ENGINE}
       >
         <AgentAvatarVideo
           trackRef={agentVideoTrackRef}

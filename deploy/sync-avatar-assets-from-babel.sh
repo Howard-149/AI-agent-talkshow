@@ -13,7 +13,8 @@ PORTRAITS_DST="$ROOT/avatar/assets/portraits"
 mkdir -p "$LOOPS_DST" "$PORTRAITS_DST"
 
 echo "From ${HOST}:${REMOTE}/avatar/assets → ${ROOT}/avatar/assets"
-scp "${HOST}:${REMOTE}/avatar/assets/loops/"*-idle.mp4 "$LOOPS_DST/"
+# DyStream loops (*-idle.mp4) and AVTR-1 loops (*-idle-avtr1.mp4)
+scp "${HOST}:${REMOTE}/avatar/assets/loops/"*-idle*.mp4 "$LOOPS_DST/"
 scp "${HOST}:${REMOTE}/avatar/assets/portraits/"{lessac,ryan,amy}.png "$PORTRAITS_DST/" || \
   scp "${HOST}:${REMOTE}/avatar/assets/portraits/"*.png "$PORTRAITS_DST/"
 

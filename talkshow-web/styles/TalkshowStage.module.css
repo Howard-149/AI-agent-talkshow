@@ -355,6 +355,13 @@
   transition: opacity 0.12s ease;
 }
 
+/* AVTR-1 frames and its idle loops share one framing with no black band: no zoom. */
+.avatarSlot[data-avatar-engine='avtr1'] .avatarVideo,
+.avatarSlot[data-avatar-engine='avtr1'] .avatarPortrait,
+.avatarSlot[data-avatar-engine='avtr1'] :global(video) {
+  transform: none;
+}
+
 .avatarSynthLayer {
   position: absolute;
   inset: 0;
