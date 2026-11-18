@@ -23,7 +23,7 @@ import {
   rosterFromParticipants,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
-import { useAgentAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
+import { useAgentAvatarVideo, useBackchannelAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
 import { useAvatarClips } from '@/lib/talkshow/useAvatarClips';
 import styles from '@/styles/TalkshowPanel.module.css';
 
@@ -84,6 +84,7 @@ export function TalkshowOverlay() {
   const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
   const viewerLocale = readStoredViewerLocale();
   const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant, viewerLocale);
+  const backchannelTrackRef = useBackchannelAvatarVideo(agentParticipant);
   const handleUiEventRef = useRef(handleUiEvent);
   handleUiEventRef.current = handleUiEvent;
   const pushLineRef = useRef(pushLine);
@@ -157,6 +158,7 @@ export function TalkshowOverlay() {
         clipForRole={clipForRole}
         warmingRole={warmingRole}
         agentVideoTrackRef={agentVideoTrackRef}
+        backchannelTrackRef={backchannelTrackRef}
         compactAvatars
       />
       <TranscriptPanel lines={lines} interruptNotice={interruptNotice} />

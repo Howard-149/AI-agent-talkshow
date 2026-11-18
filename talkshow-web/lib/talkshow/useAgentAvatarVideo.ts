@@ -52,3 +52,20 @@ export function useAgentAvatarVideo(
     return anyCam;
   }, [cameraTracks, agentParticipant, wantedName]);
 }
+
+/** Backchannel track: a listener's face while their backchannel plays (exact name only —
+ * falling back to another camera track would show the speaker in the listener's tile). */
+export function useBackchannelAvatarVideo(
+  agentParticipant: Participant | undefined,
+): TrackReference | undefined {
+  const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
+  return useMemo(() => {
+    if (!agentParticipant) return undefined;
+    return cameraTracks.find(
+      (ref) =>
+        ref.participant.sid === agentParticipant.sid &&
+        ref.publication?.trackName === 'talkshow-avatar-bc' &&
+        ref.publication?.track,
+    );
+  }, [cameraTracks, agentParticipant]);
+}

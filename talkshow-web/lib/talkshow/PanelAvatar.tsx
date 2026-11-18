@@ -27,6 +27,9 @@ type Props = {
   isWarming?: boolean;
   speechClipUrl?: string;
   agentVideoTrackRef?: TrackReference;
+  /** The listener-face track, shown here while this panelist's backchannel plays. */
+  backchannelTrackRef?: TrackReference;
+  isBackchannel?: boolean;
   compact?: boolean;
 };
 
@@ -62,6 +65,8 @@ export function PanelAvatar({
   isWarming = false,
   speechClipUrl,
   agentVideoTrackRef,
+  backchannelTrackRef,
+  isBackchannel = false,
   compact,
 }: Props) {
   const avatar = panelist.avatar;
@@ -77,6 +82,11 @@ export function PanelAvatar({
     );
   }
 
+  // A backchannel while someone else holds the floor: this tile shows the listener track.
+  const showBackchannel = Boolean(
+    isBackchannel && !isActive && backchannelTrackRef?.publication?.track,
+  );
+
   if (idleVideoUrl || agentVideoTrackRef) {
     return (
       <div
@@ -86,9 +96,9 @@ export function PanelAvatar({
         data-avatar-engine={AVATAR_ENGINE}
       >
         <AgentAvatarVideo
-          trackRef={agentVideoTrackRef}
+          trackRef={showBackchannel ? backchannelTrackRef : agentVideoTrackRef}
           idleVideoUrl={idleVideoUrl}
-          isLive={isActive}
+          isLive={isActive || showBackchannel}
           isWarming={isWarming}
           compact={compact}
           fallbackInitial={initial}

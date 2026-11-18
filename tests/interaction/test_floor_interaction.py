@@ -879,6 +879,36 @@ class AVSpeechConsumerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(published, [24000])
 
+    async def test_backchannel_face_starts_with_its_voice(self) -> None:
+        self.consumer = AVSpeechConsumer(self.session, words_per_sec=1000.0)
+        order: list[str] = []
+
+        async def play_pcm(pcm, rate, *, on_started=None):
+            order.append("voice")
+            if on_started is not None:
+                on_started(time.monotonic())
+
+        async def stream_frames_live(queue, fps, *, target_duration_sec=None, on_first_frame=None):
+            order.append("face")
+            on_first_frame.set()
+
+        stream = SimpleNamespace(frame_queue=asyncio.Queue(), fps=25.0, cancel=Mock())
+        video_pub = SimpleNamespace(bind_room=AsyncMock(), stream_frames_live=stream_frames_live)
+        cue = Cue("guest", "one two three", "s")
+        cue.playout_started_at = time.monotonic()
+        with (
+            patch(
+                "agent.interaction.consumers._prepare_backchannel",
+                AsyncMock(return_value=(SimpleNamespace(play_pcm=play_pcm), b"\x00\x00" * 24000, 24000)),
+            ),
+            patch("agent.interaction.consumers._prepare_backchannel_video", AsyncMock(return_value=stream)),
+            patch("agent.adapters.avatar_video.get_backchannel_video_publisher", Mock(return_value=video_pub)),
+            patch("livekit.agents.job.get_job_context", Mock(return_value=SimpleNamespace(room=None))),
+            patch("agent.ui.ui_events.emit_backchannel", AsyncMock()),
+        ):
+            await self.consumer._backchannel(cue, "host", "mm-hmm", 0, 0)
+        self.assertEqual(order, ["face", "voice"])
+
     async def test_script_cut_decided_during_playback_stops_there(self) -> None:
         self.consumer = AVSpeechConsumer(self.session, words_per_sec=20.0)
         with self.fake_speech(10):
