@@ -24,7 +24,10 @@ export function PadMeter({ state }: { state?: PadState }) {
     <div className={styles.padMeter}>
       <div className={styles.padEmotion}>
         <span className={styles.padLabel}>{titleCase(state?.emotion || 'neutral')}</span>
-        {state?.feeling ? <span className={styles.padFeeling}>“{state.feeling}”</span> : null}
+        {/* Always present (empty when there is no feeling yet) so every card's bars line up. */}
+        <span className={styles.padFeeling} aria-hidden={!state?.feeling}>
+          {state?.feeling ? `“${state.feeling}”` : '\u00a0'}
+        </span>
       </div>
       {AXES.map((axis, i) => {
         const v = Math.max(-1, Math.min(1, pad[i] ?? 0));

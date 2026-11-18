@@ -211,11 +211,14 @@
 }
 
 .panelRow {
-  --panel-avatar-size: 128px;
+  --panel-avatar-size: 184px;
+  /* Rounded rectangle, not a circle: the portraits are cropped tight above the head, and a
+     circle's arc cut the top of it off. */
+  --avatar-radius: 22px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 1rem;
-  width: min(960px, 100%);
+  grid-template-columns: repeat(auto-fit, minmax(204px, 1fr));
+  gap: 1.25rem;
+  width: min(1100px, 100%);
 }
 
 .avatarSlot {
@@ -248,7 +251,6 @@
   box-shadow:
     0 0 0 1px var(--role-color, #6366f1),
     0 8px 24px rgba(0, 0, 0, 0.35);
-  transform: translateY(-2px);
 }
 
 /* Backchannel playing: lighter than the speaking highlight (no lift). */
@@ -267,7 +269,7 @@
 .avatarHuman {
   width: var(--panel-avatar-size, 128px);
   height: var(--panel-avatar-size, 128px);
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -279,7 +281,7 @@
 .avatarVrmWrap {
   width: var(--panel-avatar-size, 128px);
   height: var(--panel-avatar-size, 128px);
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
   border: 2px solid rgba(255, 255, 255, 0.12);
@@ -289,7 +291,7 @@
 .avatarCanvas {
   width: var(--panel-avatar-size, 128px);
   height: var(--panel-avatar-size, 128px);
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   overflow: hidden;
 }
 
@@ -309,7 +311,7 @@
   position: relative;
   width: var(--panel-avatar-size, 128px);
   height: var(--panel-avatar-size, 128px);
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
   border: 2px solid rgba(255, 255, 255, 0.12);
@@ -327,10 +329,11 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 28%;
-  /* DyStream / idle loops pad black around the bust — zoom into the face. */
-  transform: scale(1.28);
-  transform-origin: center 30%;
+  object-position: center 20%;
+  /* DyStream / idle loops pad black under the bust — a slight zoom anchored at the top
+     edge pushes that band out of the frame and leaves the top of the head where it is. */
+  transform: scale(1.16);
+  transform-origin: center 0%;
   display: block;
 }
 
@@ -340,9 +343,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 28%;
-  transform: scale(1.28);
-  transform-origin: center 30%;
+  object-position: center 20%;
+  transform: scale(1.16);
+  transform-origin: center 0%;
   transition: opacity 0.15s ease;
 }
 
@@ -377,7 +380,7 @@
   width: var(--panel-avatar-size, 128px);
   height: var(--panel-avatar-size, 128px);
   padding: 0.6rem;
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -395,7 +398,7 @@
   width: 44px;
   height: 44px;
   padding: 2px;
-  border-radius: 50%;
+  border-radius: var(--avatar-radius, 22px);
   font-size: 0.55rem;
 }
 
