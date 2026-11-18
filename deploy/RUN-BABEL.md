@@ -201,6 +201,21 @@ bash deploy/run-cosyvoice-sidecar.sh
 
 ---
 
+## AVTR-1 avatar（可选，代替 DyStream）
+
+AVTR-1（github.com/avaturn-live/avtr-1）比 DyStream 快（RTX PRO 6000 上每 5 帧约 53 ms，A100 约 91 ms），
+API 与 DyStream sidecar 相同，agent 不用改。大文件都放在 `AVTR1_HOME`（默认 `/data/user_data/$USER`）。
+
+1. 在 Hugging Face 上接受 `avaturn-live/avtr-1` 的条款（`HF_TOKEN` 那个账号）。
+2. 每种 GPU 装一次（TensorRT engine 按 GPU 型号建，约 16 分钟）：
+   `srun --jobid=<job> --overlap --gpus=1 bash -lc "bash deploy/avtr1/install.sh"`
+3. job 用 AVTR-1：`.env` 里 `TALKSHOW_AVATAR_ENGINE=avtr1`（占 DyStream 的 GPU 槽和端口）。
+   正在跑的 job 可手动换：停掉 8766 上的 DyStream，再
+   `srun --jobid=<job> --overlap --gpus=3 bash -lc "bash deploy/run-avtr1-sidecar.sh"`。
+4. 待机影片要用 AVTR-1 渲染，取景才和说话时一致（sidecar 运行中）：
+   `source deploy/avtr1/env.sh && cd $AVTR1_REPO && pixi run python ~/AI-agent-talkshow/deploy/avtr1/render_idle_loops.py <amy.wav> <ryan.wav>`，
+   然后在 laptop 跑 `deploy/sync-avatar-assets-from-babel.sh`，前端设 `NEXT_PUBLIC_AVATAR_ENGINE=avtr1`。
+
 ## Laptop（前端 + token）
 
 ```bash

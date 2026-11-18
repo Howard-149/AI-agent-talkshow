@@ -343,11 +343,15 @@ start_vllm() {
 
 start_dystream() {
   (
+    export DYSTREAM_CUDA_DEVICE
+    if [[ "${TALKSHOW_AVATAR_ENGINE:-dystream}" == "avtr1" ]]; then
+      # AVTR-1 in DyStream's slot and port (same API); see deploy/avtr1/install.sh.
+      exec bash "${ROOT}/deploy/run-avtr1-sidecar.sh"
+    fi
     # shellcheck disable=SC1090
     source "${CONDA_SH}"
     conda activate "${ENV_DYSTREAM}"
     export DYSTREAM_PYTHON="${DYSTREAM_PYTHON:-$(command -v python)}"
-    export DYSTREAM_CUDA_DEVICE
     bash "${ROOT}/deploy/run-dystream-sidecar.sh"
   ) >"${LOG_DIR}/dystream.log" 2>&1 &
   DYSTREAM_PID=$!
