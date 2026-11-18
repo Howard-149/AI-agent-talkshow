@@ -37,7 +37,7 @@ import {
   rosterFromParticipants,
   type PanelistDef,
 } from '@/lib/talkshow/roles';
-import { useAgentAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
+import { useAgentAvatarVideo, useBackchannelAvatarVideo } from '@/lib/talkshow/useAgentAvatarVideo';
 import { useAvatarClips } from '@/lib/talkshow/useAvatarClips';
 import { useLocaleMediaFilter } from '@/lib/talkshow/useLocaleMediaFilter';
 import styles from '@/styles/TalkshowStage.module.css';
@@ -145,6 +145,7 @@ export function TalkshowView(
 
   const { clipForRole, warmingRole, handleUiEvent } = useAvatarClips();
   const agentVideoTrackRef = useAgentAvatarVideo(agentParticipant, viewerLocale);
+  const backchannelTrackRef = useBackchannelAvatarVideo(agentParticipant);
 
   const pushLineRef = useRef(pushLine);
   pushLineRef.current = pushLine;
@@ -303,6 +304,8 @@ export function TalkshowView(
                 isWarming={warmingRole === p.role}
                 speechClipUrl={clipForRole(p.role)}
                 agentVideoTrackRef={agentVideoTrackRef}
+                backchannelTrackRef={backchannelTrackRef}
+                isBackchannel={!!backchannelRoles[p.role]}
               />
               <div className={styles.meta}>
                 <strong>{p.name}</strong>

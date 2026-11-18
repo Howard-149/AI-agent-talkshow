@@ -25,6 +25,7 @@ type Props = {
   waitingForAgent: boolean;
   clipForRole?: (role: PanelRole) => string | undefined;
   agentVideoTrackRef?: import('@livekit/components-core').TrackReference;
+  backchannelTrackRef?: import('@livekit/components-core').TrackReference;
   compactAvatars?: boolean;
 };
 
@@ -38,6 +39,7 @@ export function VirtualPanel({
   waitingForAgent,
   clipForRole,
   agentVideoTrackRef,
+  backchannelTrackRef,
   compactAvatars = false,
 }: Props) {
   return (
@@ -71,6 +73,8 @@ export function VirtualPanel({
             isWarming={warmingRole === p.role}
             speechClipUrl={clipForRole?.(p.role)}
             agentVideoTrackRef={agentVideoTrackRef}
+            backchannelTrackRef={backchannelTrackRef}
+            isBackchannel={!!backchannelRoles[p.role]}
             compact={compactAvatars}
           />
           <div className={styles.meta}>

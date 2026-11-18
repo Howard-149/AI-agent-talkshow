@@ -295,6 +295,21 @@ def get_avatar_video_publisher(
     return pub
 
 
+BACKCHANNEL_TRACK_NAME = "talkshow-avatar-bc"
+
+
+def get_backchannel_video_publisher() -> AvatarVideoPublisher | None:
+    """Second avatar track: a listener's face while their backchannel plays (the main
+    track carries the speaker)."""
+    if not lk_video_enabled():
+        return None
+    pub = _publishers.get(BACKCHANNEL_TRACK_NAME)
+    if pub is None:
+        pub = AvatarVideoPublisher(track_name=BACKCHANNEL_TRACK_NAME)
+        _publishers[BACKCHANNEL_TRACK_NAME] = pub
+    return pub
+
+
 def init_avatar_video_publisher(*, room: rtc.Room) -> AvatarVideoPublisher | None:
     pub = get_avatar_video_publisher()
     if pub is None:

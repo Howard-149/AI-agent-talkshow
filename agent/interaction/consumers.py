@@ -261,6 +261,31 @@ async def _prepare_backchannel(
     return publisher, _amplify_pcm(pcm, backchannel_gain()), sample_rate
 
 
+def backchannel_video_enabled() -> bool:
+    """TALKSHOW_BACKCHANNEL_VIDEO=1: the listener's face moves with their backchannel, on a
+    second avatar track. Off by default: the avatar sidecar renders one stream at a time,
+    and on an A100 the backchannel renders held up the speaker's next sentence (up to
+    12.7 s, 11/17). Use with AVTR-1 on a fast GPU."""
+    return os.environ.get("TALKSHOW_BACKCHANNEL_VIDEO", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _prepare_backchannel_video(role: str, pcm: bytes, sample_rate: int) -> Any:
+    """Render the backchannel's face on the avatar sidecar (a live frame stream), or None.
+    The sidecar renders one stream at a time: behind the speaker's sentence it may not be
+    ready in time, and the backchannel then plays without it."""
+    from agent.adapters.dystream_bridge import SyncStreamResult, get_avatar_bridge
+
+    bridge = get_avatar_bridge()
+    if bridge is None or not backchannel_video_enabled():
+        return None
+    clip = await bridge.bake_sync(role, "backchannel", pcm, sample_rate, slot="bc")
+    return clip if isinstance(clip, SyncStreamResult) else None
+
+
+# Longest a backchannel waits for its face's first frame before it plays without it.
+BACKCHANNEL_VIDEO_WAIT_S = 0.25
+
+
 def backchannel_gain() -> float:
     """Volume multiplier for backchannels relative to the main line (``TALKSHOW_BACKCHANNEL_GAIN``)."""
     try:
@@ -655,8 +680,14 @@ class AVSpeechConsumer:
         sentence's playback event. A projection that slips past the lateness window
         waits for a later anchor to confirm where playback is; a target that anchor
         shows was missed, or that is cut or stopped, is dropped."""
+        video_task: asyncio.Task | None = None
+        due = False  # reached its playback time (else: dropped, so its face is not needed)
         try:
             publisher, pcm, sample_rate = await _prepare_backchannel(self._data, role, text)
+            if pcm:
+                video_task = asyncio.create_task(
+                    _prepare_backchannel_video(role, pcm, sample_rate), name=f"bc-video:{role}"
+                )
             if not pcm:
                 self._log_backchannel(cue, role, text, offset, "dropped", "empty_synthesized_audio")
                 return
@@ -729,10 +760,56 @@ class AVSpeechConsumer:
                         duration_s=duration_s,
                     )
                 )
+            due = True
         except asyncio.CancelledError:
             self._log_backchannel(cue, role, text, offset, "dropped", "playback_cancelled")
             raise
-        await publisher.play_pcm(pcm, sample_rate, on_started=on_started)
+        finally:
+            if not due:
+                _drop_backchannel_video(video_task)
+        stream = None
+        if video_task is not None and not video_task.done():
+            # Its face may be a moment from ready: a short wait beats a frozen face.
+            await asyncio.wait({video_task}, timeout=BACKCHANNEL_VIDEO_WAIT_S)
+        if video_task is not None and video_task.done() and not video_task.cancelled():
+            stream = video_task.exception() is None and video_task.result() or None
+        else:
+            _drop_backchannel_video(video_task)  # not ready by its due time: voice only
+        video = None
+        if stream is not None:
+            from agent.adapters.avatar_video import get_backchannel_video_publisher
+
+            pub = get_backchannel_video_publisher()
+            if pub is not None:
+                try:
+                    from livekit.agents.job import get_job_context
+
+                    await pub.bind_room(get_job_context().room)
+                    first = asyncio.Event()
+                    video = asyncio.create_task(
+                        pub.stream_frames_live(
+                            stream.frame_queue,
+                            stream.fps,
+                            target_duration_sec=len(pcm) / 2 / sample_rate,
+                            on_first_frame=first,
+                        ),
+                        name=f"bc-frames:{role}",
+                    )
+                    await asyncio.wait_for(first.wait(), timeout=BACKCHANNEL_VIDEO_WAIT_S)
+                except Exception:
+                    logger.debug("backchannel video start failed role=%s", role, exc_info=True)
+            else:
+                stream.cancel()
+        try:
+            await publisher.play_pcm(pcm, sample_rate, on_started=on_started)
+        finally:
+            if video is not None:
+                try:
+                    await asyncio.wait_for(video, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                    video.cancel()
+                    if stream is not None:
+                        stream.cancel()
 
     def _backchannel_due(self, cue: Cue, offset: int) -> tuple[float, float, bool] | None:
         """(monotonic time, speaker audio position, confirmed) at which playback reaches
@@ -825,6 +902,16 @@ class AVSpeechConsumer:
         self._backchannels.discard(task)
         if not task.cancelled() and task.exception() is not None:
             logger.warning("backchannel playback failed", exc_info=task.exception())
+
+
+def _drop_backchannel_video(task: asyncio.Task | None) -> None:
+    """A backchannel face that will not be shown: stop rendering it."""
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    elif not task.cancelled() and task.exception() is None and task.result() is not None:
+        task.result().cancel()
 
 
 def _release_prepared(cue: Cue) -> None:
